@@ -94,7 +94,7 @@ rsi = ta.rsi(rsi_source, rsi_length)
 // ▶ ADAPTIVE PERCENTILE CALCULATION (Nearest Rank - More Accurate)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 使用 percentile_nearest_rank 获得更精准的分布
+// 使用 percentile_nearest_rank 获得更精准的分布 (保留用于视觉参考)
 rsi_p5  = ta.percentile_nearest_rank(rsi, lookback, 5)
 rsi_p10 = ta.percentile_nearest_rank(rsi, lookback, 10)
 rsi_p25 = ta.percentile_nearest_rank(rsi, lookback, 25)
@@ -102,6 +102,21 @@ rsi_p50 = ta.percentile_nearest_rank(rsi, lookback, 50)
 rsi_p75 = ta.percentile_nearest_rank(rsi, lookback, 75)
 rsi_p90 = ta.percentile_nearest_rank(rsi, lookback, 90)
 rsi_p95 = ta.percentile_nearest_rank(rsi, lookback, 95)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ RSI Z-SCORE CALCULATION (统计学方法)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Z-Score = (当前值 - 平均值) / 标准差
+rsi_mean = ta.sma(rsi, lookback)
+rsi_stdev = ta.stdev(rsi, lookback)
+rsi_zscore = rsi_stdev != 0 ? (rsi - rsi_mean) / rsi_stdev : 0
+
+// Z-Score 动态阈值线 (用于绘图)
+zscore_upper_2 = rsi_mean + rsi_stdev * 2    // +2σ 极端超买
+zscore_upper_1_5 = rsi_mean + rsi_stdev * 1.5  // +1.5σ 超买
+zscore_lower_1_5 = rsi_mean - rsi_stdev * 1.5  // -1.5σ 超卖
+zscore_lower_2 = rsi_mean - rsi_stdev * 2    // -2σ 极端超卖
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ TREND FILTER / 趋势过滤 (Auto-Adaptive)
@@ -197,9 +212,9 @@ var int ext_ob_count = 0
 var float ext_ob_total_return = 0.0
 var int ext_ob_win_count = 0
 
-// 检测历史信号的收益 (前瞻N根K线)
-ext_oversold_signal = ta.crossunder(rsi, rsi_p5)
-ext_overbought_signal = ta.crossover(rsi, rsi_p95)
+// 检测历史信号的收益 (前瞻N根K线) - 使用 Z-Score
+ext_oversold_signal = ta.crossunder(rsi_zscore, -2)
+ext_overbought_signal = ta.crossover(rsi_zscore, 2)
 
 // 使用历史信号计算收益
 if enable_stats and ext_oversold_signal[stats_forward_bars] and bar_index > stats_forward_bars
@@ -316,11 +331,13 @@ hline(50, "50 固定中线", color=color.new(color.gray, 90), linestyle=hline.st
 // ▶ SIGNAL DETECTION
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 基础信号
-raw_extreme_oversold = ta.crossunder(rsi, rsi_p5)
-raw_extreme_overbought = ta.crossover(rsi, rsi_p95)
-raw_normal_oversold = ta.crossunder(rsi, rsi_p10) and not raw_extreme_oversold
-raw_normal_overbought = ta.crossover(rsi, rsi_p90) and not raw_extreme_overbought
+// 基础信号 - 使用 Z-Score 判断极端区域
+// 极端信号: Z-Score ±2σ (统计学上约 95% 置信区间外)
+// 普通信号: Z-Score ±1.5σ
+raw_extreme_oversold = ta.crossunder(rsi_zscore, -2)
+raw_extreme_overbought = ta.crossover(rsi_zscore, 2)
+raw_normal_oversold = ta.crossunder(rsi_zscore, -1.5) and not raw_extreme_oversold
+raw_normal_overbought = ta.crossover(rsi_zscore, 1.5) and not raw_extreme_overbought
 
 // 应用趋势过滤
 extreme_oversold = enable_trend_filter ? (raw_extreme_oversold and trend_down) : raw_extreme_oversold
@@ -332,13 +349,14 @@ normal_overbought = enable_trend_filter ? (raw_normal_overbought and trend_up) :
 // ▶ CONSOLIDATED SIGNALS (优先级合并信号)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 极端区域判断 - 当前K线
-bool in_extreme_oversold = rsi < rsi_p5
-bool in_extreme_overbought = rsi > rsi_p95
+// 极端区域判断 - 当前K线 (使用 Z-Score)
+bool in_extreme_oversold = rsi_zscore < -2
+bool in_extreme_overbought = rsi_zscore > 2
 
 // 极端区域判断 - 背离发生时 (div_lookback 根K线前)
-bool was_extreme_oversold = rsi[div_lookback] < rsi_p5[div_lookback]
-bool was_extreme_overbought = rsi[div_lookback] > rsi_p95[div_lookback]
+float zscore_at_div = rsi_stdev[div_lookback] != 0 ? (rsi[div_lookback] - rsi_mean[div_lookback]) / rsi_stdev[div_lookback] : 0
+bool was_extreme_oversold = zscore_at_div < -2
+bool was_extreme_overbought = zscore_at_div > 2
 
 // 买入信号优先级 (高到低): MTF共振 > 背离+极端区 > 极端 > 普通
 bool sig_buy_mtf = enable_mtf and oversold_resonance and extreme_oversold
@@ -407,13 +425,13 @@ if show_dashboard
     else
         rsi_percentile := 99.0
 
-    // 状态判断
-    status_text = rsi < rsi_p5 ? "🟢 EXTREME OVERSOLD" :
-                  rsi < rsi_p10 ? "🟡 OVERSOLD" :
-                  rsi > rsi_p95 ? "🔴 EXTREME OVERBOUGHT" :
-                  rsi > rsi_p90 ? "🟠 OVERBOUGHT" : "⚪ NEUTRAL"
+    // 状态判断 (使用 Z-Score)
+    status_text = rsi_zscore < -2 ? "🟢 EXTREME OVERSOLD (σ<-2)" :
+                  rsi_zscore < -1.5 ? "🟡 OVERSOLD (σ<-1.5)" :
+                  rsi_zscore > 2 ? "🔴 EXTREME OVERBOUGHT (σ>2)" :
+                  rsi_zscore > 1.5 ? "🟠 OVERBOUGHT (σ>1.5)" : "⚪ NEUTRAL"
     
-    status_color = rsi < rsi_p10 ? color_bull : rsi > rsi_p90 ? color_bear : color.gray
+    status_color = rsi_zscore < -1.5 ? color_bull : rsi_zscore > 1.5 ? color_bear : color.gray
 
     // 字体大小转换
     txt_size_title = dashboard_size == "Tiny" ? size.tiny : dashboard_size == "Small" ? size.small : dashboard_size == "Normal" ? size.normal : size.large
@@ -429,8 +447,8 @@ if show_dashboard
                      "⚪ " + str.tostring(math.max(oversold_count, overbought_count)) + "/4"
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
-    // 计算行数
-    total_rows = 7 + (enable_mtf ? 3 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 3 : 0)
+    // 计算行数 (增加Z-Score行)
+    total_rows = 8 + (enable_mtf ? 3 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 3 : 0)
 
     // 创建表格 - 深蓝灰色背景更易读
     var table dashboard = table.new(position.top_right, 2, total_rows, 
@@ -453,6 +471,12 @@ if show_dashboard
         // 百分位 + 趋势
         table.cell(dashboard, 0, row, "Percentile", text_color=color.gray, text_size=txt_size_body)
         table.cell(dashboard, 1, row, "P" + str.tostring(rsi_percentile, "#") + " " + trend_text, text_color=trend_color, text_size=txt_size_body)
+        row += 1
+        
+        // Z-Score
+        zscore_color = rsi_zscore < -2 ? color_bull : rsi_zscore < -1.5 ? #90EE90 : rsi_zscore > 2 ? color_bear : rsi_zscore > 1.5 ? #FFB6C1 : color.gray
+        table.cell(dashboard, 0, row, "Z-Score", text_color=color.gray, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, str.tostring(rsi_zscore, "#.2") + "σ", text_color=zscore_color, text_size=txt_size_body)
         row += 1
         
         // 分隔线
