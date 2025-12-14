@@ -54,6 +54,7 @@ lookback = input.int(252, "Lookback Period / 回看周期", minval=50, maxval=20
 grp_visual = "═══ Visual Settings / 视觉设置 ═══"
 show_fill = input.bool(true, "Show Gradient Fill / 显示渐变填充", group=grp_visual)
 show_dashboard = input.bool(true, "Show Dashboard / 显示仪表盘", group=grp_visual)
+dashboard_mode = input.string("Full", "Dashboard Mode / 面板模式", options=["Lite", "Full"], group=grp_visual, tooltip="Lite: 仅核心信息(3行) | Full: 显示全部")
 dashboard_size = input.string("Normal", "Dashboard Size / 面板大小", options=["Tiny", "Small", "Normal", "Large"], group=grp_visual)
 dashboard_transparency = input.int(30, "Dashboard Transparency / 面板透明度", minval=0, maxval=100, step=10, group=grp_visual)
 color_bull = input.color(color.new(#00E676, 60), "Bullish Color / 牛市颜色", group=grp_visual)
@@ -71,9 +72,9 @@ trend_filter_mode = input.string("Auto", "Filter Mode / 过滤模式", options=[
 
 grp_mtf = "═══ Multi-Timeframe / 多时间框架 ═══"
 enable_mtf = input.bool(true, "Enable MTF RSI / 启用多时间框架", group=grp_mtf)
-mtf_tf1 = input.timeframe("60", "Timeframe 1 / 时间框架1", group=grp_mtf)
-mtf_tf2 = input.timeframe("240", "Timeframe 2 / 时间框架2", group=grp_mtf)
-mtf_tf3 = input.timeframe("D", "Timeframe 3 / 时间框架3", group=grp_mtf)
+mtf_tf1 = input.timeframe("60", "TF1 (默认1h) / 时间框架1", group=grp_mtf)
+mtf_tf2 = input.timeframe("240", "TF2 (默认4h) / 时间框架2", group=grp_mtf)
+mtf_tf3 = input.timeframe("D", "TF3 (默认D) / 时间框架3", group=grp_mtf)
 
 grp_stats = "═══ Signal Statistics / 信号统计 ═══"
 enable_stats = input.bool(true, "Enable Statistics / 启用统计", group=grp_stats)
@@ -81,8 +82,26 @@ stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, max
 
 grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
 enable_divergence = input.bool(true, "Enable Divergence Detection / 启用背离检测", group=grp_divergence)
-div_lookback = input.int(5, "Pivot Lookback / 枢轴回看", minval=2, maxval=20, group=grp_divergence, tooltip="用于检测高低点的回看周期")
-div_range = input.int(60, "Max Range / 最大范围", minval=20, maxval=200, group=grp_divergence, tooltip="背离检测的最大K线范围")
+div_mode = input.string("Auto", "Divergence Mode / 背离模式", options=["Auto", "Low Vol", "Normal", "High Vol", "Crypto", "Custom"], group=grp_divergence, tooltip="Auto: 根据ATR自动判断\nLow Vol: 蓝筹/ETF\nNormal: 一般股票\nHigh Vol: 成长/小盘\nCrypto: 加密货币")
+div_lookback_custom = input.int(5, "Custom Lookback / 自定义回看", minval=2, maxval=20, group=grp_divergence, tooltip="仅在 Custom 模式下使用")
+div_range_custom = input.int(60, "Custom Range / 自定义范围", minval=20, maxval=200, group=grp_divergence, tooltip="仅在 Custom 模式下使用")
+
+// 波动性检测 (用于 Auto 模式)
+// 使用长期平均波动率确保模式稳定 (simple int)
+atr_20 = ta.atr(20)
+avg_volatility = ta.sma(atr_20 / close * 100, 252)  // 252周期平均相对波动率
+
+// 根据长期平均波动率判断标的类型 (Auto 模式)
+// 低于1%: 低波动 (蓝筹/ETF), 1-3%: 正常, 3-6%: 高波动, 超过6%: 加密货币级别
+auto_vol_type = avg_volatility > 6 ? "Crypto" : avg_volatility > 3 ? "High Vol" : avg_volatility > 1 ? "Normal" : "Low Vol"
+
+// 实际使用的模式
+active_div_mode = div_mode == "Auto" ? auto_vol_type : div_mode
+
+// 根据模式设置参数 (预设值)
+// Low Vol: 3/40, Normal: 5/60, High Vol: 7/80, Crypto: 10/120
+div_lookback = div_mode == "Custom" ? div_lookback_custom : active_div_mode == "Low Vol" ? 3 : active_div_mode == "Normal" ? 5 : active_div_mode == "High Vol" ? 7 : 10
+div_range = div_mode == "Custom" ? div_range_custom : active_div_mode == "Low Vol" ? 40 : active_div_mode == "Normal" ? 60 : active_div_mode == "High Vol" ? 80 : 120
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ RSI CALCULATION
@@ -187,17 +206,63 @@ p90_tf3 = enable_mtf ? p90_tf3_raw : na
 f_status(_rsi, _p10, _p90) =>
     _rsi < _p10 ? 1 : _rsi > _p90 ? -1 : 0  // 1=oversold, -1=overbought, 0=neutral
 
+// 时间框架格式化函数 (统一显示为 1h/4h/D 等格式)
+f_tf_display(_tf) =>
+    switch _tf
+        "1" => "1m"
+        "3" => "3m"
+        "5" => "5m"
+        "15" => "15m"
+        "30" => "30m"
+        "45" => "45m"
+        "60" => "1h"
+        "120" => "2h"
+        "180" => "3h"
+        "240" => "4h"
+        "360" => "6h"
+        "480" => "8h"
+        "720" => "12h"
+        "D" => "D"
+        "1D" => "D"
+        "W" => "W"
+        "1W" => "W"
+        "M" => "M"
+        "1M" => "M"
+        => _tf
+
+// 格式化后的时间框架显示
+mtf_tf1_display = f_tf_display(mtf_tf1)
+mtf_tf2_display = f_tf_display(mtf_tf2)
+mtf_tf3_display = f_tf_display(mtf_tf3)
+current_tf_display = f_tf_display(timeframe.period)
+
 status_tf1 = f_status(rsi_tf1, p10_tf1, p90_tf1)
 status_tf2 = f_status(rsi_tf2, p10_tf2, p90_tf2)
 status_tf3 = f_status(rsi_tf3, p10_tf3, p90_tf3)
 status_current = f_status(rsi, rsi_p10, rsi_p90)
 
-// 共振检测
-oversold_count = (status_current == 1 ? 1 : 0) + (status_tf1 == 1 ? 1 : 0) + (status_tf2 == 1 ? 1 : 0) + (status_tf3 == 1 ? 1 : 0)
-overbought_count = (status_current == -1 ? 1 : 0) + (status_tf1 == -1 ? 1 : 0) + (status_tf2 == -1 ? 1 : 0) + (status_tf3 == -1 ? 1 : 0)
+// 共振检测 (跳过与当前图表重复的时间框架)
+// 比较格式化后的时间框架，避免 "60" vs "1h" 的问题
+tf1_is_current = mtf_tf1_display == current_tf_display
+tf2_is_current = mtf_tf2_display == current_tf_display
+tf3_is_current = mtf_tf3_display == current_tf_display
 
-oversold_resonance = oversold_count >= 3
-overbought_resonance = overbought_count >= 3
+// 计算有效的时间框架数量 (不包括当前图表重复的)
+valid_tf_count = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 1)
+
+// 超卖/超买计数 (跳过重复的时间框架)
+oversold_count = (status_current == 1 ? 1 : 0) + 
+                 (not tf1_is_current and status_tf1 == 1 ? 1 : 0) + 
+                 (not tf2_is_current and status_tf2 == 1 ? 1 : 0) + 
+                 (not tf3_is_current and status_tf3 == 1 ? 1 : 0)
+overbought_count = (status_current == -1 ? 1 : 0) + 
+                   (not tf1_is_current and status_tf1 == -1 ? 1 : 0) + 
+                   (not tf2_is_current and status_tf2 == -1 ? 1 : 0) + 
+                   (not tf3_is_current and status_tf3 == -1 ? 1 : 0)
+
+// 共振条件: 至少 3/4 或者所有有效时间框架都处于同一状态
+oversold_resonance = oversold_count >= 3 or (valid_tf_count <= 3 and oversold_count == valid_tf_count)
+overbought_resonance = overbought_count >= 3 or (valid_tf_count <= 3 and overbought_count == valid_tf_count)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ SIGNAL STATISTICS / 信号统计 (分层统计)
@@ -227,6 +292,14 @@ var int ext_sell_count = 0
 var float ext_sell_return = 0.0
 var int ext_sell_wins = 0
 
+// ⬆️⬇️ 普通信号统计 (弱)
+var int norm_buy_count = 0
+var float norm_buy_return = 0.0
+var int norm_buy_wins = 0
+var int norm_sell_count = 0
+var float norm_sell_return = 0.0
+var int norm_sell_wins = 0
+
 // 平均收益和胜率计算 (声明变量，稍后在信号定义后计算)
 var float mtf_buy_avg = 0.0
 var float mtf_sell_avg = 0.0
@@ -234,12 +307,16 @@ var float div_buy_avg = 0.0
 var float div_sell_avg = 0.0
 var float ext_buy_avg = 0.0
 var float ext_sell_avg = 0.0
+var float norm_buy_avg = 0.0
+var float norm_sell_avg = 0.0
 var float mtf_buy_winrate = 0.0
 var float mtf_sell_winrate = 0.0
 var float div_buy_winrate = 0.0
 var float div_sell_winrate = 0.0
 var float ext_buy_winrate = 0.0
 var float ext_sell_winrate = 0.0
+var float norm_buy_winrate = 0.0
+var float norm_sell_winrate = 0.0
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -429,6 +506,20 @@ if enable_stats and bar_index > stats_forward_bars
         ext_sell_return := ext_sell_return + forward_return_short
         if forward_return_short > 0
             ext_sell_wins := ext_sell_wins + 1
+    
+    // ⬆️ 普通买入
+    if sig_buy_normal[stats_forward_bars]
+        norm_buy_count := norm_buy_count + 1
+        norm_buy_return := norm_buy_return + forward_return_long
+        if forward_return_long > 0
+            norm_buy_wins := norm_buy_wins + 1
+    
+    // ⬇️ 普通卖出
+    if sig_sell_normal[stats_forward_bars]
+        norm_sell_count := norm_sell_count + 1
+        norm_sell_return := norm_sell_return + forward_return_short
+        if forward_return_short > 0
+            norm_sell_wins := norm_sell_wins + 1
 
 // 计算平均收益和胜率
 mtf_buy_avg := mtf_buy_count > 0 ? mtf_buy_return / mtf_buy_count : 0.0
@@ -437,6 +528,8 @@ div_buy_avg := div_buy_count > 0 ? div_buy_return / div_buy_count : 0.0
 div_sell_avg := div_sell_count > 0 ? div_sell_return / div_sell_count : 0.0
 ext_buy_avg := ext_buy_count > 0 ? ext_buy_return / ext_buy_count : 0.0
 ext_sell_avg := ext_sell_count > 0 ? ext_sell_return / ext_sell_count : 0.0
+norm_buy_avg := norm_buy_count > 0 ? norm_buy_return / norm_buy_count : 0.0
+norm_sell_avg := norm_sell_count > 0 ? norm_sell_return / norm_sell_count : 0.0
 
 mtf_buy_winrate := mtf_buy_count > 0 ? mtf_buy_wins / mtf_buy_count * 100 : 0.0
 mtf_sell_winrate := mtf_sell_count > 0 ? mtf_sell_wins / mtf_sell_count * 100 : 0.0
@@ -444,6 +537,8 @@ div_buy_winrate := div_buy_count > 0 ? div_buy_wins / div_buy_count * 100 : 0.0
 div_sell_winrate := div_sell_count > 0 ? div_sell_wins / div_sell_count * 100 : 0.0
 ext_buy_winrate := ext_buy_count > 0 ? ext_buy_wins / ext_buy_count * 100 : 0.0
 ext_sell_winrate := ext_sell_count > 0 ? ext_sell_wins / ext_sell_count * 100 : 0.0
+norm_buy_winrate := norm_buy_count > 0 ? norm_buy_wins / norm_buy_count * 100 : 0.0
+norm_sell_winrate := norm_sell_count > 0 ? norm_sell_wins / norm_sell_count * 100 : 0.0
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -462,9 +557,9 @@ plotshape(sig_sell_div, title="💎 背离+极端超买", style=shape.labeldown,
 plotshape(sig_sell_extreme, title="❄️ 极端超买", style=shape.triangledown, location=location.top, color=color_bear, size=size.small, text="❄️")
 plotshape(show_normal_signals and sig_sell_normal, title="⬇️ 普通超买", style=shape.circle, location=location.top, color=color.new(color_bear, 30), size=size.tiny, text="⬇️")
 
-// 背离单独标记 (使用offset回退到实际背离位置)
-plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️", offset=-div_lookback)
-plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️", offset=-div_lookback)
+// 背离单独标记 (信号已在 pivot 确认时触发，无需额外 offset)
+plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️")
+plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️")
 
 // 背景色高亮
 bgcolor(rsi < rsi_p5 ? color.new(color_bull, 90) : rsi > rsi_p95 ? color.new(color_bear, 90) : na, title="极端区背景")
@@ -498,10 +593,10 @@ if show_dashboard
         rsi_percentile := 99.0
 
     // 状态判断 (使用 Z-Score)
-    status_text = rsi_zscore < -2 ? "🟢 EXTREME OVERSOLD (σ<-2)" :
-                  rsi_zscore < -1.5 ? "🟡 OVERSOLD (σ<-1.5)" :
-                  rsi_zscore > 2 ? "🔴 EXTREME OVERBOUGHT (σ>2)" :
-                  rsi_zscore > 1.5 ? "🟠 OVERBOUGHT (σ>1.5)" : "⚪ NEUTRAL"
+    status_text = rsi_zscore < -2 ? "🟢 EXTREME OVERSOLD" :
+                  rsi_zscore < -1.5 ? "🟡 OVERSOLD" :
+                  rsi_zscore > 2 ? "🔴 EXTREME OVERBOUGHT" :
+                  rsi_zscore > 1.5 ? "🟠 OVERBOUGHT" : "⚪ NEUTRAL"
     
     status_color = rsi_zscore < -1.5 ? color_bull : rsi_zscore > 1.5 ? color_bear : color.gray
 
@@ -510,29 +605,35 @@ if show_dashboard
     txt_size_body = dashboard_size == "Tiny" ? size.tiny : dashboard_size == "Small" ? size.tiny : dashboard_size == "Normal" ? size.small : size.normal
     
     // 背离状态
-    div_text = bullish_divergence ? "🟢 BULL DIV" : bearish_divergence ? "🔴 BEAR DIV" : "—"
+    div_text = bullish_divergence ? "🟢 BULL" : bearish_divergence ? "🔴 BEAR" : "—"
     div_color = bullish_divergence ? #00BCD4 : bearish_divergence ? #FF9800 : color.gray
     
-    // 共振状态
-    resonance_text = oversold_resonance ? "🟢 " + str.tostring(oversold_count) + "/4 OVERSOLD" : 
-                     overbought_resonance ? "🔴 " + str.tostring(overbought_count) + "/4 OVERBOUGHT" : 
-                     "⚪ " + str.tostring(math.max(oversold_count, overbought_count)) + "/4"
+    // 共振状态 (使用动态的有效时间框架数)
+    resonance_text = oversold_resonance ? "🟢 " + str.tostring(oversold_count) + "/" + str.tostring(valid_tf_count) : 
+                     overbought_resonance ? "🔴 " + str.tostring(overbought_count) + "/" + str.tostring(valid_tf_count) : 
+                     "⚪ " + str.tostring(math.max(oversold_count, overbought_count)) + "/" + str.tostring(valid_tf_count)
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
-    // 计算行数 (分层统计需要7行: 标题 + 3类信号 x Buy/Sell)
-    total_rows = 8 + (enable_mtf ? 3 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 7 : 0)
+    // 计算行数: Lite模式3行, Full模式根据启用功能计算
+    lite_rows = 3
+    full_rows = 3 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
+    total_rows = dashboard_mode == "Lite" ? lite_rows : full_rows
 
     // 创建表格 - 深蓝灰色背景更易读
-    var table dashboard = table.new(position.top_right, 2, total_rows, 
+    var table dashboard = table.new(position.top_right, 2, 15, 
                                      bgcolor=color.new(#1a1a2e, dashboard_transparency),
                                      border_width=1, border_color=color.new(#4a4a6a, 50))
     
     if barstate.islast
         row = 0
         
+        // ═══════════════════════════════════════════════════════════════════════
+        // 核心信息 (Lite & Full 共享)
+        // ═══════════════════════════════════════════════════════════════════════
+        
         // 标题行
-        table.cell(dashboard, 0, row, "ADAPTIVE RSI PRO", text_color=color.white, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
-        table.cell(dashboard, 1, row, str.tostring(rsi, "#.0"), text_color=color_rsi, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
+        table.cell(dashboard, 0, row, "ADAPTIVE RSI", text_color=color.white, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
+        table.cell(dashboard, 1, row, str.tostring(rsi, "#.0") + " (" + str.tostring(rsi_zscore, "#.1") + "σ)", text_color=color_rsi, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
         row += 1
         
         // 状态
@@ -545,87 +646,64 @@ if show_dashboard
         table.cell(dashboard, 1, row, "P" + str.tostring(rsi_percentile, "#") + " " + trend_text, text_color=trend_color, text_size=txt_size_body)
         row += 1
         
-        // Z-Score
-        zscore_color = rsi_zscore < -2 ? color_bull : rsi_zscore < -1.5 ? #90EE90 : rsi_zscore > 2 ? color_bear : rsi_zscore > 1.5 ? #FFB6C1 : color.gray
-        table.cell(dashboard, 0, row, "Z-Score", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, str.tostring(rsi_zscore, "#.2") + "σ", text_color=zscore_color, text_size=txt_size_body)
-        row += 1
+        // ═══════════════════════════════════════════════════════════════════════
+        // Full 模式额外信息
+        // ═══════════════════════════════════════════════════════════════════════
         
-        // 分隔线
-        table.cell(dashboard, 0, row, "───────", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, "───────", text_color=color.gray, text_size=txt_size_body)
-        row += 1
-        
-        // 阈值
-        table.cell(dashboard, 0, row, "Overbought P90", text_color=color.new(color_bear, 30), text_size=txt_size_body)
-        table.cell(dashboard, 1, row, str.tostring(rsi_p90, "#.0"), text_color=color_bear, text_size=txt_size_body)
-        row += 1
-        
-        table.cell(dashboard, 0, row, "Median P50", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, str.tostring(rsi_p50, "#.0"), text_color=color.white, text_size=txt_size_body)
-        row += 1
-        
-        table.cell(dashboard, 0, row, "Oversold P10", text_color=color.new(color_bull, 30), text_size=txt_size_body)
-        table.cell(dashboard, 1, row, str.tostring(rsi_p10, "#.0"), text_color=color_bull, text_size=txt_size_body)
-        row += 1
-        
-        // MTF 部分
-        if enable_mtf
-            table.cell(dashboard, 0, row, "── MTF RSI ──", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, "───────", text_color=color.gray, text_size=txt_size_body)
-            row += 1
+        if dashboard_mode == "Full"
+            // MTF 部分 (使用格式化后的时间框架名称)
+            if enable_mtf
+                table.cell(dashboard, 0, row, "MTF " + mtf_tf1_display + "|" + mtf_tf2_display + "|" + mtf_tf3_display, text_color=color.gray, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, f_status_text(status_tf1) + "|" + f_status_text(status_tf2) + "|" + f_status_text(status_tf3), text_color=color.white, text_size=txt_size_body)
+                row += 1
+                
+                table.cell(dashboard, 0, row, "Resonance", text_color=color.gray, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, resonance_text, text_color=resonance_color, text_size=txt_size_body)
+                row += 1
             
-            table.cell(dashboard, 0, row, mtf_tf1 + " | " + mtf_tf2 + " | " + mtf_tf3, text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, f_status_text(status_tf1) + " | " + f_status_text(status_tf2) + " | " + f_status_text(status_tf3), text_color=color.white, text_size=txt_size_body)
-            row += 1
+            // 背离部分 (显示当前模式和参数)
+            if enable_divergence
+                div_mode_display = div_mode == "Auto" ? "[" + active_div_mode + "]" : ""
+                table.cell(dashboard, 0, row, "Divergence " + div_mode_display, text_color=color.gray, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, div_text + " (" + str.tostring(div_lookback) + "/" + str.tostring(div_range) + ")", text_color=div_color, text_size=txt_size_body)
+                row += 1
             
-            table.cell(dashboard, 0, row, "Resonance", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, resonance_text, text_color=resonance_color, text_size=txt_size_body)
-            row += 1
-        
-        // 背离部分
-        if enable_divergence
-            table.cell(dashboard, 0, row, "Divergence", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, div_text, text_color=div_color, text_size=txt_size_body)
-            row += 1
-        
-        // 统计部分 (分层显示 Buy/Sell)
-        if enable_stats
-            table.cell(dashboard, 0, row, "── STATS ──", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, "(" + str.tostring(stats_forward_bars) + " bars)", text_color=color.gray, text_size=txt_size_body)
-            row += 1
-            
-            // 🌟 MTF 共振
-            mtf_buy_color = mtf_buy_avg >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "🌟 MTF Buy(" + str.tostring(mtf_buy_count) + ")", text_color=#FFD700, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(mtf_buy_avg, "#.1") + "% | " + str.tostring(mtf_buy_winrate, "#") + "%", text_color=mtf_buy_color, text_size=txt_size_body)
-            row += 1
-            
-            mtf_sell_color = mtf_sell_avg >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "🌟 MTF Sell(" + str.tostring(mtf_sell_count) + ")", text_color=#FFD700, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(mtf_sell_avg, "#.1") + "% | " + str.tostring(mtf_sell_winrate, "#") + "%", text_color=mtf_sell_color, text_size=txt_size_body)
-            row += 1
-            
-            // 💎 背离+极端
-            div_buy_color = div_buy_avg >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "💎 Div Buy(" + str.tostring(div_buy_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(div_buy_avg, "#.1") + "% | " + str.tostring(div_buy_winrate, "#") + "%", text_color=div_buy_color, text_size=txt_size_body)
-            row += 1
-            
-            div_sell_color = div_sell_avg >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "💎 Div Sell(" + str.tostring(div_sell_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(div_sell_avg, "#.1") + "% | " + str.tostring(div_sell_winrate, "#") + "%", text_color=div_sell_color, text_size=txt_size_body)
-            row += 1
-            
-            // 🔥 极端
-            ext_buy_color = ext_buy_avg >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "🔥 Ext Buy(" + str.tostring(ext_buy_count) + ")", text_color=color_bull, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(ext_buy_avg, "#.1") + "% | " + str.tostring(ext_buy_winrate, "#") + "%", text_color=ext_buy_color, text_size=txt_size_body)
-            row += 1
-            
-            ext_sell_color = ext_sell_avg >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "🔥 Ext Sell(" + str.tostring(ext_sell_count) + ")", text_color=color_bear, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(ext_sell_avg, "#.1") + "% | " + str.tostring(ext_sell_winrate, "#") + "%", text_color=ext_sell_color, text_size=txt_size_body)
+            // 统计部分 (格式: 信号名(次数) | 收益% | 胜率%)
+            if enable_stats
+                table.cell(dashboard, 0, row, "── STATS ──", text_color=color.gray, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, "(" + str.tostring(stats_forward_bars) + " bars)", text_color=color.gray, text_size=txt_size_body)
+                row += 1
+                
+                // 🌟 MTF 共振
+                table.cell(dashboard, 0, row, "🌟 MTF Buy(" + str.tostring(mtf_buy_count) + ")", text_color=#FFD700, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(mtf_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(mtf_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                row += 1
+                table.cell(dashboard, 0, row, "🌟 MTF Sell(" + str.tostring(mtf_sell_count) + ")", text_color=#FFD700, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(mtf_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(mtf_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
+                row += 1
+                
+                // 💎 背离+极端
+                table.cell(dashboard, 0, row, "💎 Div Buy(" + str.tostring(div_buy_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(div_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(div_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                row += 1
+                table.cell(dashboard, 0, row, "💎 Div Sell(" + str.tostring(div_sell_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(div_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(div_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
+                row += 1
+                
+                // 🔥 极端
+                table.cell(dashboard, 0, row, "🔥 Ext Buy(" + str.tostring(ext_buy_count) + ")", text_color=color_bull, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(ext_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(ext_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                row += 1
+                table.cell(dashboard, 0, row, "❄️ Ext Sell(" + str.tostring(ext_sell_count) + ")", text_color=color_bear, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(ext_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(ext_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
+                row += 1
+                
+                // 普通信号
+                table.cell(dashboard, 0, row, "⬆️ Norm Buy(" + str.tostring(norm_buy_count) + ")", text_color=color.new(color_bull, 30), text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(norm_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(norm_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                row += 1
+                table.cell(dashboard, 0, row, "⬇️ Norm Sell(" + str.tostring(norm_sell_count) + ")", text_color=color.new(color_bear, 30), text_size=txt_size_body)
+                table.cell(dashboard, 1, row, str.tostring(norm_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(norm_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ ALERTS
