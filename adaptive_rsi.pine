@@ -67,7 +67,7 @@ show_normal_signals = input.bool(false, "Show Normal Signals (P10/P90) / 显示�
 
 grp_trend = "═══ Trend Filter / 趋势过滤 ═══"
 enable_trend_filter = input.bool(false, "Enable Trend Filter / 启用趋势过滤", group=grp_trend, tooltip="仅在趋势方向触发信号：上升趋势只做多，下降趋势只做空")
-trend_filter_mode = input.string("Adaptive P50", "Filter Mode / 过滤模式", options=["Fixed 50", "Adaptive P50", "SMA(RSI)"], group=grp_trend)
+trend_filter_mode = input.string("Auto", "Filter Mode / 过滤模式", options=["Auto", "Fixed 50", "Adaptive P50", "SMA(RSI)", "BB(RSI)"], group=grp_trend, tooltip="Auto: 根据RSI波动自动选择最佳模式")
 
 grp_mtf = "═══ Multi-Timeframe / 多时间框架 ═══"
 enable_mtf = input.bool(true, "Enable MTF RSI / 启用多时间框架", group=grp_mtf)
@@ -104,15 +104,40 @@ rsi_p90 = ta.percentile_nearest_rank(rsi, lookback, 90)
 rsi_p95 = ta.percentile_nearest_rank(rsi, lookback, 95)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ▶ TREND FILTER / 趋势过滤
+// ▶ TREND FILTER / 趋势过滤 (Auto-Adaptive)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// 计算各种过滤基准线
 rsi_sma = ta.sma(rsi, 20)
-trend_up = trend_filter_mode == "Fixed 50" ? rsi > 50 :
-           trend_filter_mode == "Adaptive P50" ? rsi > rsi_p50 :
-           rsi > rsi_sma
+rsi_bb_basis = ta.sma(rsi, 20)  // BB(RSI) 中轨
+
+// RSI 波动率检测 (用于自动模式选择)
+rsi_volatility = ta.stdev(rsi, 50)
+
+// 计算波动率的历史分位数 (自适应阈值)
+rsi_vol_p25 = ta.percentile_nearest_rank(rsi_volatility, 100, 25)  // 低波动阈值
+rsi_vol_p75 = ta.percentile_nearest_rank(rsi_volatility, 100, 75)  // 高波动阈值
+
+// 自动模式选择逻辑 (完全自适应):
+// - 低波动 (< P25): Fixed 50 足够稳定
+// - 中波动 (P25-P75): Adaptive P50 适应性更好  
+// - 高波动 (> P75): BB(RSI) 更能处理剧烈波动
+auto_selected_mode = rsi_volatility < rsi_vol_p25 ? "Fixed 50" :
+                     rsi_volatility > rsi_vol_p75 ? "BB(RSI)" : "Adaptive P50"
+
+// 实际使用的模式
+active_mode = trend_filter_mode == "Auto" ? auto_selected_mode : trend_filter_mode
+
+// 根据活动模式计算趋势方向
+trend_up = active_mode == "Fixed 50" ? rsi > 50 :
+           active_mode == "Adaptive P50" ? rsi > rsi_p50 :
+           active_mode == "SMA(RSI)" ? rsi > rsi_sma :
+           rsi > rsi_bb_basis  // BB(RSI)
 trend_down = not trend_up
-trend_text = trend_up ? "↑ UP" : "↓ DOWN"
+
+// 显示文本 (包含使用的模式)
+trend_mode_display = trend_filter_mode == "Auto" ? "[" + auto_selected_mode + "]" : ""
+trend_text = trend_up ? "↑ UP " + trend_mode_display : "↓ DOWN " + trend_mode_display
 trend_color = trend_up ? color_bull : color_bear
 
 // ══════════════════════════════════════════════════════════════════════════════
