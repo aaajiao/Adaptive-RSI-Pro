@@ -1,6 +1,42 @@
 // MIT License - Feel free to use, modify, and share.
 // © Adaptive RSI Pro - Dynamic Thresholds + MTF + Divergence + Statistics
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ EMOJI LEGEND / 信号图例
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// ┌─────────────────────────────────────────────────────────────────────────────┐
+// │ CHART SIGNALS / 图表信号                                                    │
+// ├─────────────────────────────────────────────────────────────────────────────┤
+// │ BUY / 买入 (显示在底部)                                                     │
+// │   🌟 MTF Resonance + Extreme Oversold  多周期共振+极端超卖 (最强买入信号)    │
+// │   💎 Divergence + Extreme Oversold     背离+极端超卖 (强买入信号)            │
+// │   🔥 Extreme Oversold (P5)             极端超卖 (买入信号)                   │
+// │   ⬆️ Normal Oversold (P10)              普通超卖 (弱买入，默认隐藏)          │
+// │   ↗️ Bullish Divergence Only            看涨背离 (潜在底部，非信号)          │
+// ├─────────────────────────────────────────────────────────────────────────────┤
+// │ SELL / 卖出 (显示在顶部)                                                    │
+// │   🌟 MTF Resonance + Extreme Overbought 多周期共振+极端超买 (最强卖出信号)   │
+// │   💎 Divergence + Extreme Overbought    背离+极端超买 (强卖出信号)           │
+// │   ❄️ Extreme Overbought (P95)           极端超买 (卖出信号)                  │
+// │   ⬇️ Normal Overbought (P90)            普通超买 (弱卖出，默认隐藏)          │
+// │   ↘️ Bearish Divergence Only            看跌背离 (潜在顶部，非信号)          │
+// ├─────────────────────────────────────────────────────────────────────────────┤
+// │ DASHBOARD STATUS / 仪表盘状态                                               │
+// │   🟢 Bullish/Oversold  看涨/超卖状态                                        │
+// │   🔴 Bearish/Overbought 看跌/超买状态                                       │
+// │   🟡 Mild Oversold     轻度超卖                                             │
+// │   🟠 Mild Overbought   轻度超买                                             │
+// │   ⚪ Neutral           中性状态                                             │
+// ├─────────────────────────────────────────────────────────────────────────────┤
+// │ ALERTS / 警报                                                               │
+// │   📈 Trend Shift Up    趋势向上 (RSI上穿P50)                                │
+// │   📉 Trend Shift Down  趋势向下 (RSI下穿P50)                                │
+// │   ⚡ Any Extreme       任意极端信号                                         │
+// └─────────────────────────────────────────────────────────────────────────────┘
+//
+// ══════════════════════════════════════════════════════════════════════════════
+
 //@version=5
 indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100)
 
