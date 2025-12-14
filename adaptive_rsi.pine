@@ -1,0 +1,502 @@
+// MIT License - Feel free to use, modify, and share.
+// © Adaptive RSI Pro - Dynamic Thresholds + MTF + Divergence + Statistics
+
+//@version=5
+indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ INPUTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+grp_rsi = "═══ RSI Settings / RSI设置 ═══"
+rsi_length = input.int(14, "RSI Length / RSI周期", minval=2, group=grp_rsi)
+rsi_source = input.source(close, "RSI Source / 数据源", group=grp_rsi)
+
+grp_adaptive = "═══ Adaptive Settings / 自适应设置 ═══"
+lookback = input.int(252, "Lookback Period / 回看周期", minval=50, maxval=2000, tooltip="建议：日线252，4小时1000，1小时2000", group=grp_adaptive)
+
+grp_visual = "═══ Visual Settings / 视觉设置 ═══"
+show_fill = input.bool(true, "Show Gradient Fill / 显示渐变填充", group=grp_visual)
+show_dashboard = input.bool(true, "Show Dashboard / 显示仪表盘", group=grp_visual)
+dashboard_size = input.string("Normal", "Dashboard Size / 面板大小", options=["Tiny", "Small", "Normal", "Large"], group=grp_visual)
+dashboard_transparency = input.int(30, "Dashboard Transparency / 面板透明度", minval=0, maxval=100, step=10, group=grp_visual)
+color_bull = input.color(color.new(#00E676, 60), "Bullish Color / 牛市颜色", group=grp_visual)
+color_bear = input.color(color.new(#FF5252, 60), "Bearish Color / 熊市颜色", group=grp_visual)
+color_rsi = input.color(#FFEB3B, "RSI Line Color / RSI线颜色", group=grp_visual)
+
+grp_alerts = "═══ Alert Settings / 警报设置 ═══"
+enable_extreme_alerts = input.bool(true, "Extreme Alerts (P5/P95) / 极端警报", group=grp_alerts)
+enable_normal_alerts = input.bool(false, "Normal Alerts (P10/P90) / 普通警报", group=grp_alerts)
+show_normal_signals = input.bool(false, "Show Normal Signals (P10/P90) / 显示普通信号", group=grp_alerts, tooltip="⬆️⬇️ 普通超买/超卖信号，默认关闭")
+
+grp_trend = "═══ Trend Filter / 趋势过滤 ═══"
+enable_trend_filter = input.bool(false, "Enable Trend Filter / 启用趋势过滤", group=grp_trend, tooltip="仅在趋势方向触发信号：上升趋势只做多，下降趋势只做空")
+trend_filter_mode = input.string("Adaptive P50", "Filter Mode / 过滤模式", options=["Fixed 50", "Adaptive P50", "SMA(RSI)"], group=grp_trend)
+
+grp_mtf = "═══ Multi-Timeframe / 多时间框架 ═══"
+enable_mtf = input.bool(true, "Enable MTF RSI / 启用多时间框架", group=grp_mtf)
+mtf_tf1 = input.timeframe("60", "Timeframe 1 / 时间框架1", group=grp_mtf)
+mtf_tf2 = input.timeframe("240", "Timeframe 2 / 时间框架2", group=grp_mtf)
+mtf_tf3 = input.timeframe("D", "Timeframe 3 / 时间框架3", group=grp_mtf)
+
+grp_stats = "═══ Signal Statistics / 信号统计 ═══"
+enable_stats = input.bool(true, "Enable Statistics / 启用统计", group=grp_stats)
+stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, maxval=100, group=grp_stats, tooltip="信号触发后多少根K线计算收益")
+
+grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
+enable_divergence = input.bool(true, "Enable Divergence Detection / 启用背离检测", group=grp_divergence)
+div_lookback = input.int(5, "Pivot Lookback / 枢轴回看", minval=2, maxval=20, group=grp_divergence, tooltip="用于检测高低点的回看周期")
+div_range = input.int(60, "Max Range / 最大范围", minval=20, maxval=200, group=grp_divergence, tooltip="背离检测的最大K线范围")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ RSI CALCULATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+rsi = ta.rsi(rsi_source, rsi_length)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ ADAPTIVE PERCENTILE CALCULATION (Nearest Rank - More Accurate)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 使用 percentile_nearest_rank 获得更精准的分布
+rsi_p5  = ta.percentile_nearest_rank(rsi, lookback, 5)
+rsi_p10 = ta.percentile_nearest_rank(rsi, lookback, 10)
+rsi_p25 = ta.percentile_nearest_rank(rsi, lookback, 25)
+rsi_p50 = ta.percentile_nearest_rank(rsi, lookback, 50)
+rsi_p75 = ta.percentile_nearest_rank(rsi, lookback, 75)
+rsi_p90 = ta.percentile_nearest_rank(rsi, lookback, 90)
+rsi_p95 = ta.percentile_nearest_rank(rsi, lookback, 95)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ TREND FILTER / 趋势过滤
+// ══════════════════════════════════════════════════════════════════════════════
+
+rsi_sma = ta.sma(rsi, 20)
+trend_up = trend_filter_mode == "Fixed 50" ? rsi > 50 :
+           trend_filter_mode == "Adaptive P50" ? rsi > rsi_p50 :
+           rsi > rsi_sma
+trend_down = not trend_up
+trend_text = trend_up ? "↑ UP" : "↓ DOWN"
+trend_color = trend_up ? color_bull : color_bear
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ MULTI-TIMEFRAME RSI / 多时间框架RSI
+// ══════════════════════════════════════════════════════════════════════════════
+
+// MTF RSI 计算
+f_rsi_mtf(_tf) =>
+    request.security(syminfo.tickerid, _tf, rsi, lookahead=barmerge.lookahead_off)
+
+f_percentiles_mtf(_tf) =>
+    [request.security(syminfo.tickerid, _tf, rsi_p10, lookahead=barmerge.lookahead_off),
+     request.security(syminfo.tickerid, _tf, rsi_p90, lookahead=barmerge.lookahead_off)]
+
+rsi_tf1 = enable_mtf ? f_rsi_mtf(mtf_tf1) : na
+rsi_tf2 = enable_mtf ? f_rsi_mtf(mtf_tf2) : na
+rsi_tf3 = enable_mtf ? f_rsi_mtf(mtf_tf3) : na
+
+// MTF percentiles - 需要分开处理因为 Pine Script 不支持三元操作符返回元组
+[p10_tf1_raw, p90_tf1_raw] = f_percentiles_mtf(mtf_tf1)
+[p10_tf2_raw, p90_tf2_raw] = f_percentiles_mtf(mtf_tf2)
+[p10_tf3_raw, p90_tf3_raw] = f_percentiles_mtf(mtf_tf3)
+
+p10_tf1 = enable_mtf ? p10_tf1_raw : na
+p90_tf1 = enable_mtf ? p90_tf1_raw : na
+p10_tf2 = enable_mtf ? p10_tf2_raw : na
+p90_tf2 = enable_mtf ? p90_tf2_raw : na
+p10_tf3 = enable_mtf ? p10_tf3_raw : na
+p90_tf3 = enable_mtf ? p90_tf3_raw : na
+
+// 计算各时间框架状态
+f_status(_rsi, _p10, _p90) =>
+    _rsi < _p10 ? 1 : _rsi > _p90 ? -1 : 0  // 1=oversold, -1=overbought, 0=neutral
+
+status_tf1 = f_status(rsi_tf1, p10_tf1, p90_tf1)
+status_tf2 = f_status(rsi_tf2, p10_tf2, p90_tf2)
+status_tf3 = f_status(rsi_tf3, p10_tf3, p90_tf3)
+status_current = f_status(rsi, rsi_p10, rsi_p90)
+
+// 共振检测
+oversold_count = (status_current == 1 ? 1 : 0) + (status_tf1 == 1 ? 1 : 0) + (status_tf2 == 1 ? 1 : 0) + (status_tf3 == 1 ? 1 : 0)
+overbought_count = (status_current == -1 ? 1 : 0) + (status_tf1 == -1 ? 1 : 0) + (status_tf2 == -1 ? 1 : 0) + (status_tf3 == -1 ? 1 : 0)
+
+oversold_resonance = oversold_count >= 3
+overbought_resonance = overbought_count >= 3
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ SIGNAL STATISTICS / 信号统计
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 计算信号后N根K线的收益
+var int ext_os_count = 0
+var float ext_os_total_return = 0.0
+var int ext_os_win_count = 0
+
+var int ext_ob_count = 0
+var float ext_ob_total_return = 0.0
+var int ext_ob_win_count = 0
+
+// 检测历史信号的收益 (前瞻N根K线)
+ext_oversold_signal = ta.crossunder(rsi, rsi_p5)
+ext_overbought_signal = ta.crossover(rsi, rsi_p95)
+
+// 使用历史信号计算收益
+if enable_stats and ext_oversold_signal[stats_forward_bars] and bar_index > stats_forward_bars
+    forward_return = (close - close[stats_forward_bars]) / close[stats_forward_bars] * 100
+    ext_os_count := ext_os_count + 1
+    ext_os_total_return := ext_os_total_return + forward_return
+    if forward_return > 0
+        ext_os_win_count := ext_os_win_count + 1
+
+if enable_stats and ext_overbought_signal[stats_forward_bars] and bar_index > stats_forward_bars
+    forward_return = (close[stats_forward_bars] - close) / close[stats_forward_bars] * 100  // 做空收益
+    ext_ob_count := ext_ob_count + 1
+    ext_ob_total_return := ext_ob_total_return + forward_return
+    if forward_return > 0
+        ext_ob_win_count := ext_ob_win_count + 1
+
+ext_os_avg_return = ext_os_count > 0 ? ext_os_total_return / ext_os_count : 0.0
+ext_ob_avg_return = ext_ob_count > 0 ? ext_ob_total_return / ext_ob_count : 0.0
+ext_os_win_rate = ext_os_count > 0 ? ext_os_win_count / ext_os_count * 100 : 0.0
+ext_ob_win_rate = ext_ob_count > 0 ? ext_ob_win_count / ext_ob_count * 100 : 0.0
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ DIVERGENCE DETECTION / 背离检测
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Pivot 检测
+price_pivot_low = ta.pivotlow(low, div_lookback, div_lookback)
+price_pivot_high = ta.pivothigh(high, div_lookback, div_lookback)
+rsi_pivot_low = ta.pivotlow(rsi, div_lookback, div_lookback)
+rsi_pivot_high = ta.pivothigh(rsi, div_lookback, div_lookback)
+
+// 存储上一个 Pivot 点
+var float prev_price_low = na
+var float prev_rsi_low = na
+var int prev_low_bar = na
+var float prev_price_high = na
+var float prev_rsi_high = na
+var int prev_high_bar = na
+
+// 背离信号
+var bool bullish_divergence = false
+var bool bearish_divergence = false
+
+if enable_divergence
+    // 检测新的低点
+    if not na(price_pivot_low) and not na(rsi_pivot_low)
+        current_bar = bar_index - div_lookback
+        if not na(prev_price_low) and not na(prev_rsi_low)
+            bars_since = current_bar - prev_low_bar
+            // 看涨背离: 价格创新低，RSI未创新低
+            if bars_since <= div_range and low[div_lookback] < prev_price_low and rsi[div_lookback] > prev_rsi_low
+                bullish_divergence := true
+            else
+                bullish_divergence := false
+        else
+            bullish_divergence := false
+        prev_price_low := low[div_lookback]
+        prev_rsi_low := rsi[div_lookback]
+        prev_low_bar := current_bar
+    else
+        bullish_divergence := false
+    
+    // 检测新的高点
+    if not na(price_pivot_high) and not na(rsi_pivot_high)
+        current_bar = bar_index - div_lookback
+        if not na(prev_price_high) and not na(prev_rsi_high)
+            bars_since = current_bar - prev_high_bar
+            // 看跌背离: 价格创新高，RSI未创新高
+            if bars_since <= div_range and high[div_lookback] > prev_price_high and rsi[div_lookback] < prev_rsi_high
+                bearish_divergence := true
+            else
+                bearish_divergence := false
+        else
+            bearish_divergence := false
+        prev_price_high := high[div_lookback]
+        prev_rsi_high := rsi[div_lookback]
+        prev_high_bar := current_bar
+    else
+        bearish_divergence := false
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ VISUAL PLOTTING
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 绘制百分位线
+p95_line = plot(rsi_p95, "P95 极端超买", color=color.new(color_bear, 70), linewidth=1)
+p90_line = plot(rsi_p90, "P90 超买", color=color.new(color_bear, 80), linewidth=1, style=plot.style_circles)
+p75_line = plot(rsi_p75, "P75", color=color.new(color.gray, 85), linewidth=1)
+p50_line = plot(rsi_p50, "P50 中位数", color=color.new(color.white, 50), linewidth=2, style=plot.style_stepline)
+p25_line = plot(rsi_p25, "P25", color=color.new(color.gray, 85), linewidth=1)
+p10_line = plot(rsi_p10, "P10 超卖", color=color.new(color_bull, 80), linewidth=1, style=plot.style_circles)
+p5_line  = plot(rsi_p5, "P5 极端超卖", color=color.new(color_bull, 70), linewidth=1)
+
+// RSI 主线
+rsi_line = plot(rsi, "RSI", color=color_rsi, linewidth=2)
+
+// 渐变填充 - 使用条件颜色控制显示/隐藏
+// 上半部分渐变 (熊市区域)
+fill(p95_line, p90_line, color=show_fill ? color.new(color_bear, 75) : na, title="极端超买区")
+fill(p90_line, p75_line, color=show_fill ? color.new(color_bear, 88) : na, title="超买区")
+fill(p75_line, p50_line, color=show_fill ? color.new(color_bear, 95) : na, title="偏强区")
+
+// 下半部分渐变 (牛市区域)
+fill(p50_line, p25_line, color=show_fill ? color.new(color_bull, 95) : na, title="偏弱区")
+fill(p25_line, p10_line, color=show_fill ? color.new(color_bull, 88) : na, title="超卖区")
+fill(p10_line, p5_line, color=show_fill ? color.new(color_bull, 75) : na, title="极端超卖区")
+
+// 固定边界参考线
+hline(0, "0", color=color.new(color.gray, 80), linestyle=hline.style_dotted)
+hline(100, "100", color=color.new(color.gray, 80), linestyle=hline.style_dotted)
+hline(50, "50 固定中线", color=color.new(color.gray, 90), linestyle=hline.style_dotted)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ SIGNAL DETECTION
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 基础信号
+raw_extreme_oversold = ta.crossunder(rsi, rsi_p5)
+raw_extreme_overbought = ta.crossover(rsi, rsi_p95)
+raw_normal_oversold = ta.crossunder(rsi, rsi_p10) and not raw_extreme_oversold
+raw_normal_overbought = ta.crossover(rsi, rsi_p90) and not raw_extreme_overbought
+
+// 应用趋势过滤
+extreme_oversold = enable_trend_filter ? (raw_extreme_oversold and trend_down) : raw_extreme_oversold
+extreme_overbought = enable_trend_filter ? (raw_extreme_overbought and trend_up) : raw_extreme_overbought
+normal_oversold = enable_trend_filter ? (raw_normal_oversold and trend_down) : raw_normal_oversold
+normal_overbought = enable_trend_filter ? (raw_normal_overbought and trend_up) : raw_normal_overbought
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ CONSOLIDATED SIGNALS (优先级合并信号)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 极端区域判断 - 当前K线
+bool in_extreme_oversold = rsi < rsi_p5
+bool in_extreme_overbought = rsi > rsi_p95
+
+// 极端区域判断 - 背离发生时 (div_lookback 根K线前)
+bool was_extreme_oversold = rsi[div_lookback] < rsi_p5[div_lookback]
+bool was_extreme_overbought = rsi[div_lookback] > rsi_p95[div_lookback]
+
+// 买入信号优先级 (高到低): MTF共振 > 背离+极端区 > 极端 > 普通
+bool sig_buy_mtf = enable_mtf and oversold_resonance and extreme_oversold
+bool sig_buy_div = enable_divergence and bullish_divergence and was_extreme_oversold and not sig_buy_mtf
+bool sig_buy_extreme = extreme_oversold and not sig_buy_mtf and not sig_buy_div
+bool sig_buy_normal = normal_oversold and not sig_buy_mtf and not sig_buy_div and not sig_buy_extreme
+
+// 卖出信号优先级 (高到低): MTF共振 > 背离+极端区 > 极端 > 普通
+bool sig_sell_mtf = enable_mtf and overbought_resonance and extreme_overbought
+bool sig_sell_div = enable_divergence and bearish_divergence and was_extreme_overbought and not sig_sell_mtf
+bool sig_sell_extreme = extreme_overbought and not sig_sell_mtf and not sig_sell_div
+bool sig_sell_normal = normal_overbought and not sig_sell_mtf and not sig_sell_div and not sig_sell_extreme
+
+// 背离单独显示 (背离时不在极端区域)
+bool sig_div_bull_only = enable_divergence and bullish_divergence and not was_extreme_oversold
+bool sig_div_bear_only = enable_divergence and bearish_divergence and not was_extreme_overbought
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ SIGNAL DISPLAY (信号显示)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 买入信号 (底部)
+plotshape(sig_buy_mtf, title="🌟 MTF+极端超卖", style=shape.labelup, location=location.bottom, color=#00E676, size=size.normal, text="🌟", textcolor=color.white)
+plotshape(sig_buy_div, title="💎 背离+极端超卖", style=shape.labelup, location=location.bottom, color=#00BCD4, size=size.normal, text="💎", textcolor=color.white)
+plotshape(sig_buy_extreme, title="🔥 极端超卖", style=shape.triangleup, location=location.bottom, color=color_bull, size=size.small, text="🔥")
+plotshape(show_normal_signals and sig_buy_normal, title="⬆️ 普通超卖", style=shape.circle, location=location.bottom, color=color.new(color_bull, 30), size=size.tiny, text="⬆️")
+
+// 卖出信号 (顶部)
+plotshape(sig_sell_mtf, title="🌟 MTF+极端超买", style=shape.labeldown, location=location.top, color=#FF5252, size=size.normal, text="🌟", textcolor=color.white)
+plotshape(sig_sell_div, title="💎 背离+极端超买", style=shape.labeldown, location=location.top, color=#FF9800, size=size.normal, text="💎", textcolor=color.white)
+plotshape(sig_sell_extreme, title="❄️ 极端超买", style=shape.triangledown, location=location.top, color=color_bear, size=size.small, text="❄️")
+plotshape(show_normal_signals and sig_sell_normal, title="⬇️ 普通超买", style=shape.circle, location=location.top, color=color.new(color_bear, 30), size=size.tiny, text="⬇️")
+
+// 背离单独标记 (使用offset回退到实际背离位置)
+plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️", offset=-div_lookback)
+plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️", offset=-div_lookback)
+
+// 背景色高亮
+bgcolor(rsi < rsi_p5 ? color.new(color_bull, 90) : rsi > rsi_p95 ? color.new(color_bear, 90) : na, title="极端区背景")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+
+// MTF 状态转文字 (定义在 if 块外部)
+f_status_text(_status) =>
+    _status == 1 ? "🟢" : _status == -1 ? "🔴" : "⚪"
+
+if show_dashboard
+    // 计算当前RSI在分布中的位置
+    rsi_percentile = 0.0
+    if rsi <= rsi_p5
+        rsi_percentile := 5.0
+    else if rsi <= rsi_p10
+        rsi_percentile := 10.0
+    else if rsi <= rsi_p25
+        rsi_percentile := 25.0
+    else if rsi <= rsi_p50
+        rsi_percentile := 50.0
+    else if rsi <= rsi_p75
+        rsi_percentile := 75.0
+    else if rsi <= rsi_p90
+        rsi_percentile := 90.0
+    else if rsi <= rsi_p95
+        rsi_percentile := 95.0
+    else
+        rsi_percentile := 99.0
+
+    // 状态判断
+    status_text = rsi < rsi_p5 ? "🟢 EXTREME OVERSOLD" :
+                  rsi < rsi_p10 ? "🟡 OVERSOLD" :
+                  rsi > rsi_p95 ? "🔴 EXTREME OVERBOUGHT" :
+                  rsi > rsi_p90 ? "🟠 OVERBOUGHT" : "⚪ NEUTRAL"
+    
+    status_color = rsi < rsi_p10 ? color_bull : rsi > rsi_p90 ? color_bear : color.gray
+
+    // 字体大小转换
+    txt_size_title = dashboard_size == "Tiny" ? size.tiny : dashboard_size == "Small" ? size.small : dashboard_size == "Normal" ? size.normal : size.large
+    txt_size_body = dashboard_size == "Tiny" ? size.tiny : dashboard_size == "Small" ? size.tiny : dashboard_size == "Normal" ? size.small : size.normal
+    
+    // 背离状态
+    div_text = bullish_divergence ? "🟢 BULL DIV" : bearish_divergence ? "🔴 BEAR DIV" : "—"
+    div_color = bullish_divergence ? #00BCD4 : bearish_divergence ? #FF9800 : color.gray
+    
+    // 共振状态
+    resonance_text = oversold_resonance ? "🟢 " + str.tostring(oversold_count) + "/4 OVERSOLD" : 
+                     overbought_resonance ? "🔴 " + str.tostring(overbought_count) + "/4 OVERBOUGHT" : 
+                     "⚪ " + str.tostring(math.max(oversold_count, overbought_count)) + "/4"
+    resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
+
+    // 计算行数
+    total_rows = 7 + (enable_mtf ? 3 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 3 : 0)
+
+    // 创建表格 - 深蓝灰色背景更易读
+    var table dashboard = table.new(position.top_right, 2, total_rows, 
+                                     bgcolor=color.new(#1a1a2e, dashboard_transparency),
+                                     border_width=1, border_color=color.new(#4a4a6a, 50))
+    
+    if barstate.islast
+        row = 0
+        
+        // 标题行
+        table.cell(dashboard, 0, row, "ADAPTIVE RSI PRO", text_color=color.white, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
+        table.cell(dashboard, 1, row, str.tostring(rsi, "#.0"), text_color=color_rsi, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
+        row += 1
+        
+        // 状态
+        table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, status_text, text_color=status_color, text_size=txt_size_body)
+        row += 1
+        
+        // 百分位 + 趋势
+        table.cell(dashboard, 0, row, "Percentile", text_color=color.gray, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, "P" + str.tostring(rsi_percentile, "#") + " " + trend_text, text_color=trend_color, text_size=txt_size_body)
+        row += 1
+        
+        // 分隔线
+        table.cell(dashboard, 0, row, "───────", text_color=color.gray, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, "───────", text_color=color.gray, text_size=txt_size_body)
+        row += 1
+        
+        // 阈值
+        table.cell(dashboard, 0, row, "Overbought P90", text_color=color.new(color_bear, 30), text_size=txt_size_body)
+        table.cell(dashboard, 1, row, str.tostring(rsi_p90, "#.0"), text_color=color_bear, text_size=txt_size_body)
+        row += 1
+        
+        table.cell(dashboard, 0, row, "Median P50", text_color=color.gray, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, str.tostring(rsi_p50, "#.0"), text_color=color.white, text_size=txt_size_body)
+        row += 1
+        
+        table.cell(dashboard, 0, row, "Oversold P10", text_color=color.new(color_bull, 30), text_size=txt_size_body)
+        table.cell(dashboard, 1, row, str.tostring(rsi_p10, "#.0"), text_color=color_bull, text_size=txt_size_body)
+        row += 1
+        
+        // MTF 部分
+        if enable_mtf
+            table.cell(dashboard, 0, row, "── MTF RSI ──", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, "───────", text_color=color.gray, text_size=txt_size_body)
+            row += 1
+            
+            table.cell(dashboard, 0, row, mtf_tf1 + " | " + mtf_tf2 + " | " + mtf_tf3, text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, f_status_text(status_tf1) + " | " + f_status_text(status_tf2) + " | " + f_status_text(status_tf3), text_color=color.white, text_size=txt_size_body)
+            row += 1
+            
+            table.cell(dashboard, 0, row, "Resonance", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, resonance_text, text_color=resonance_color, text_size=txt_size_body)
+            row += 1
+        
+        // 背离部分
+        if enable_divergence
+            table.cell(dashboard, 0, row, "Divergence", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, div_text, text_color=div_color, text_size=txt_size_body)
+            row += 1
+        
+        // 统计部分
+        if enable_stats
+            table.cell(dashboard, 0, row, "── STATS ──", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, "(" + str.tostring(stats_forward_bars) + " bars)", text_color=color.gray, text_size=txt_size_body)
+            row += 1
+            
+            os_return_color = ext_os_avg_return >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "🟢 Oversold(" + str.tostring(ext_os_count) + ")", text_color=color_bull, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(ext_os_avg_return, "#.1") + "% | " + str.tostring(ext_os_win_rate, "#") + "%", text_color=os_return_color, text_size=txt_size_body)
+            row += 1
+            
+            ob_return_color = ext_ob_avg_return >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "🔴 Overbought(" + str.tostring(ext_ob_count) + ")", text_color=color_bear, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(ext_ob_avg_return, "#.1") + "% | " + str.tostring(ext_ob_win_rate, "#") + "%", text_color=ob_return_color, text_size=txt_size_body)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ ALERTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 极端警报
+alertcondition(extreme_oversold and enable_extreme_alerts, 
+               title="🟢 Extreme Oversold / 极端超卖", 
+               message="{{ticker}}: RSI crossed below P5 ({{plot_0}}). Extreme oversold condition detected!")
+
+alertcondition(extreme_overbought and enable_extreme_alerts, 
+               title="🔴 Extreme Overbought / 极端超买", 
+               message="{{ticker}}: RSI crossed above P95 ({{plot_0}}). Extreme overbought condition detected!")
+
+// 普通警报
+alertcondition(normal_oversold and enable_normal_alerts, 
+               title="🟡 Oversold / 超卖", 
+               message="{{ticker}}: RSI crossed below P10 ({{plot_0}}). Oversold condition detected.")
+
+alertcondition(normal_overbought and enable_normal_alerts, 
+               title="🟠 Overbought / 超买", 
+               message="{{ticker}}: RSI crossed above P90 ({{plot_0}}). Overbought condition detected.")
+
+// 综合警报
+alertcondition(extreme_oversold or extreme_overbought, 
+               title="⚡ Any Extreme Signal / 任意极端信号", 
+               message="{{ticker}}: Extreme RSI signal detected at {{plot_0}}")
+
+// MTF 共振警报
+alertcondition(enable_mtf and oversold_resonance and raw_extreme_oversold, 
+               title="🌟 MTF Oversold Resonance / 多周期超卖共振", 
+               message="{{ticker}}: Multiple timeframes showing oversold condition - Strong buy signal!")
+
+alertcondition(enable_mtf and overbought_resonance and raw_extreme_overbought, 
+               title="🌟 MTF Overbought Resonance / 多周期超买共振", 
+               message="{{ticker}}: Multiple timeframes showing overbought condition - Strong sell signal!")
+
+// 背离警报
+alertcondition(enable_divergence and bullish_divergence, 
+               title="💎 Bullish Divergence / 看涨背离", 
+               message="{{ticker}}: RSI bullish divergence detected - Price making lower low but RSI making higher low")
+
+alertcondition(enable_divergence and bearish_divergence, 
+               title="💎 Bearish Divergence / 看跌背离", 
+               message="{{ticker}}: RSI bearish divergence detected - Price making higher high but RSI making lower high")
+
+// 趋势变化警报
+alertcondition(ta.crossover(rsi, rsi_p50), 
+               title="📈 Trend Shift Bullish / 趋势转多", 
+               message="{{ticker}}: RSI crossed above adaptive median (P50) - Trend shift to bullish")
+
+alertcondition(ta.crossunder(rsi, rsi_p50), 
+               title="📉 Trend Shift Bearish / 趋势转空", 
+               message="{{ticker}}: RSI crossed below adaptive median (P50) - Trend shift to bearish")
