@@ -200,41 +200,47 @@ oversold_resonance = oversold_count >= 3
 overbought_resonance = overbought_count >= 3
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ▶ SIGNAL STATISTICS / 信号统计
+// ▶ SIGNAL STATISTICS / 信号统计 (分层统计)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 计算信号后N根K线的收益
-var int ext_os_count = 0
-var float ext_os_total_return = 0.0
-var int ext_os_win_count = 0
+// 🌟 MTF 共振信号统计 (最强)
+var int mtf_buy_count = 0
+var float mtf_buy_return = 0.0
+var int mtf_buy_wins = 0
+var int mtf_sell_count = 0
+var float mtf_sell_return = 0.0
+var int mtf_sell_wins = 0
 
-var int ext_ob_count = 0
-var float ext_ob_total_return = 0.0
-var int ext_ob_win_count = 0
+// 💎 背离+极端信号统计 (强)
+var int div_buy_count = 0
+var float div_buy_return = 0.0
+var int div_buy_wins = 0
+var int div_sell_count = 0
+var float div_sell_return = 0.0
+var int div_sell_wins = 0
 
-// 检测历史信号的收益 (前瞻N根K线) - 使用 Z-Score
-ext_oversold_signal = ta.crossunder(rsi_zscore, -2)
-ext_overbought_signal = ta.crossover(rsi_zscore, 2)
+// 🔥 极端信号统计 (基础)
+var int ext_buy_count = 0
+var float ext_buy_return = 0.0
+var int ext_buy_wins = 0
+var int ext_sell_count = 0
+var float ext_sell_return = 0.0
+var int ext_sell_wins = 0
 
-// 使用历史信号计算收益
-if enable_stats and ext_oversold_signal[stats_forward_bars] and bar_index > stats_forward_bars
-    forward_return = (close - close[stats_forward_bars]) / close[stats_forward_bars] * 100
-    ext_os_count := ext_os_count + 1
-    ext_os_total_return := ext_os_total_return + forward_return
-    if forward_return > 0
-        ext_os_win_count := ext_os_win_count + 1
+// 平均收益和胜率计算 (声明变量，稍后在信号定义后计算)
+var float mtf_buy_avg = 0.0
+var float mtf_sell_avg = 0.0
+var float div_buy_avg = 0.0
+var float div_sell_avg = 0.0
+var float ext_buy_avg = 0.0
+var float ext_sell_avg = 0.0
+var float mtf_buy_winrate = 0.0
+var float mtf_sell_winrate = 0.0
+var float div_buy_winrate = 0.0
+var float div_sell_winrate = 0.0
+var float ext_buy_winrate = 0.0
+var float ext_sell_winrate = 0.0
 
-if enable_stats and ext_overbought_signal[stats_forward_bars] and bar_index > stats_forward_bars
-    forward_return = (close[stats_forward_bars] - close) / close[stats_forward_bars] * 100  // 做空收益
-    ext_ob_count := ext_ob_count + 1
-    ext_ob_total_return := ext_ob_total_return + forward_return
-    if forward_return > 0
-        ext_ob_win_count := ext_ob_win_count + 1
-
-ext_os_avg_return = ext_os_count > 0 ? ext_os_total_return / ext_os_count : 0.0
-ext_ob_avg_return = ext_ob_count > 0 ? ext_ob_total_return / ext_ob_count : 0.0
-ext_os_win_rate = ext_os_count > 0 ? ext_os_win_count / ext_os_count * 100 : 0.0
-ext_ob_win_rate = ext_ob_count > 0 ? ext_ob_win_count / ext_ob_count * 100 : 0.0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ DIVERGENCE DETECTION / 背离检测
@@ -375,6 +381,72 @@ bool sig_div_bull_only = enable_divergence and bullish_divergence and not was_ex
 bool sig_div_bear_only = enable_divergence and bearish_divergence and not was_extreme_overbought
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ▶ STATISTICS CALCULATION (使用实际触发的信号)
+// ══════════════════════════════════════════════════════════════════════════════
+
+if enable_stats and bar_index > stats_forward_bars
+    forward_return_long = (close - close[stats_forward_bars]) / close[stats_forward_bars] * 100
+    forward_return_short = (close[stats_forward_bars] - close) / close[stats_forward_bars] * 100
+    
+    // 🌟 MTF 共振买入
+    if sig_buy_mtf[stats_forward_bars]
+        mtf_buy_count := mtf_buy_count + 1
+        mtf_buy_return := mtf_buy_return + forward_return_long
+        if forward_return_long > 0
+            mtf_buy_wins := mtf_buy_wins + 1
+    
+    // 🌟 MTF 共振卖出
+    if sig_sell_mtf[stats_forward_bars]
+        mtf_sell_count := mtf_sell_count + 1
+        mtf_sell_return := mtf_sell_return + forward_return_short
+        if forward_return_short > 0
+            mtf_sell_wins := mtf_sell_wins + 1
+    
+    // 💎 背离+极端买入
+    if sig_buy_div[stats_forward_bars]
+        div_buy_count := div_buy_count + 1
+        div_buy_return := div_buy_return + forward_return_long
+        if forward_return_long > 0
+            div_buy_wins := div_buy_wins + 1
+    
+    // 💎 背离+极端卖出
+    if sig_sell_div[stats_forward_bars]
+        div_sell_count := div_sell_count + 1
+        div_sell_return := div_sell_return + forward_return_short
+        if forward_return_short > 0
+            div_sell_wins := div_sell_wins + 1
+    
+    // 🔥 极端买入
+    if sig_buy_extreme[stats_forward_bars]
+        ext_buy_count := ext_buy_count + 1
+        ext_buy_return := ext_buy_return + forward_return_long
+        if forward_return_long > 0
+            ext_buy_wins := ext_buy_wins + 1
+    
+    // 🔥 极端卖出
+    if sig_sell_extreme[stats_forward_bars]
+        ext_sell_count := ext_sell_count + 1
+        ext_sell_return := ext_sell_return + forward_return_short
+        if forward_return_short > 0
+            ext_sell_wins := ext_sell_wins + 1
+
+// 计算平均收益和胜率
+mtf_buy_avg := mtf_buy_count > 0 ? mtf_buy_return / mtf_buy_count : 0.0
+mtf_sell_avg := mtf_sell_count > 0 ? mtf_sell_return / mtf_sell_count : 0.0
+div_buy_avg := div_buy_count > 0 ? div_buy_return / div_buy_count : 0.0
+div_sell_avg := div_sell_count > 0 ? div_sell_return / div_sell_count : 0.0
+ext_buy_avg := ext_buy_count > 0 ? ext_buy_return / ext_buy_count : 0.0
+ext_sell_avg := ext_sell_count > 0 ? ext_sell_return / ext_sell_count : 0.0
+
+mtf_buy_winrate := mtf_buy_count > 0 ? mtf_buy_wins / mtf_buy_count * 100 : 0.0
+mtf_sell_winrate := mtf_sell_count > 0 ? mtf_sell_wins / mtf_sell_count * 100 : 0.0
+div_buy_winrate := div_buy_count > 0 ? div_buy_wins / div_buy_count * 100 : 0.0
+div_sell_winrate := div_sell_count > 0 ? div_sell_wins / div_sell_count * 100 : 0.0
+ext_buy_winrate := ext_buy_count > 0 ? ext_buy_wins / ext_buy_count * 100 : 0.0
+ext_sell_winrate := ext_sell_count > 0 ? ext_sell_wins / ext_sell_count * 100 : 0.0
+
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ▶ SIGNAL DISPLAY (信号显示)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -447,8 +519,8 @@ if show_dashboard
                      "⚪ " + str.tostring(math.max(oversold_count, overbought_count)) + "/4"
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
-    // 计算行数 (增加Z-Score行)
-    total_rows = 8 + (enable_mtf ? 3 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 3 : 0)
+    // 计算行数 (分层统计需要7行: 标题 + 3类信号 x Buy/Sell)
+    total_rows = 8 + (enable_mtf ? 3 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 7 : 0)
 
     // 创建表格 - 深蓝灰色背景更易读
     var table dashboard = table.new(position.top_right, 2, total_rows, 
@@ -517,20 +589,43 @@ if show_dashboard
             table.cell(dashboard, 1, row, div_text, text_color=div_color, text_size=txt_size_body)
             row += 1
         
-        // 统计部分
+        // 统计部分 (分层显示 Buy/Sell)
         if enable_stats
             table.cell(dashboard, 0, row, "── STATS ──", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, "(" + str.tostring(stats_forward_bars) + " bars)", text_color=color.gray, text_size=txt_size_body)
             row += 1
             
-            os_return_color = ext_os_avg_return >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "🟢 Oversold(" + str.tostring(ext_os_count) + ")", text_color=color_bull, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(ext_os_avg_return, "#.1") + "% | " + str.tostring(ext_os_win_rate, "#") + "%", text_color=os_return_color, text_size=txt_size_body)
+            // 🌟 MTF 共振
+            mtf_buy_color = mtf_buy_avg >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "🌟 MTF Buy(" + str.tostring(mtf_buy_count) + ")", text_color=#FFD700, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(mtf_buy_avg, "#.1") + "% | " + str.tostring(mtf_buy_winrate, "#") + "%", text_color=mtf_buy_color, text_size=txt_size_body)
             row += 1
             
-            ob_return_color = ext_ob_avg_return >= 0 ? color_bull : color_bear
-            table.cell(dashboard, 0, row, "🔴 Overbought(" + str.tostring(ext_ob_count) + ")", text_color=color_bear, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(ext_ob_avg_return, "#.1") + "% | " + str.tostring(ext_ob_win_rate, "#") + "%", text_color=ob_return_color, text_size=txt_size_body)
+            mtf_sell_color = mtf_sell_avg >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "🌟 MTF Sell(" + str.tostring(mtf_sell_count) + ")", text_color=#FFD700, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(mtf_sell_avg, "#.1") + "% | " + str.tostring(mtf_sell_winrate, "#") + "%", text_color=mtf_sell_color, text_size=txt_size_body)
+            row += 1
+            
+            // 💎 背离+极端
+            div_buy_color = div_buy_avg >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "💎 Div Buy(" + str.tostring(div_buy_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(div_buy_avg, "#.1") + "% | " + str.tostring(div_buy_winrate, "#") + "%", text_color=div_buy_color, text_size=txt_size_body)
+            row += 1
+            
+            div_sell_color = div_sell_avg >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "💎 Div Sell(" + str.tostring(div_sell_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(div_sell_avg, "#.1") + "% | " + str.tostring(div_sell_winrate, "#") + "%", text_color=div_sell_color, text_size=txt_size_body)
+            row += 1
+            
+            // 🔥 极端
+            ext_buy_color = ext_buy_avg >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "🔥 Ext Buy(" + str.tostring(ext_buy_count) + ")", text_color=color_bull, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(ext_buy_avg, "#.1") + "% | " + str.tostring(ext_buy_winrate, "#") + "%", text_color=ext_buy_color, text_size=txt_size_body)
+            row += 1
+            
+            ext_sell_color = ext_sell_avg >= 0 ? color_bull : color_bear
+            table.cell(dashboard, 0, row, "🔥 Ext Sell(" + str.tostring(ext_sell_count) + ")", text_color=color_bear, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(ext_sell_avg, "#.1") + "% | " + str.tostring(ext_sell_winrate, "#") + "%", text_color=ext_sell_color, text_size=txt_size_body)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ ALERTS
