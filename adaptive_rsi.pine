@@ -128,11 +128,10 @@ vol_short_period = rsi_length * 4  // 短期：~56根K线（约4个RSI周期）
 vol_history_days = vol_history_mode == "6 Months" ? 126 : vol_history_mode == "1 Year" ? 252 : 504
 
 // 长期周期根据时间框架调整（目标：覆盖相同天数）
-// 日线直接用 vol_history_days，其他时间框架按K线/天数换算
+// 动态计算每天的K线数量（使用 timeframe.in_seconds 获取精确分钟数）
+tf_minutes = timeframe.in_seconds(timeframe.period) / 60
 bars_per_day = timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly ? 1 :
-               timeframe.period == "240" ? 6 :
-               timeframe.period == "60" ? 24 :
-               timeframe.isintraday and timeframe.multiplier <= 30 ? int(24 * 60 / timeframe.multiplier) : 96
+               math.ceil(1440 / tf_minutes)  // 1440分钟 = 1天
 vol_long_period = math.min(4500, vol_history_days * bars_per_day)  // 上限4500（与max_bars_back匹配）
 
 vol_short = nz(ta.stdev(rsi, vol_short_period), 10)  // 近期波动
@@ -892,26 +891,26 @@ if show_dashboard
 
 // 极端警报
 alertcondition(extreme_oversold and enable_extreme_alerts, 
-               title="🟢 Extreme Oversold / 极端超卖", 
-               message="{{ticker}}: RSI crossed below P5 ({{plot_0}}). Extreme oversold condition detected!")
+               title="🔥 Extreme Oversold / 极端超卖", 
+               message="{{ticker}}: RSI Z-Score crossed below -2σ (≈P2.3). Extreme oversold condition detected!")
 
 alertcondition(extreme_overbought and enable_extreme_alerts, 
-               title="🔴 Extreme Overbought / 极端超买", 
-               message="{{ticker}}: RSI crossed above P95 ({{plot_0}}). Extreme overbought condition detected!")
+               title="❄️ Extreme Overbought / 极端超买", 
+               message="{{ticker}}: RSI Z-Score crossed above +2σ (≈P97.7). Extreme overbought condition detected!")
 
 // 普通警报
 alertcondition(normal_oversold and enable_normal_alerts, 
-               title="🟡 Oversold / 超卖", 
-               message="{{ticker}}: RSI crossed below P10 ({{plot_0}}). Oversold condition detected.")
+               title="⬆️ Oversold / 超卖", 
+               message="{{ticker}}: RSI Z-Score crossed below -1.5σ (≈P6.7). Oversold condition detected.")
 
 alertcondition(normal_overbought and enable_normal_alerts, 
-               title="🟠 Overbought / 超买", 
-               message="{{ticker}}: RSI crossed above P90 ({{plot_0}}). Overbought condition detected.")
+               title="⬇️ Overbought / 超买", 
+               message="{{ticker}}: RSI Z-Score crossed above +1.5σ (≈P93.3). Overbought condition detected.")
 
 // 综合警报
 alertcondition(extreme_oversold or extreme_overbought, 
                title="⚡ Any Extreme Signal / 任意极端信号", 
-               message="{{ticker}}: Extreme RSI signal detected at {{plot_0}}")
+               message="{{ticker}}: Extreme RSI signal detected (Z-Score ±2σ outside 95% confidence interval)")
 
 // MTF 共振警报
 alertcondition(enable_mtf and oversold_resonance and raw_extreme_oversold, 
