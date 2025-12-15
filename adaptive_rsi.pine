@@ -37,7 +37,7 @@
 //
 // ══════════════════════════════════════════════════════════════════════════════
 
-//@version=5
+//@version=6
 indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100, max_bars_back=4500)
 
 // ══════════════════════════════════════════════════════════════════════════════

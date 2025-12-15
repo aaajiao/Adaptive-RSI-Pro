@@ -1,7 +1,7 @@
 # Adaptive RSI Pro / 自适应RSI专业版
 
 [![TradingView](https://img.shields.io/badge/TradingView-Indicator-blue?logo=tradingview)](https://www.tradingview.com/)
-[![Pine Script](https://img.shields.io/badge/Pine%20Script-v5-brightgreen)](https://www.tradingview.com/pine-script-docs/en/v5/)
+[![Pine Script](https://img.shields.io/badge/Pine%20Script-v6-brightgreen)](https://www.tradingview.com/pine-script-docs/en/v6/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence detection + Signal statistics.
@@ -458,7 +458,12 @@ Dashboard显示:
 
 ## Changelog / 更新日志
 
-### v3.0 - Auto-Adaptive Systems (Current)
+### v4.0 - Pine Script v6 Upgrade
+- 🚀 Upgraded entire codebase to **Pine Script v6** engine
+- ⚡ Optimization for better performance and future-proofing
+- 🛠 Maintenance updates for latest TradingView standards
+
+### v3.0 - Auto-Adaptive Systems
 - ✨ Auto-adaptive lookback calculation using statistical formula `n = (Z × σ / E)²`
 - ✨ Auto-adaptive trend filter with 5 modes and volatility-based selection
 - ✨ Auto-adaptive divergence detection with 4 volatility presets
