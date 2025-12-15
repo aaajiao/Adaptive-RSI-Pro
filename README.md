@@ -406,7 +406,8 @@ Dashboard显示:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Enable | ON | Show MTF analysis / 显示MTF分析 |
-| TF1/TF2/TF3 | 60/240/D | Timeframes / 时间框架 |
+| MTF Mode | **Auto** | **Auto** (Fractal Breakdown) / **Manual** (Fixed) / 自动/手动模式 |
+| TF1/TF2/TF3 | 60/240/D | Timeframes (Manual mode only) / 时间框架（仅手动模式）|
 
 ### Signal Statistics / 信号统计
 | Setting | Default | Description |
@@ -457,6 +458,14 @@ Dashboard显示:
 ---
 
 ## Changelog / 更新日志
+
+### v5.0 - Adaptive Fractal MTF (Current)
+- 🧠 **Adaptive Fractal MTF / 自适应分形MTF**: New "Auto" mode automatically selects lower timeframes for precision structure analysis (Internal Fractal Resonance).
+  - Daily Chart → Analyzes 1H & 4H
+  - 1H Chart → Analyzes 5m & 15m
+  - 15m Chart → Analyzes 1m & 5m
+- 🛠 **Code Refactoring / 代码重构**: Implemented Pine Script v6 UDTs (Objects) and Methods for robust signal statistics.
+- 🎨 **Dashboard Optimization**: Enhanced string formatting using `str.format` for cleaner display.
 
 ### v4.0 - Pine Script v6 Upgrade
 - 🚀 Upgraded entire codebase to **Pine Script v6** engine
