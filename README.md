@@ -73,11 +73,11 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 |-------|------------|-------------|
 | 🌟 | MTF Resonance | Multiple timeframes agree / 多周期共振 |
 | 💎 | Divergence | RSI divergence detected / 检测到背离 |
-| 🔥 | Extreme Oversold | RSI at P5 / RSI达到P5 |
-| ❄️ | Extreme Overbought | RSI at P95 / RSI达到P95 |
+| 🔥 | Extreme Oversold | Z-Score < −2σ (≈P2) / Z值达到−2σ |
+| ❄️ | Extreme Overbought | Z-Score > +2σ (≈P98) / Z值达到+2σ |
 | ⚡ | Any Extreme | Any extreme signal / 任意极端信号 |
-| 📈 | Trend Shift Up | RSI crossed above P50 / 趋势转多 |
-| 📉 | Trend Shift Down | RSI crossed below P50 / 趋势转空 |
+| 📈 | Trend Shift Up | RSI crossed above P50/mean / 趋势转多 |
+| 📉 | Trend Shift Down | RSI crossed below P50/mean / 趋势转空 |
 
 ---
 
