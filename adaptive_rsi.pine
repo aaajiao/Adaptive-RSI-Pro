@@ -38,7 +38,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 
 //@version=5
-indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100, max_bars_back=1500)
+indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100, max_bars_back=4500)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ INPUTS
@@ -52,6 +52,7 @@ grp_adaptive = "═══ Adaptive Settings / 自适应设置 ═══"
 lookback_mode = input.string("Auto", "Lookback Mode / 回看模式", options=["Auto", "Custom"], group=grp_adaptive, tooltip="Auto: 根据时间框架和RSI波动率自动计算\nCustom: 使用自定义值")
 lookback_custom = input.int(252, "Custom Lookback / 自定义回看", minval=50, maxval=2000, group=grp_adaptive, tooltip="仅在 Custom 模式下使用。建议：日线252，4小时500，1小时750")
 lookback_precision = input.string("Normal", "Precision / 精度", options=["High", "Normal", "Low"], group=grp_adaptive, tooltip="High(高精度): 需要更多数据，更准确\nNormal(平衡): 推荐设置\nLow(快适应): 更少数据，更快响应")
+vol_history_mode = input.string("1 Year", "History Depth / 历史深度", options=["6 Months", "1 Year", "2 Years"], group=grp_adaptive, tooltip="波动率参考的历史时间长度\n自动根据时间框架转换为K线数量")
 
 grp_visual = "═══ Visual Settings / 视觉设置 ═══"
 show_fill = input.bool(true, "Show Gradient Fill / 显示渐变填充", group=grp_visual)
@@ -115,14 +116,36 @@ rsi = ta.rsi(rsi_source, rsi_length)
 // ▶ DYNAMIC LOOKBACK CALCULATION / 动态回看周期计算
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Step 1: RSI-based volatility period
-// vol_period = rsi_length × 4，确保有足够的 RSI 周期来估计波动特性
-// 例如：RSI 14 → vol_period 56（约4个完整的 RSI 计算周期）
-vol_period = rsi_length * 4
+// Step 1: Timeframe-normalized volatility periods
+// 根据时间框架标准化长期周期，确保覆盖相同的时间跨度
+vol_short_period = rsi_length * 4  // 短期：~56根K线（约4个RSI周期）
 
-// Step 2: Calculate RSI standard deviation using adaptive period
-// 使用自适应周期计算RSI标准差
-rsi_vol_bootstrap = nz(ta.stdev(rsi, vol_period), 10)  // 默认值10避免NaN
+// 将历史深度选项转换为天数
+vol_history_days = vol_history_mode == "6 Months" ? 126 : vol_history_mode == "1 Year" ? 252 : 504
+
+// 长期周期根据时间框架调整（目标：覆盖相同天数）
+// 日线直接用 vol_history_days，其他时间框架按K线/天数换算
+bars_per_day = timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly ? 1 :
+               timeframe.period == "240" ? 6 :
+               timeframe.period == "60" ? 24 :
+               timeframe.isintraday and timeframe.multiplier <= 30 ? int(24 * 60 / timeframe.multiplier) : 96
+vol_long_period = math.min(4500, vol_history_days * bars_per_day)  // 上限4500（与max_bars_back匹配）
+
+vol_short = nz(ta.stdev(rsi, vol_short_period), 10)  // 近期波动
+vol_long = nz(ta.stdev(rsi, vol_long_period), 10)    // 长期波动
+
+// Step 2: Dynamic weighted combination
+// 动态加权组合：不是简单取最大值
+// - 基础：70%长期 + 30%近期（偏向稳定）
+// - 动态调整：如果近期 > 长期，增加近期权重
+vol_base = vol_long * 0.7 + vol_short * 0.3
+
+// 近期波动显著高于长期时（>1.2倍），动态切换到近期主导
+recent_high = vol_short > vol_long * 1.2
+vol_dynamic = recent_high ? (vol_short * 0.6 + vol_long * 0.4) : vol_base
+
+// 确保不低于长期波动（保守）
+rsi_vol_bootstrap = math.max(vol_dynamic, vol_long * 0.8)
 
 // Step 2: Statistical sample size formula: n = (Z × σ / E)²
 // 统计学样本量公式：Z=1.96 (95%置信度), E=5 (可接受误差)
