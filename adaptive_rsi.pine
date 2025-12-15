@@ -55,6 +55,7 @@ lookback_precision = input.string("Normal", "Precision / 精度", options=["High
 vol_history_mode = input.string("1 Year", "History Depth / 历史深度", options=["6 Months", "1 Year", "2 Years"], group=grp_adaptive, tooltip="波动率参考的历史时间长度\n自动根据时间框架转换为K线数量")
 
 grp_visual = "═══ Visual Settings / 视觉设置 ═══"
+visual_line_mode = input.string("Z-Score", "Threshold Line Mode / 阈值线模式", options=["Z-Score", "Percentile", "Both"], group=grp_visual, tooltip="Z-Score: 显示统计学阈值线(±2σ, ±1.5σ)\nPercentile: 显示百分位线(P5-P95)\nBoth: 同时显示两种")
 show_fill = input.bool(true, "Show Gradient Fill / 显示渐变填充", group=grp_visual)
 show_dashboard = input.bool(true, "Show Dashboard / 显示仪表盘", group=grp_visual)
 dashboard_mode = input.string("Full", "Dashboard Mode / 面板模式", options=["Lite", "Full"], group=grp_visual, tooltip="Lite: 仅核心信息(3行) | Full: 显示全部")
@@ -65,9 +66,12 @@ color_bear = input.color(color.new(#FF5252, 60), "Bearish Color / 熊市颜色",
 color_rsi = input.color(#FFEB3B, "RSI Line Color / RSI线颜色", group=grp_visual)
 
 grp_alerts = "═══ Alert Settings / 警报设置 ═══"
-enable_extreme_alerts = input.bool(true, "Extreme Alerts (P5/P95) / 极端警报", group=grp_alerts)
-enable_normal_alerts = input.bool(false, "Normal Alerts (P10/P90) / 普通警报", group=grp_alerts)
-show_normal_signals = input.bool(false, "Show Normal Signals (P10/P90) / 显示普通信号", group=grp_alerts, tooltip="⬆️⬇️ 普通超买/超卖信号，默认关闭")
+enable_extreme_alerts = input.bool(true, "Extreme Alerts / 极端警报", group=grp_alerts, tooltip="触发条件: Z-Score ±2σ (约 P2.3/P97.7)")
+enable_normal_alerts = input.bool(false, "Normal Alerts / 普通警报", group=grp_alerts, tooltip="触发条件: 见下方阈值设置")
+show_normal_signals = input.bool(false, "Show Normal Signals / 显示普通信号", group=grp_alerts, tooltip="⬆️⬇️ 普通超买/超卖信号，默认关闭")
+normal_threshold = input.float(1.5, "Normal Signal Threshold / 普通信号阈值", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="Z-Score 阈值\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
+enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据")
+cooldown_bars = input.int(5, "Cooldown Period (Bars) / 冷却期(K线数)", minval=1, maxval=20, group=grp_alerts, tooltip="同类信号触发后的冷却时间")
 
 grp_trend = "═══ Trend Filter / 趋势过滤 ═══"
 enable_trend_filter = input.bool(false, "Enable Trend Filter / 启用趋势过滤", group=grp_trend, tooltip="仅在趋势方向触发信号：上升趋势只做多，下降趋势只做空")
@@ -449,19 +453,35 @@ if enable_divergence
 // ▶ VISUAL PLOTTING
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 绘制百分位线
-p95_line = plot(rsi_p95, "P95 极端超买", color=color.new(color_bear, 70), linewidth=1)
-p90_line = plot(rsi_p90, "P90 超买", color=color.new(color_bear, 80), linewidth=1, style=plot.style_circles)
-p75_line = plot(rsi_p75, "P75", color=color.new(color.gray, 85), linewidth=1)
-p50_line = plot(rsi_p50, "P50 中位数", color=color.new(color.white, 50), linewidth=2, style=plot.style_stepline)
-p25_line = plot(rsi_p25, "P25", color=color.new(color.gray, 85), linewidth=1)
-p10_line = plot(rsi_p10, "P10 超卖", color=color.new(color_bull, 80), linewidth=1, style=plot.style_circles)
-p5_line  = plot(rsi_p5, "P5 极端超卖", color=color.new(color_bull, 70), linewidth=1)
+// 根据用户选择决定显示哪种阈值线
+show_zscore_lines = visual_line_mode == "Z-Score" or visual_line_mode == "Both"
+show_percentile_lines = visual_line_mode == "Percentile" or visual_line_mode == "Both"
+
+// Z-Score 阈值线 (统计学标准)
+zscore_extreme_color = show_zscore_lines ? (visual_line_mode == "Both" ? 50 : 70) : 100
+zscore_normal_color = show_zscore_lines ? (visual_line_mode == "Both" ? 60 : 80) : 100
+
+plot(show_zscore_lines ? zscore_upper_2 : na, "±2σ 极端超买", color=color.new(color_bear, zscore_extreme_color), linewidth=2, style=plot.style_line)
+plot(show_zscore_lines ? zscore_upper_1_5 : na, "±1.5σ 超买", color=color.new(color_bear, zscore_normal_color), linewidth=1, style=plot.style_circles)
+plot(show_zscore_lines ? zscore_lower_1_5 : na, "±1.5σ 超卖", color=color.new(color_bull, zscore_normal_color), linewidth=1, style=plot.style_circles)
+plot(show_zscore_lines ? zscore_lower_2 : na, "±2σ 极端超卖", color=color.new(color_bull, zscore_extreme_color), linewidth=2, style=plot.style_line)
+
+// 百分位线 (作为辅助参考)
+// 注意：即使在 Z-Score 模式下也要绘制百分位线（用于渐变填充），只是设置为不可见
+percentile_line_transparency = show_percentile_lines ? (visual_line_mode == "Both" ? 85 : 70) : 100  // Z-Score模式下100%透明
+
+p95_line = plot(rsi_p95, "P95 极端超买", color=color.new(color_bear, percentile_line_transparency), linewidth=1)
+p90_line = plot(rsi_p90, "P90 超买", color=color.new(color_bear, percentile_line_transparency), linewidth=1, style=plot.style_circles)
+p75_line = plot(rsi_p75, "P75", color=color.new(color.gray, percentile_line_transparency), linewidth=1)
+p50_line = plot(rsi_p50, "P50 中位数", color=color.new(color.white, 50), linewidth=2, style=plot.style_stepline)  // P50 始终显示
+p25_line = plot(rsi_p25, "P25", color=color.new(color.gray, percentile_line_transparency), linewidth=1)
+p10_line = plot(rsi_p10, "P10 超卖", color=color.new(color_bull, percentile_line_transparency), linewidth=1, style=plot.style_circles)
+p5_line  = plot(rsi_p5, "P5 极端超卖", color=color.new(color_bull, percentile_line_transparency), linewidth=1)
 
 // RSI 主线
 rsi_line = plot(rsi, "RSI", color=color_rsi, linewidth=2)
 
-// 渐变填充 - 使用条件颜色控制显示/隐藏
+// 渐变填充 - 独立控制，不受阈值线模式影响
 // 上半部分渐变 (熊市区域)
 fill(p95_line, p90_line, color=show_fill ? color.new(color_bear, 75) : na, title="极端超买区")
 fill(p90_line, p75_line, color=show_fill ? color.new(color_bear, 88) : na, title="超买区")
@@ -482,18 +502,32 @@ hline(50, "50 固定中线", color=color.new(color.gray, 90), linestyle=hline.st
 // ══════════════════════════════════════════════════════════════════════════════
 
 // 基础信号 - 使用 Z-Score 判断极端区域
-// 极端信号: Z-Score ±2σ (统计学上约 95% 置信区间外)
-// 普通信号: Z-Score ±1.5σ
+// 极端信号: Z-Score ±2σ (统计学上约 95% 置信区间外，P2.3/P97.7)
+// 普通信号: 使用用户配置的 normal_threshold (默认 ±1.5σ，约 P6.7/P93.3)
 raw_extreme_oversold = ta.crossunder(rsi_zscore, -2)
 raw_extreme_overbought = ta.crossover(rsi_zscore, 2)
-raw_normal_oversold = ta.crossunder(rsi_zscore, -1.5) and not raw_extreme_oversold
-raw_normal_overbought = ta.crossover(rsi_zscore, 1.5) and not raw_extreme_overbought
+raw_normal_oversold = ta.crossunder(rsi_zscore, -normal_threshold) and not raw_extreme_oversold
+raw_normal_overbought = ta.crossover(rsi_zscore, normal_threshold) and not raw_extreme_overbought
 
 // 应用趋势过滤
 extreme_oversold = enable_trend_filter ? (raw_extreme_oversold and trend_down) : raw_extreme_oversold
 extreme_overbought = enable_trend_filter ? (raw_extreme_overbought and trend_up) : raw_extreme_overbought
 normal_oversold = enable_trend_filter ? (raw_normal_oversold and trend_down) : raw_normal_oversold
 normal_overbought = enable_trend_filter ? (raw_normal_overbought and trend_up) : raw_normal_overbought
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ SIGNAL COOLDOWN MECHANISM / 信号冷却机制
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 冷却期跟踪变量（记录每类信号最后触发的 bar_index）
+var int last_mtf_buy_bar = na
+var int last_mtf_sell_bar = na
+var int last_div_buy_bar = na
+var int last_div_sell_bar = na
+var int last_ext_buy_bar = na
+var int last_ext_sell_bar = na
+var int last_norm_buy_bar = na
+var int last_norm_sell_bar = na
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ CONSOLIDATED SIGNALS (优先级合并信号)
@@ -508,17 +542,46 @@ float zscore_at_div = rsi_stdev[div_lookback] != 0 ? (rsi[div_lookback] - rsi_me
 bool was_extreme_oversold = zscore_at_div < -2
 bool was_extreme_overbought = zscore_at_div > 2
 
-// 买入信号优先级 (高到低): MTF共振 > 背离+极端区 > 极端 > 普通
-bool sig_buy_mtf = enable_mtf and oversold_resonance and extreme_oversold
-bool sig_buy_div = enable_divergence and bullish_divergence and was_extreme_oversold and not sig_buy_mtf
-bool sig_buy_extreme = extreme_oversold and not sig_buy_mtf and not sig_buy_div
-bool sig_buy_normal = normal_oversold and not sig_buy_mtf and not sig_buy_div and not sig_buy_extreme
+// 原始信号（未去重）
+bool raw_sig_buy_mtf = enable_mtf and oversold_resonance and extreme_oversold
+bool raw_sig_buy_div = enable_divergence and bullish_divergence and was_extreme_oversold and not raw_sig_buy_mtf
+bool raw_sig_buy_extreme = extreme_oversold and not raw_sig_buy_mtf and not raw_sig_buy_div
+bool raw_sig_buy_normal = normal_oversold and not raw_sig_buy_mtf and not raw_sig_buy_div and not raw_sig_buy_extreme
 
-// 卖出信号优先级 (高到低): MTF共振 > 背离+极端区 > 极端 > 普通
-bool sig_sell_mtf = enable_mtf and overbought_resonance and extreme_overbought
-bool sig_sell_div = enable_divergence and bearish_divergence and was_extreme_overbought and not sig_sell_mtf
-bool sig_sell_extreme = extreme_overbought and not sig_sell_mtf and not sig_sell_div
-bool sig_sell_normal = normal_overbought and not sig_sell_mtf and not sig_sell_div and not sig_sell_extreme
+bool raw_sig_sell_mtf = enable_mtf and overbought_resonance and extreme_overbought
+bool raw_sig_sell_div = enable_divergence and bearish_divergence and was_extreme_overbought and not raw_sig_sell_mtf
+bool raw_sig_sell_extreme = extreme_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div
+bool raw_sig_sell_normal = normal_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div and not raw_sig_sell_extreme
+
+// 应用冷却期（仅当启用时）
+bool sig_buy_mtf = enable_signal_cooldown ? (raw_sig_buy_mtf and (na(last_mtf_buy_bar) or bar_index - last_mtf_buy_bar >= cooldown_bars)) : raw_sig_buy_mtf
+bool sig_buy_div = enable_signal_cooldown ? (raw_sig_buy_div and (na(last_div_buy_bar) or bar_index - last_div_buy_bar >= cooldown_bars)) : raw_sig_buy_div
+bool sig_buy_extreme = enable_signal_cooldown ? (raw_sig_buy_extreme and (na(last_ext_buy_bar) or bar_index - last_ext_buy_bar >= cooldown_bars)) : raw_sig_buy_extreme
+bool sig_buy_normal = enable_signal_cooldown ? (raw_sig_buy_normal and (na(last_norm_buy_bar) or bar_index - last_norm_buy_bar >= cooldown_bars)) : raw_sig_buy_normal
+
+bool sig_sell_mtf = enable_signal_cooldown ? (raw_sig_sell_mtf and (na(last_mtf_sell_bar) or bar_index - last_mtf_sell_bar >= cooldown_bars)) : raw_sig_sell_mtf
+bool sig_sell_div = enable_signal_cooldown ? (raw_sig_sell_div and (na(last_div_sell_bar) or bar_index - last_div_sell_bar >= cooldown_bars)) : raw_sig_sell_div
+bool sig_sell_extreme = enable_signal_cooldown ? (raw_sig_sell_extreme and (na(last_ext_sell_bar) or bar_index - last_ext_sell_bar >= cooldown_bars)) : raw_sig_sell_extreme
+bool sig_sell_normal = enable_signal_cooldown ? (raw_sig_sell_normal and (na(last_norm_sell_bar) or bar_index - last_norm_sell_bar >= cooldown_bars)) : raw_sig_sell_normal
+
+// 更新冷却期计数器
+if sig_buy_mtf
+    last_mtf_buy_bar := bar_index
+if sig_buy_div
+    last_div_buy_bar := bar_index
+if sig_buy_extreme
+    last_ext_buy_bar := bar_index
+if sig_buy_normal
+    last_norm_buy_bar := bar_index
+
+if sig_sell_mtf
+    last_mtf_sell_bar := bar_index
+if sig_sell_div
+    last_div_sell_bar := bar_index
+if sig_sell_extreme
+    last_ext_sell_bar := bar_index
+if sig_sell_normal
+    last_norm_sell_bar := bar_index
 
 // 背离单独显示 (背离时不在极端区域)
 bool sig_div_bull_only = enable_divergence and bullish_divergence and not was_extreme_oversold
