@@ -18,21 +18,21 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 | Emoji | Signal Name | Condition | Priority | Action |
 |-------|-------------|-----------|----------|--------|
-| 🌟 | MTF + Extreme | 3+ timeframes oversold + P5 | ★★★★★ | **STRONG BUY** 强力买入 |
-| 💎 | Divergence + Extreme | Bullish divergence in P5 zone | ★★★★☆ | **BUY** 买入 |
-| 🔥 | Extreme Oversold | RSI crosses below P5 | ★★★☆☆ | **BUY** 买入 |
-| ⬆️ | Normal Oversold | RSI crosses below P10 | ★★☆☆☆ | Consider buy 考虑买入 (默认隐藏) |
-| ↗️ | Bullish Divergence | Price↓ RSI↑ (not in extreme) | ★☆☆☆☆ | Watch 观察 (潜在底部) |
+| 🌟 | MTF + Extreme | 3+ timeframes oversold + Z<−2σ | ★★★★★ | **STRONG BUY** 强力买入 |
+| 💎 | Divergence + Extreme | Bullish divergence in Z<−2σ zone | ★★★★☆ | **BUY** 买入 |
+| 🔥 | Extreme Oversold | Z-Score crosses below −2σ (≈P2) | ★★★☆☆ | **BUY** 买入 |
+| ⬆️ | Normal Oversold | Z-Score crosses below −1.5σ (≈P7) | ★★☆☆☆ | Consider buy 考虑买入 (默认隐藏) |
+| ↗️ | Bullish Divergence | Price↓ RSI↑ (not in extreme zone) | ★☆☆☆☆ | Watch 观察 (潜在底部) |
 
 #### Sell Signals / 卖出信号 (顶部显示)
 
 | Emoji | Signal Name | Condition | Priority | Action |
 |-------|-------------|-----------|----------|--------|
-| 🌟 | MTF + Extreme | 3+ timeframes overbought + P95 | ★★★★★ | **STRONG SELL** 强力卖出 |
-| 💎 | Divergence + Extreme | Bearish divergence in P95 zone | ★★★★☆ | **SELL** 卖出 |
-| ❄️ | Extreme Overbought | RSI crosses above P95 | ★★★☆☆ | **SELL** 卖出 |
-| ⬇️ | Normal Overbought | RSI crosses above P90 | ★★☆☆☆ | Consider sell 考虑卖出 (默认隐藏) |
-| ↘️ | Bearish Divergence | Price↑ RSI↓ (not in extreme) | ★☆☆☆☆ | Watch 观察 (潜在顶部) |
+| 🌟 | MTF + Extreme | 3+ timeframes overbought + Z>+2σ | ★★★★★ | **STRONG SELL** 强力卖出 |
+| 💎 | Divergence + Extreme | Bearish divergence in Z>+2σ zone | ★★★★☆ | **SELL** 卖出 |
+| ❄️ | Extreme Overbought | Z-Score crosses above +2σ (≈P98) | ★★★☆☆ | **SELL** 卖出 |
+| ⬇️ | Normal Overbought | Z-Score crosses above +1.5σ (≈P93) | ★★☆☆☆ | Consider sell 考虑卖出 (默认隐藏) |
+| ↘️ | Bearish Divergence | Price↑ RSI↓ (not in extreme zone) | ★☆☆☆☆ | Watch 观察 (潜在顶部) |
 
 > **Priority System / 优先级系统**: Only the highest priority signal is shown to prevent overlapping.  
 > 只显示最高优先级信号，避免叠加。
@@ -43,11 +43,11 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 | Emoji | Status | Meaning |
 |-------|--------|---------|
-| 🟢 | EXTREME OVERSOLD | RSI < P5, strong buy zone / 极端超卖区，强买区 |
-| 🟡 | OVERSOLD | RSI < P10, oversold / 超卖 |
-| ⚪ | NEUTRAL | P10 ≤ RSI ≤ P90, no signal / 中性，无信号 |
-| 🟠 | OVERBOUGHT | RSI > P90, overbought / 超买 |
-| 🔴 | EXTREME OVERBOUGHT | RSI > P95, strong sell zone / 极端超买区，强卖区 |
+| 🟢 | EXTREME OVERSOLD | Z-Score < −2σ (≈P2.3), strong buy zone / 极端超卖区，强买区 |
+| 🟡 | OVERSOLD | Z-Score < −1.5σ (≈P6.7), oversold / 超卖 |
+| ⚪ | NEUTRAL | −1.5σ ≤ Z-Score ≤ +1.5σ, no signal / 中性，无信号 |
+| 🟠 | OVERBOUGHT | Z-Score > +1.5σ (≈P93.3), overbought / 超买 |
+| 🔴 | EXTREME OVERBOUGHT | Z-Score > +2σ (≈P97.7), strong sell zone / 极端超买区，强卖区 |
 
 ### MTF Status / 多周期状态
 

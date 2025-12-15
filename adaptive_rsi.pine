@@ -11,15 +11,15 @@
 // │ BUY / 买入 (显示在底部)                                                     │
 // │   🌟 MTF Resonance + Extreme Oversold  多周期共振+极端超卖 (最强买入信号)    │
 // │   💎 Divergence + Extreme Oversold     背离+极端超卖 (强买入信号)            │
-// │   🔥 Extreme Oversold (P5)             极端超卖 (买入信号)                   │
-// │   ⬆️ Normal Oversold (P10)              普通超卖 (弱买入，默认隐藏)          │
+// │   🔥 Extreme Oversold (Z<−2σ≈P2)       极端超卖 (买入信号)                   │
+// │   ⬆️ Normal Oversold (Z<−1.5σ≈P7)       普通超卖 (弱买入，默认隐藏)          │
 // │   ↗️ Bullish Divergence Only            看涨背离 (潜在底部，非信号)          │
 // ├─────────────────────────────────────────────────────────────────────────────┤
 // │ SELL / 卖出 (显示在顶部)                                                    │
 // │   🌟 MTF Resonance + Extreme Overbought 多周期共振+极端超买 (最强卖出信号)   │
 // │   💎 Divergence + Extreme Overbought    背离+极端超买 (强卖出信号)           │
-// │   ❄️ Extreme Overbought (P95)           极端超买 (卖出信号)                  │
-// │   ⬇️ Normal Overbought (P90)            普通超买 (弱卖出，默认隐藏)          │
+// │   ❄️ Extreme Overbought (Z>+2σ≈P98)     极端超买 (卖出信号)                  │
+// │   ⬇️ Normal Overbought (Z>+1.5σ≈P93)    普通超买 (弱卖出，默认隐藏)          │
 // │   ↘️ Bearish Divergence Only            看跌背离 (潜在顶部，非信号)          │
 // ├─────────────────────────────────────────────────────────────────────────────┤
 // │ DASHBOARD STATUS / 仪表盘状态                                               │
