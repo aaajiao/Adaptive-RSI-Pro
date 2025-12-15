@@ -58,7 +58,7 @@ grp_visual = "═══ Visual Settings / 视觉设置 ═══"
 visual_line_mode = input.string("Unified", "Threshold Line Mode / 阈值线模式", options=["Unified", "Z-Score", "Percentile", "Both"], group=grp_visual, tooltip="Unified(推荐): Z-Score线+百分位标注，兼顾严谨性和直观性\nZ-Score: 仅统计学阈值线(±2σ, ±1.5σ)\nPercentile: 仅百分位线(P5-P95)\nBoth: 同时显示两种")
 show_fill = input.bool(true, "Show Gradient Fill / 显示渐变填充", group=grp_visual)
 show_dashboard = input.bool(true, "Show Dashboard / 显示仪表盘", group=grp_visual)
-dashboard_mode = input.string("Full", "Dashboard Mode / 面板模式", options=["Lite", "Full"], group=grp_visual, tooltip="Lite: 仅核心信息(3行) | Full: 显示全部")
+dashboard_mode = input.string("Full", "Dashboard Mode / 面板模式", options=["Mobile", "Lite", "Full"], group=grp_visual, tooltip="Mobile: 极简模式(3行)，仅RSI+信号+状态，适合手机\\nLite: 核心信息(5行) | Full: 完整信息")
 dashboard_size = input.string("Normal", "Dashboard Size / 面板大小", options=["Tiny", "Small", "Normal", "Large"], group=grp_visual)
 dashboard_transparency = input.int(30, "Dashboard Transparency / 面板透明度", minval=0, maxval=100, step=10, group=grp_visual)
 color_bull = input.color(color.new(#00E676, 60), "Bullish Color / 牛市颜色", group=grp_visual)
@@ -777,10 +777,11 @@ if show_dashboard
                      "⚪ " + str.tostring(math.max(oversold_count, overbought_count)) + "/" + str.tostring(valid_tf_count)
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
-    // 计算行数: Lite模式4行(含Lookback), Full模式根据启用功能计算
-    lite_rows = 4
-    full_rows = 4 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
-    total_rows = dashboard_mode == "Lite" ? lite_rows : full_rows
+    // 计算行数: Mobile模式3行, Lite模式5行(含Lookback), Full模式根据启用功能计算
+    mobile_rows = 3
+    lite_rows = 5
+    full_rows = 5 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
+    total_rows = dashboard_mode == "Mobile" ? mobile_rows : dashboard_mode == "Lite" ? lite_rows : full_rows
 
     // 创建表格 - 深蓝灰色背景更易读
     var table dashboard = table.new(position.top_right, 2, 17, 
@@ -791,99 +792,156 @@ if show_dashboard
         row = 0
         
         // ═══════════════════════════════════════════════════════════════════════
+        // Mobile 模式 (极简 3 行)
+        // ═══════════════════════════════════════════════════════════════════════
+        
+        if dashboard_mode == "Mobile"
+            // 第1行：RSI值
+            table.cell(dashboard, 0, row, "RSI", text_color=color.gray, text_size=txt_size_body, bgcolor=color.new(#2962FF, dashboard_transparency))
+            table.cell(dashboard, 1, row, str.tostring(rsi, "#.1"), text_color=color_rsi, text_size=txt_size_body, bgcolor=color.new(#2962FF, dashboard_transparency))
+            row += 1
+            
+            // 第2行：信号emoji
+            signal_text = "⚪"
+            signal_color = color.gray
+            
+            if sig_buy_mtf
+                signal_text := "🌟"
+                signal_color := color_bull
+            else if sig_buy_div
+                signal_text := "💎"
+                signal_color := color_bull
+            else if sig_buy_extreme
+                signal_text := "🔥"
+                signal_color := color_bull
+            else if show_normal_signals and sig_buy_normal
+                signal_text := "⬆️"
+                signal_color := color_bull
+            else if sig_sell_mtf
+                signal_text := "🌟"
+                signal_color := color_bear
+            else if sig_sell_div
+                signal_text := "💎"
+                signal_color := color_bear
+            else if sig_sell_extreme
+                signal_text := "❄️"
+                signal_color := color_bear
+            else if show_normal_signals and sig_sell_normal
+                signal_text := "⬇️"
+                signal_color := color_bear
+            else if sig_div_bull_only
+                signal_text := "↗️"
+                signal_color := #00BCD4
+            else if sig_div_bear_only
+                signal_text := "↘️"
+                signal_color := #FF9800
+            
+            table.cell(dashboard, 0, row, "信号", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, signal_text, text_color=signal_color, text_size=txt_size_body)
+            row += 1
+            
+            // 第3行：状态
+            status_mobile = rsi_zscore < -2 ? "🟢极卖" : rsi_zscore < -1.5 ? "🟡超卖" : rsi_zscore > 2 ? "🔴极买" : rsi_zscore > 1.5 ? "🟠超买" : "⚪中性"
+            
+            table.cell(dashboard, 0, row, "状态", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, status_mobile, text_color=status_color, text_size=txt_size_body)
+            row += 1
+        
+        // ═══════════════════════════════════════════════════════════════════════
         // 核心信息 (Lite & Full 共享)
         // ═══════════════════════════════════════════════════════════════════════
         
-        // 标题行 - 仅显示RSI值
-        table.cell(dashboard, 0, row, "ADAPTIVE RSI", text_color=color.white, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
-        table.cell(dashboard, 1, row, str.tostring(rsi, "#.0"), text_color=color_rsi, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
-        row += 1
-        
-        // Z-Score行 - 显示Z值和对应的近似百分位
-        zscore_approx_pct = f_zscore_to_percentile(rsi_zscore)
-        zscore_display = str.tostring(rsi_zscore, "#.2") + "σ (≈P" + str.tostring(zscore_approx_pct, "#") + ")"
-        table.cell(dashboard, 0, row, "Z-Score", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, zscore_display, text_color=status_color, text_size=txt_size_body)
-        row += 1
-        
-        // 百分位行 - 显示百分位和对应的Z-Score范围
-        pct_zscore_range = f_percentile_zscore_range(rsi_percentile)
-        percentile_display = "P" + str.tostring(rsi_percentile, "#") + pct_zscore_range
-        table.cell(dashboard, 0, row, "Percentile", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, percentile_display, text_color=status_color, text_size=txt_size_body)
-        row += 1
-        
-        // 状态 + 趋势
-        table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, status_text + " " + trend_text, text_color=status_color, text_size=txt_size_body)
-        row += 1
-        
-        // Lookback 信息 (显示模式和健康度)
-        lookback_mode_display = lookback_mode == "Auto" ? "[Auto]" : "[Custom]"
-        health_icons = (health_sample_coverage ? "✅" : "⚠️") + (health_distribution_spread ? "✅" : "⚠️") + (health_stat_valid ? "✅" : "⚠️")
-        lookback_color = health_sample_coverage and health_distribution_spread and health_stat_valid ? color.white : color.yellow
-        table.cell(dashboard, 0, row, "Lookback " + lookback_mode_display, text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, str.tostring(lookback) + " " + health_icons, text_color=lookback_color, text_size=txt_size_body)
-        row += 1
-        
-        // ═══════════════════════════════════════════════════════════════════════
-        // Full 模式额外信息
-        // ═══════════════════════════════════════════════════════════════════════
-        
-        if dashboard_mode == "Full"
-            // MTF 部分 (使用格式化后的时间框架名称)
-            if enable_mtf
-                table.cell(dashboard, 0, row, "MTF " + mtf_tf1_display + "|" + mtf_tf2_display + "|" + mtf_tf3_display, text_color=color.gray, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, f_status_text(status_tf1) + "|" + f_status_text(status_tf2) + "|" + f_status_text(status_tf3), text_color=color.white, text_size=txt_size_body)
-                row += 1
-                
-                table.cell(dashboard, 0, row, "Resonance", text_color=color.gray, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, resonance_text, text_color=resonance_color, text_size=txt_size_body)
-                row += 1
+        else
+            // 标题行 - 仅显示RSI值
+            table.cell(dashboard, 0, row, "ADAPTIVE RSI", text_color=color.white, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
+            table.cell(dashboard, 1, row, str.tostring(rsi, "#.0"), text_color=color_rsi, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
+            row += 1
             
-            // 背离部分 (显示当前模式和参数)
-            if enable_divergence
-                div_mode_display = div_mode == "Auto" ? "[" + active_div_mode + "]" : ""
-                table.cell(dashboard, 0, row, "Divergence " + div_mode_display, text_color=color.gray, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, div_text + " (" + str.tostring(div_lookback) + "/" + str.tostring(div_range) + ")", text_color=div_color, text_size=txt_size_body)
-                row += 1
+            // Z-Score行 - 显示Z值和对应的近似百分位
+            zscore_approx_pct = f_zscore_to_percentile(rsi_zscore)
+            zscore_display = str.tostring(rsi_zscore, "#.2") + "σ (≈P" + str.tostring(zscore_approx_pct, "#") + ")"
+            table.cell(dashboard, 0, row, "Z-Score", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, zscore_display, text_color=status_color, text_size=txt_size_body)
+            row += 1
             
-            // 统计部分 (格式: 信号名(次数) | 收益% | 胜率%)
-            if enable_stats
-                table.cell(dashboard, 0, row, "── STATS ──", text_color=color.gray, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, "(" + str.tostring(stats_forward_bars) + " bars)", text_color=color.gray, text_size=txt_size_body)
-                row += 1
+            // 百分位行 - 显示百分位和对应的Z-Score范围
+            pct_zscore_range = f_percentile_zscore_range(rsi_percentile)
+            percentile_display = "P" + str.tostring(rsi_percentile, "#") + pct_zscore_range
+            table.cell(dashboard, 0, row, "Percentile", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, percentile_display, text_color=status_color, text_size=txt_size_body)
+            row += 1
+            
+            // 状态 + 趋势
+            table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, status_text + " " + trend_text, text_color=status_color, text_size=txt_size_body)
+            row += 1
+            
+            // Lookback 信息 (显示模式和健康度)
+            lookback_mode_display = lookback_mode == "Auto" ? "[Auto]" : "[Custom]"
+            health_icons = (health_sample_coverage ? "✅" : "⚠️") + (health_distribution_spread ? "✅" : "⚠️") + (health_stat_valid ? "✅" : "⚠️")
+            lookback_color = health_sample_coverage and health_distribution_spread and health_stat_valid ? color.white : color.yellow
+            table.cell(dashboard, 0, row, "Lookback " + lookback_mode_display, text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.tostring(lookback) + " " + health_icons, text_color=lookback_color, text_size=txt_size_body)
+            row += 1
+            
+            // ═══════════════════════════════════════════════════════════════════════
+            // Full 模式额外信息
+            // ═══════════════════════════════════════════════════════════════════════
+            
+            if dashboard_mode == "Full"
+                // MTF 部分 (使用格式化后的时间框架名称)
+                if enable_mtf
+                    table.cell(dashboard, 0, row, "MTF " + mtf_tf1_display + "|" + mtf_tf2_display + "|" + mtf_tf3_display, text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, f_status_text(status_tf1) + "|" + f_status_text(status_tf2) + "|" + f_status_text(status_tf3), text_color=color.white, text_size=txt_size_body)
+                    row += 1
+                    
+                    table.cell(dashboard, 0, row, "Resonance", text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, resonance_text, text_color=resonance_color, text_size=txt_size_body)
+                    row += 1
                 
-                // 🌟 MTF 共振
-                table.cell(dashboard, 0, row, "🌟 MTF Buy(" + str.tostring(mtf_buy_count) + ")", text_color=#FFD700, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(mtf_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(mtf_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
-                row += 1
-                table.cell(dashboard, 0, row, "🌟 MTF Sell(" + str.tostring(mtf_sell_count) + ")", text_color=#FFD700, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(mtf_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(mtf_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
-                row += 1
+                // 背离部分 (显示当前模式和参数)
+                if enable_divergence
+                    div_mode_display = div_mode == "Auto" ? "[" + active_div_mode + "]" : ""
+                    table.cell(dashboard, 0, row, "Divergence " + div_mode_display, text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, div_text + " (" + str.tostring(div_lookback) + "/" + str.tostring(div_range) + ")", text_color=div_color, text_size=txt_size_body)
+                    row += 1
                 
-                // 💎 背离+极端
-                table.cell(dashboard, 0, row, "💎 Div Buy(" + str.tostring(div_buy_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(div_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(div_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
-                row += 1
-                table.cell(dashboard, 0, row, "💎 Div Sell(" + str.tostring(div_sell_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(div_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(div_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
-                row += 1
-                
-                // 🔥 极端
-                table.cell(dashboard, 0, row, "🔥 Ext Buy(" + str.tostring(ext_buy_count) + ")", text_color=color_bull, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(ext_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(ext_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
-                row += 1
-                table.cell(dashboard, 0, row, "❄️ Ext Sell(" + str.tostring(ext_sell_count) + ")", text_color=color_bear, text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(ext_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(ext_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
-                row += 1
-                
-                // 普通信号
-                table.cell(dashboard, 0, row, "⬆️ Norm Buy(" + str.tostring(norm_buy_count) + ")", text_color=color.new(color_bull, 30), text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(norm_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(norm_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
-                row += 1
-                table.cell(dashboard, 0, row, "⬇️ Norm Sell(" + str.tostring(norm_sell_count) + ")", text_color=color.new(color_bear, 30), text_size=txt_size_body)
-                table.cell(dashboard, 1, row, str.tostring(norm_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(norm_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
+                // 统计部分 (格式: 信号名(次数) | 收益% | 胜率%)
+                if enable_stats
+                    table.cell(dashboard, 0, row, "── STATS ──", text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, "(" + str.tostring(stats_forward_bars) + " bars)", text_color=color.gray, text_size=txt_size_body)
+                    row += 1
+                    
+                    // 🌟 MTF 共振
+                    table.cell(dashboard, 0, row, "🌟 MTF Buy(" + str.tostring(mtf_buy_count) + ")", text_color=#FFD700, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(mtf_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(mtf_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                    row += 1
+                    table.cell(dashboard, 0, row, "🌟 MTF Sell(" + str.tostring(mtf_sell_count) + ")", text_color=#FFD700, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(mtf_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(mtf_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
+                    row += 1
+                    
+                    // 💎 背离+极端
+                    table.cell(dashboard, 0, row, "💎 Div Buy(" + str.tostring(div_buy_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(div_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(div_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                    row += 1
+                    table.cell(dashboard, 0, row, "💎 Div Sell(" + str.tostring(div_sell_count) + ")", text_color=#00BCD4, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(div_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(div_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
+                    row += 1
+                    
+                    // 🔥 极端
+                    table.cell(dashboard, 0, row, "🔥 Ext Buy(" + str.tostring(ext_buy_count) + ")", text_color=color_bull, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(ext_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(ext_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                    row += 1
+                    table.cell(dashboard, 0, row, "❄️ Ext Sell(" + str.tostring(ext_sell_count) + ")", text_color=color_bear, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(ext_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(ext_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
+                    row += 1
+                    
+                    // 普通信号
+                    table.cell(dashboard, 0, row, "⬆️ Norm Buy(" + str.tostring(norm_buy_count) + ")", text_color=color.new(color_bull, 30), text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(norm_buy_avg, "+#.1;-#.1") + "% | " + str.tostring(norm_buy_winrate, "#") + "%", text_color=color_bull, text_size=txt_size_body)
+                    row += 1
+                    table.cell(dashboard, 0, row, "⬇️ Norm Sell(" + str.tostring(norm_sell_count) + ")", text_color=color.new(color_bear, 30), text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.tostring(norm_sell_avg, "+#.1;-#.1") + "% | " + str.tostring(norm_sell_winrate, "#") + "%", text_color=color_bear, text_size=txt_size_body)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ ALERTS
