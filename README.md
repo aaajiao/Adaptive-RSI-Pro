@@ -158,27 +158,114 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 
 ---
 
-## Z-Score vs Percentile Reference / Z值与百分位对照表
+## Z-Score 与 百分位：双重视角 / Dual Perspective
 
-This indicator uses **Z-Score** for signal triggering and **Percentiles** for visual reference.
+This indicator displays **both Z-Score and Percentile** to provide complementary views of the same RSI distribution.
 
-本指标使用 **Z-Score** 触发信号，**百分位** 作为视觉参考。
+本指标**同时显示Z-Score和百分位**，为同一RSI分布提供互补视角。
 
-| Z-Score | Approx. Percentile | 含义 / Meaning |
-|---------|-------------------|-------------------|
-| +2.0σ | P97.7 | Extreme Overbought / 极端超买 |
-| +1.5σ | P93.3 | Normal Overbought / 普通超买 |
-| +1.0σ | P84.1 | Mild Overbought / 偏强 |
-| 0σ (mean) | P50 | Neutral / 中性 |
-| -1.0σ | P15.9 | Mild Oversold / 偏弱 |
-| -1.5σ | P6.7 | Normal Oversold / 普通超卖 |
-| -2.0σ | P2.3 | Extreme Oversold / 极端超卖 |
+### Why Both? / 为什么同时显示？
 
-> **Why Z-Score? / 为什么用 Z-Score？**
-> 
-> Z-Score provides a **statistically consistent threshold** across different assets, while percentiles vary by asset volatility.
-> 
-> Z-Score 提供了跨资产的**统计一致性阈值**，而百分位会因资产波动率而异。
+**本质关联**：两者都是描述RSI在历史分布中位置的统计方法
+- **Z-Score（标准分数）**：`(RSI - 均值) / 标准差` - 基于正态分布假设
+- **百分位（Percentile）**：RSI在历史数据中的排名位置 - 不假设分布类型
+
+**互补优势**：
+
+| 维度 | Z-Score | Percentile |
+|------|---------|------------|
+| **跨资产一致性** | ✅ 优秀 - BTC和SPY都用±2σ | ⚠️ 因波动率不同而异 |
+| **统计学严谨性** | ✅ 置信区间、假设检验 | ⚠️ 非参数统计 |
+| **直观易懂** | ⚠️ 需要统计学知识 | ✅ "低于95%历史值" |
+| **适用场景** | 📊 量化回测、信号触发 | 📈 可视化、用户理解 |
+
+### Conversion Reference / 转换对照表
+
+**快速对照**（假设正态分布）：
+
+| Z-Score | 百分位 | 含义 / Meaning | 信号类型 |
+|---------|--------|---------------|----------|
+| **±2.5σ** | **P0.6 / P99.4** | 极端异常（99%置信区间外） | 罕见机会 |
+| **±2.0σ** | **P2.3 / P97.7** | 极端超买/超卖（95%置信区间外） | 🔥❄️ 极端信号 |
+| ±1.5σ | P6.7 / P93.3 | 显著偏离 | ⬆️⬇️ 普通信号（默认） |
+| ±1.0σ | P15.9 / P84.1 | 轻度偏强/偏弱 | — |
+| 0σ | P50 | 中位数 | — |
+
+### Dashboard Dual Display / 仪表盘双重显示
+
+**新版Dashboard已实现自动转换**：
+
+```
+┌─────────────────────────────────┐
+│   ADAPTIVE RSI PRO       28.5   │
+├─────────────────────────────────┤
+│ Z-Score    −2.15σ (≈P2)        │  ← Z值 + 近似百分位
+│ Percentile P5 (−1.5σ ~ −2σ)   │  ← 百分位 + 对应Z值范围
+│ Status     🟢 EXTREME OVERSOLD  │
+└─────────────────────────────────┘
+```
+
+**理解方式**：
+- **从Z值看**：−2.15σ 表示超过95%置信区间，统计异常 → 对应约P2
+- **从百分位看**：P5 表示低于95%历史值，极端超卖 → 对应约−1.5σ到−2σ之间
+
+### Threshold Line Modes / 阈值线模式
+
+**Unified模式（推荐）** - 兼顾严谨性和直观性：
+- 绘制：Z-Score阈值线（±2σ、±1.5σ）
+- 标注：对应百分位（≈P98、≈P93、≈P7、≈P2）
+- 优势：一眼看懂统计意义和历史位置
+
+**其他模式**：
+- `Z-Score`：仅显示统计学阈值线
+- `Percentile`：仅显示百分位线
+- `Both`：同时显示两类线（较密集）
+
+### Practical Examples / 实际应用示例
+
+**场景1：识别极端机会**
+```
+当前RSI: 25.3
+Dashboard显示:
+  Z-Score: −2.35σ (≈P1)
+  Percentile: P5 (< −2σ)
+  Status: 🟢 EXTREME OVERSOLD
+
+解读：
+• 统计学视角：超过99%置信区间（|Z| > 2.3），极端异常
+• 直观视角：比99%的历史值都低，罕见超卖
+• 结论：强力买入信号 🔥
+```
+
+**场景2：普通信号判断**
+```
+当前RSI: 63.8
+Dashboard显示:
+  Z-Score: +1.52σ (≈P94)
+  Percentile: P90 (+1.5σ ~ +2σ)
+  Status: 🟠 OVERBOUGHT
+
+解读：
+• 统计学视角：约1.5倍标准差，显著偏高但未极端
+• 直观视角：高于90%的历史值，轻度超买
+• 结论：考虑减仓，非强制卖出 ⬇️
+```
+
+### Dashboard显示逻辑 / Display Logic
+
+**Z-Score行显示**：
+- 始终显示当前Z值（精确到2位小数）
+- 自动计算对应的近似百分位：`≈P[数值]`
+- 使用误差函数（Error Function）精确转换
+
+**Percentile行显示**：
+- 显示RSI所处的百分位区间（P5, P10, P25等）
+- 标注对应的Z值范围（如：`−1.5σ ~ −2σ`）
+- 帮助理解"P10"的统计意义
+
+**颜色关联**：
+- 两行使用相同的状态颜色（绿/黄/白/橙/红）
+- 视觉上强化"同一指标的不同表达"概念
 
 ---
 
@@ -233,7 +320,7 @@ This indicator uses **Z-Score** for signal triggering and **Percentiles** for vi
 ### Visual Settings / 视觉设置
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Threshold Line Mode | Z-Score | Z-Score / Percentile / Both / 阈值线模式 |
+| Threshold Line Mode | **Unified** | Unified(推荐)/Z-Score/Percentile/Both / 阈值线模式 |
 | Show Gradient Fill | ON | Display background gradients / 显示背景渐变 |
 | Dashboard Mode | Full | Full (all stats) / Lite (core only) / 面板模式 |
 | Dashboard Size | Normal | Tiny/Small/Normal/Large / 面板大小 |

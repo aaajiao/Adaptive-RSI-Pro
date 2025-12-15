@@ -55,7 +55,7 @@ lookback_precision = input.string("Normal", "Precision / 精度", options=["High
 vol_history_mode = input.string("1 Year", "History Depth / 历史深度", options=["6 Months", "1 Year", "2 Years"], group=grp_adaptive, tooltip="波动率参考的历史时间长度\n自动根据时间框架转换为K线数量")
 
 grp_visual = "═══ Visual Settings / 视觉设置 ═══"
-visual_line_mode = input.string("Z-Score", "Threshold Line Mode / 阈值线模式", options=["Z-Score", "Percentile", "Both"], group=grp_visual, tooltip="Z-Score: 显示统计学阈值线(±2σ, ±1.5σ)\nPercentile: 显示百分位线(P5-P95)\nBoth: 同时显示两种")
+visual_line_mode = input.string("Unified", "Threshold Line Mode / 阈值线模式", options=["Unified", "Z-Score", "Percentile", "Both"], group=grp_visual, tooltip="Unified(推荐): Z-Score线+百分位标注，兼顾严谨性和直观性\nZ-Score: 仅统计学阈值线(±2σ, ±1.5σ)\nPercentile: 仅百分位线(P5-P95)\nBoth: 同时显示两种")
 show_fill = input.bool(true, "Show Gradient Fill / 显示渐变填充", group=grp_visual)
 show_dashboard = input.bool(true, "Show Dashboard / 显示仪表盘", group=grp_visual)
 dashboard_mode = input.string("Full", "Dashboard Mode / 面板模式", options=["Lite", "Full"], group=grp_visual, tooltip="Lite: 仅核心信息(3行) | Full: 显示全部")
@@ -66,7 +66,7 @@ color_bear = input.color(color.new(#FF5252, 60), "Bearish Color / 熊市颜色",
 color_rsi = input.color(#FFEB3B, "RSI Line Color / RSI线颜色", group=grp_visual)
 
 grp_alerts = "═══ Alert Settings / 警报设置 ═══"
-enable_extreme_alerts = input.bool(true, "Extreme Alerts / 极端警报", group=grp_alerts, tooltip="触发条件: Z-Score ±2σ (约 P2.3/P97.7)")
+enable_extreme_alerts = input.bool(true, "Extreme Alerts / 极端警报", group=grp_alerts, tooltip="触发条件: Z-Score ±2σ\n统计意义: 95%置信区间外\n对应百分位: ≈ P2.3/P97.7\n━━━━━━━━━━━━━━━━━━\n转换对照:\n  Z=-2.5 ≈ P0.6  | Z=+2.5 ≈ P99.4\n  Z=-2.0 ≈ P2.3  | Z=+2.0 ≈ P97.7\n  Z=-1.5 ≈ P6.7  | Z=+1.5 ≈ P93.3\n  Z=-1.0 ≈ P15.9 | Z=+1.0 ≈ P84.1")
 enable_normal_alerts = input.bool(false, "Normal Alerts / 普通警报", group=grp_alerts, tooltip="触发条件: 见下方阈值设置")
 show_normal_signals = input.bool(false, "Show Normal Signals / 显示普通信号", group=grp_alerts, tooltip="⬆️⬇️ 普通超买/超卖信号，默认关闭")
 normal_threshold = input.float(1.5, "Normal Signal Threshold / 普通信号阈值", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="Z-Score 阈值\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
@@ -202,11 +202,38 @@ rsi_mean = ta.sma(rsi, lookback)
 rsi_stdev = ta.stdev(rsi, lookback)
 rsi_zscore = rsi_stdev != 0 ? (rsi - rsi_mean) / rsi_stdev : 0
 
+
 // Z-Score 动态阈值线 (用于绘图)
 zscore_upper_2 = rsi_mean + rsi_stdev * 2    // +2σ 极端超买
 zscore_upper_1_5 = rsi_mean + rsi_stdev * 1.5  // +1.5σ 超买
 zscore_lower_1_5 = rsi_mean - rsi_stdev * 1.5  // -1.5σ 超卖
 zscore_lower_2 = rsi_mean - rsi_stdev * 2    // -2σ 极端超卖
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ Z-SCORE ↔ PERCENTILE 转换工具 / CONVERSION UTILITIES
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Z-Score → 近似百分位（使用查找表方法）
+// Pine Script 不支持 math.erf，使用查找表近似
+f_zscore_to_percentile(_zscore) =>
+    // 查找表：常见 Z-Score 对应的百分位
+    _z = math.abs(_zscore)
+    _pct = _z >= 3.0 ? 99.9 :
+           _z >= 2.5 ? 99.4 :
+           _z >= 2.0 ? 97.7 :
+           _z >= 1.96 ? 97.5 :
+           _z >= 1.5 ? 93.3 :
+           _z >= 1.28 ? 90.0 :
+           _z >= 1.0 ? 84.1 :
+           _z >= 0.67 ? 75.0 :
+           _z >= 0.5 ? 69.1 :
+           _z >= 0.25 ? 59.9 : 50.0
+    // 根据正负返回对应百分位
+    _zscore >= 0 ? _pct : 100 - _pct
+
+// 百分位范围 → Z-Score区间文本（用于Dashboard显示）
+f_percentile_zscore_range(_pct) =>
+    _pct < 2.3 ? " (< −2σ)" : _pct <= 6.7 ? " (−1.5σ ~ −2σ)" : _pct <= 15.9 ? " (−1σ ~ −1.5σ)" : _pct >= 97.7 ? " (> +2σ)" : _pct >= 93.3 ? " (+1.5σ ~ +2σ)" : _pct >= 84.1 ? " (+1σ ~ +1.5σ)" : ""
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ TREND FILTER / 趋势过滤 (Auto-Adaptive)
@@ -454,10 +481,17 @@ if enable_divergence
 // ══════════════════════════════════════════════════════════════════════════════
 
 // 根据用户选择决定显示哪种阈值线
+show_unified = visual_line_mode == "Unified"
 show_zscore_lines = visual_line_mode == "Z-Score" or visual_line_mode == "Both"
 show_percentile_lines = visual_line_mode == "Percentile" or visual_line_mode == "Both"
 
-// Z-Score 阈值线 (统计学标准)
+// Unified模式：Z-Score线上直接标注对应百分位（使用条件表达式而非if块）
+plot(show_unified ? zscore_upper_2 : na, "±2σ (≈P98)", color=color.new(color_bear, 50), linewidth=2, style=plot.style_line)
+plot(show_unified ? zscore_upper_1_5 : na, "±1.5σ (≈P93)", color=color.new(color_bear, 60), linewidth=1, style=plot.style_circles)
+plot(show_unified ? zscore_lower_1_5 : na, "±1.5σ (≈P7)", color=color.new(color_bull, 60), linewidth=1, style=plot.style_circles)
+plot(show_unified ? zscore_lower_2 : na, "±2σ (≈P2)", color=color.new(color_bull, 50), linewidth=2, style=plot.style_line)
+
+// Z-Score 阈值线 (统计学标准 - 仅在Z-Score/Both模式下显示)
 zscore_extreme_color = show_zscore_lines ? (visual_line_mode == "Both" ? 50 : 70) : 100
 zscore_normal_color = show_zscore_lines ? (visual_line_mode == "Both" ? 60 : 80) : 100
 
@@ -467,8 +501,8 @@ plot(show_zscore_lines ? zscore_lower_1_5 : na, "±1.5σ 超卖", color=color.ne
 plot(show_zscore_lines ? zscore_lower_2 : na, "±2σ 极端超卖", color=color.new(color_bull, zscore_extreme_color), linewidth=2, style=plot.style_line)
 
 // 百分位线 (作为辅助参考)
-// 注意：即使在 Z-Score 模式下也要绘制百分位线（用于渐变填充），只是设置为不可见
-percentile_line_transparency = show_percentile_lines ? (visual_line_mode == "Both" ? 85 : 70) : 100  // Z-Score模式下100%透明
+// 注意：在Unified和Z-Score模式下，百分位线设为透明（仅用于渐变填充）
+percentile_line_transparency = show_percentile_lines ? (visual_line_mode == "Both" ? 85 : 70) : 100  // Unified/Z-Score模式下100%透明
 
 p95_line = plot(rsi_p95, "P95 极端超买", color=color.new(color_bear, percentile_line_transparency), linewidth=1)
 p90_line = plot(rsi_p90, "P90 超买", color=color.new(color_bear, percentile_line_transparency), linewidth=1, style=plot.style_circles)
@@ -761,19 +795,28 @@ if show_dashboard
         // 核心信息 (Lite & Full 共享)
         // ═══════════════════════════════════════════════════════════════════════
         
-        // 标题行
+        // 标题行 - 仅显示RSI值
         table.cell(dashboard, 0, row, "ADAPTIVE RSI", text_color=color.white, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
-        table.cell(dashboard, 1, row, str.tostring(rsi, "#.0") + " (" + str.tostring(rsi_zscore, "#.1") + "σ)", text_color=color_rsi, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
+        table.cell(dashboard, 1, row, str.tostring(rsi, "#.0"), text_color=color_rsi, text_size=txt_size_title, bgcolor=color.new(#2962FF, dashboard_transparency))
         row += 1
         
-        // 状态
-        table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, status_text, text_color=status_color, text_size=txt_size_body)
+        // Z-Score行 - 显示Z值和对应的近似百分位
+        zscore_approx_pct = f_zscore_to_percentile(rsi_zscore)
+        zscore_display = str.tostring(rsi_zscore, "#.2") + "σ (≈P" + str.tostring(zscore_approx_pct, "#") + ")"
+        table.cell(dashboard, 0, row, "Z-Score", text_color=color.gray, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, zscore_display, text_color=status_color, text_size=txt_size_body)
         row += 1
         
-        // 百分位 + 趋势
+        // 百分位行 - 显示百分位和对应的Z-Score范围
+        pct_zscore_range = f_percentile_zscore_range(rsi_percentile)
+        percentile_display = "P" + str.tostring(rsi_percentile, "#") + pct_zscore_range
         table.cell(dashboard, 0, row, "Percentile", text_color=color.gray, text_size=txt_size_body)
-        table.cell(dashboard, 1, row, "P" + str.tostring(rsi_percentile, "#") + " " + trend_text, text_color=trend_color, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, percentile_display, text_color=status_color, text_size=txt_size_body)
+        row += 1
+        
+        // 状态 + 趋势
+        table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
+        table.cell(dashboard, 1, row, status_text + " " + trend_text, text_color=status_color, text_size=txt_size_body)
         row += 1
         
         // Lookback 信息 (显示模式和健康度)
