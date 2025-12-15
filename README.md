@@ -1,5 +1,9 @@
 # Adaptive RSI Pro / 自适应RSI专业版
 
+[![TradingView](https://img.shields.io/badge/TradingView-Indicator-blue?logo=tradingview)](https://www.tradingview.com/)
+[![Pine Script](https://img.shields.io/badge/Pine%20Script-v5-brightgreen)](https://www.tradingview.com/pine-script-docs/en/v5/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence detection + Signal statistics.
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
