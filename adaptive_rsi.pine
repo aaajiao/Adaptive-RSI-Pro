@@ -66,13 +66,11 @@ color_bear = input.color(color.new(#FF5252, 60), "Bearish Color / 熊市颜色",
 color_rsi = input.color(#FFEB3B, "RSI Line Color / RSI线颜色", group=grp_visual)
 
 grp_alerts = "═══ Alert Settings / 警报设置 ═══"
-enable_extreme_alerts = input.bool(true, "Extreme Alerts / 极端警报", group=grp_alerts, tooltip="触发条件: Z-Score ±2σ\n统计意义: 95%置信区间外\n对应百分位: ≈ P2.3/P97.7\n━━━━━━━━━━━━━━━━━━\n转换对照:\n  Z=-2.5 ≈ P0.6  | Z=+2.5 ≈ P99.4\n  Z=-2.0 ≈ P2.3  | Z=+2.0 ≈ P97.7\n  Z=-1.5 ≈ P6.7  | Z=+1.5 ≈ P93.3\n  Z=-1.0 ≈ P15.9 | Z=+1.0 ≈ P84.1")
-enable_normal_alerts = input.bool(false, "Normal Alerts / 普通警报", group=grp_alerts, tooltip="触发条件: 见下方阈值设置")
 show_normal_signals = input.bool(false, "Show Normal Signals / 显示普通信号", group=grp_alerts, tooltip="⬆️⬇️ 普通超买/超卖信号，默认关闭")
 normal_threshold = input.float(1.5, "Normal Signal Threshold / 普通信号阈值", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="Z-Score 阈值\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
 enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据")
 cooldown_bars = input.int(5, "Cooldown Period (Bars) / 冷却期(K线数)", minval=1, maxval=20, group=grp_alerts, tooltip="同类信号触发后的冷却时间")
-enable_smart_alert = input.bool(true, "🎯 Smart Alert (Recommended) / 智能警报(推荐)", group=grp_alerts, tooltip="V6动态警报：单条消息汇总所有触发信号\n包含完整上下文（RSI值、Z-Score等）\n避免重复通知，更清晰易读")
+enable_smart_alert = input.bool(true, "🎯 Smart Alert / 智能警报", group=grp_alerts, tooltip="V6动态警报：自动聚合所有信号到一条消息\n包含完整上下文（RSI值、Z-Score、百分位）\n实时触发，智能去重")
 
 grp_trend = "═══ Trend Filter / 趋势过滤 ═══"
 enable_trend_filter = input.bool(false, "Enable Trend Filter / 启用趋势过滤", group=grp_trend, tooltip="仅在趋势方向触发信号：上升趋势只做多，下降趋势只做空")
@@ -915,93 +913,24 @@ if show_dashboard
                     table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", norm_sell_stats.get_avg(), norm_sell_stats.get_winrate()), text_color=color_bear, text_size=txt_size_body)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ▶ ALERTS
+// ▶ SMART ALERT (V6 Unified Alert System)
 // ══════════════════════════════════════════════════════════════════════════════
-
-// 极端警报
-alertcondition(extreme_oversold and enable_extreme_alerts, 
-               title="🔥 Extreme Oversold / 极端超卖", 
-               message="{{ticker}}: RSI Z-Score crossed below -2σ (≈P2.3). Extreme oversold condition detected!")
-
-alertcondition(extreme_overbought and enable_extreme_alerts, 
-               title="❄️ Extreme Overbought / 极端超买", 
-               message="{{ticker}}: RSI Z-Score crossed above +2σ (≈P97.7). Extreme overbought condition detected!")
-
-// 普通警报
-alertcondition(normal_oversold and enable_normal_alerts, 
-               title="⬆️ Oversold / 超卖", 
-               message="{{ticker}}: RSI Z-Score crossed below -1.5σ (≈P6.7). Oversold condition detected.")
-
-alertcondition(normal_overbought and enable_normal_alerts, 
-               title="⬇️ Overbought / 超买", 
-               message="{{ticker}}: RSI Z-Score crossed above +1.5σ (≈P93.3). Overbought condition detected.")
-
-// 综合警报：MTF共振（最全面的信号）
-alertcondition((enable_mtf and oversold_resonance) or (enable_mtf and overbought_resonance), 
-               title="🌟 Any Signal (MTF) / 任意信号-多周期", 
-               message="{{ticker}}: MTF resonance detected - Multiple timeframes aligned")
-
-// MTF 共振警报
-alertcondition(enable_mtf and oversold_resonance and raw_extreme_oversold, 
-               title="🌟 MTF Oversold Resonance / 多周期超卖共振", 
-               message="{{ticker}}: Multiple timeframes showing oversold condition - Strong buy signal!")
-
-alertcondition(enable_mtf and overbought_resonance and raw_extreme_overbought, 
-               title="🌟 MTF Overbought Resonance / 多周期超买共振", 
-               message="{{ticker}}: Multiple timeframes showing overbought condition - Strong sell signal!")
-
-// 背离警报
-alertcondition(enable_divergence and bullish_divergence, 
-               title="💎 Bullish Divergence / 看涨背离", 
-               message="{{ticker}}: RSI bullish divergence detected - Price making lower low but RSI making higher low")
-
-alertcondition(enable_divergence and bearish_divergence, 
-               title="💎 Bearish Divergence / 看跌背离", 
-               message="{{ticker}}: RSI bearish divergence detected - Price making higher high but RSI making lower high")
-
-// 趋势变化警报
-alertcondition(ta.crossover(rsi, rsi_p50), 
-               title="📈 Trend Shift Bullish / 趋势转多", 
-               message="{{ticker}}: RSI crossed above adaptive median (P50) - Trend shift to bullish")
-
-alertcondition(ta.crossunder(rsi, rsi_p50), 
-               title="📉 Trend Shift Bearish / 趋势转空", 
-               message="{{ticker}}: RSI crossed below adaptive median (P50) - Trend shift to bearish")
-
-// ══════════════════════════════════════════════════════════════════════════════
-// ▶ DYNAMIC ALERTS (V6 Best Practice)
-// ══════════════════════════════════════════════════════════════════════════════
-// 实现 alert() 函数调用，支持动态消息
-// 注意：保持 alertcondition 存在以兼容旧版警报设置方式，
-// 但 alert() 允许用户选择 "Any function call" 来获取包含具体数值的富文本消息。
-
-if (enable_extreme_alerts and extreme_oversold)
-    alert(str.format("{0}:🔥 Extreme Oversold! RSI Z-Score is {1,number,#.2}σ (≈P{2,number,#.1})", syminfo.ticker, rsi_zscore, f_zscore_to_percentile(rsi_zscore)), alert.freq_once_per_bar_close)
-
-if (enable_extreme_alerts and extreme_overbought)
-    alert(str.format("{0}:❄️ Extreme Overbought! RSI Z-Score is {1,number,#.2}σ (≈P{2,number,#.1})", syminfo.ticker, rsi_zscore, f_zscore_to_percentile(rsi_zscore)), alert.freq_once_per_bar_close)
-
-if (enable_mtf and oversold_resonance and raw_extreme_oversold)
-    alert(str.format("{0}:🌟 MTF Resonance BUY! {1}/{2} timeframes oversold.", syminfo.ticker, oversold_count, valid_tf_count), alert.freq_once_per_bar_close)
-
-if (enable_mtf and overbought_resonance and raw_extreme_overbought)
-    alert(str.format("{0}:🌟 MTF Resonance SELL! {1}/{2} timeframes overbought.", syminfo.ticker, overbought_count, valid_tf_count), alert.freq_once_per_bar_close)
-
-if (enable_divergence and bullish_divergence)
-    alert(str.format("{0}:💎 Bullish Divergence! Price Low: {1}, RSI Low: {2}", syminfo.ticker, low[div_lookback], rsi[div_lookback]), alert.freq_once_per_bar_close)
-
-if (enable_divergence and bearish_divergence)
-    alert(str.format("{0}:💎 Bearish Divergence! Price High: {1}, RSI High: {2}", syminfo.ticker, high[div_lookback], rsi[div_lookback]), alert.freq_once_per_bar_close)
+// 智能警报：自动聚合所有信号到一条富文本消息
+// 使用上升沿检测：只在有新信号出现时触发
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ SMART ALERT (Aggregated Signals)
 // ══════════════════════════════════════════════════════════════════════════════
 // 智能警报：单条消息汇总所有触发的信号，避免重复通知
+// 使用上升沿检测：只在有新信号出现时触发
 
 if enable_smart_alert
-    // 买入信号汇总
-    has_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme
-    if has_buy_signal
+    // 买入信号汇总 (包含所有信号类型)
+    has_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal
+    has_buy_signal_prev = sig_buy_mtf[1] or sig_buy_div[1] or sig_buy_extreme[1] or sig_buy_normal[1]
+    
+    // 只在新信号出现时触发（上升沿）
+    if has_buy_signal and not has_buy_signal_prev
         msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
         
         // 添加所有触发的信号标签
@@ -1011,16 +940,21 @@ if enable_smart_alert
             msg := msg + "💎背离 "
         if sig_buy_extreme
             msg := msg + "🔥极端 "
+        if sig_buy_normal
+            msg := msg + "⬆️超卖 "
         
         // 添加上下文信息
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
         msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
         
-        alert(msg, alert.freq_once_per_bar_close)
+        alert(msg, alert.freq_once_per_bar)
     
-    // 卖出信号汇总
-    has_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme
-    if has_sell_signal
+    // 卖出信号汇总 (包含所有信号类型)
+    has_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal
+    has_sell_signal_prev = sig_sell_mtf[1] or sig_sell_div[1] or sig_sell_extreme[1] or sig_sell_normal[1]
+    
+    // 只在新信号出现时触发（上升沿）
+    if has_sell_signal and not has_sell_signal_prev
         msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
         
         // 添加所有触发的信号标签
@@ -1030,9 +964,11 @@ if enable_smart_alert
             msg := msg + "💎背离 "
         if sig_sell_extreme
             msg := msg + "❄️极端 "
+        if sig_sell_normal
+            msg := msg + "⬇️超买 "
         
         // 添加上下文信息
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
         msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
         
-        alert(msg, alert.freq_once_per_bar_close)
+        alert(msg, alert.freq_once_per_bar)
