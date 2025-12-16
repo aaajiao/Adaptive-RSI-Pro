@@ -7,6 +7,8 @@
 Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence detection + Signal statistics.
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
+ 
+**Pine Script v6** | **Last Update: 2025-12-16**
 
 ---
 
@@ -267,7 +269,20 @@ Dashboard显示:
 
 ---
 
-## Dashboard / 仪表盘
+### Dashboard Setups / 仪表盘配置
+
+#### Full Mode (PC/Tablet)
+Shows detailed stats, MTF status, and divergence info.
+显示详细统计、MTF状态和背离信息。
+
+#### Mobile Mode (Phone)
+Simplified 3-row layout optimized for small screens.
+极简3行布局，专为手机屏幕优化。
+- Row 1: RSI Value
+- Row 2: Signal Status (Emoji)
+- Row 3: Trend/Filter Status
+
+### 📈 Dashboard Example / 面板示例
 
 ```
 ┌─────────────────────────────────┐
@@ -376,7 +391,7 @@ Dashboard显示:
 |---------|---------|-------------|
 | Threshold Line Mode | **Unified** | Unified(推荐)/Z-Score/Percentile/Both / 阈值线模式 |
 | Show Gradient Fill | ON | Display background gradients / 显示背景渐变 |
-| Dashboard Mode | Full | Full (all stats) / Lite (core only) / 面板模式 |
+| Dashboard Mode | Full | Full/Lite/Mobile(Phone) / 面板模式 |
 | Dashboard Size | Normal | Tiny/Small/Normal/Large / 面板大小 |
 | Dashboard Transparency | 30 | 0-100% transparency level / 透明度 |
 
@@ -467,7 +482,11 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 
 ## Changelog / 更新日志
 
-### v6.0 - Alert System Simplification & V6 Optimization (Current)
+### v6.1 - Mobile Experience (Current)
+- 📱 **Mobile Dashboard / 手机端面板**: Added simplified "Mobile" mode optimized for phone screens (RSI + Signal Emoji only).
+- 🔧 **UX Improvements**: Optimized font sizes and layout for small screens.
+
+### v6.0 - Alert System Simplification & V6 Optimization
 - 🎯 **Smart Alert System / 智能警报系统简化**: 
   - **唯一警报入口**: 移除所有legacy alertcondition，统一为V6 Smart Alert
   - **实时触发**: 改为 `alert.freq_once_per_bar` 实现K线内实时响应
