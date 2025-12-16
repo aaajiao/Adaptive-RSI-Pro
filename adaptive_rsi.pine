@@ -72,6 +72,7 @@ show_normal_signals = input.bool(false, "Show Normal Signals / 显示普通信�
 normal_threshold = input.float(1.5, "Normal Signal Threshold / 普通信号阈值", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="Z-Score 阈值\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
 enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据")
 cooldown_bars = input.int(5, "Cooldown Period (Bars) / 冷却期(K线数)", minval=1, maxval=20, group=grp_alerts, tooltip="同类信号触发后的冷却时间")
+enable_smart_alert = input.bool(true, "🎯 Smart Alert (Recommended) / 智能警报(推荐)", group=grp_alerts, tooltip="V6动态警报：单条消息汇总所有触发信号\n包含完整上下文（RSI值、Z-Score等）\n避免重复通知，更清晰易读")
 
 grp_trend = "═══ Trend Filter / 趋势过滤 ═══"
 enable_trend_filter = input.bool(false, "Enable Trend Filter / 启用趋势过滤", group=grp_trend, tooltip="仅在趋势方向触发信号：上升趋势只做多，下降趋势只做空")
@@ -322,28 +323,36 @@ active_tf2 = mtf_mode == "Auto" ? auto_t2 : mtf_tf2_input
 active_tf3 = mtf_mode == "Auto" ? auto_t3 : mtf_tf3_input
 
 // MTF RSI 计算
-f_rsi_mtf(_tf) =>
-    request.security(syminfo.tickerid, _tf, rsi, lookahead=barmerge.lookahead_off)
+// MTF RSI 计算
+// V6 Best Practice: Tuple Request (Single security call for multiple values)
+f_rsi_data_mtf(_tf) =>
+    request.security(syminfo.tickerid, _tf, [rsi, rsi_p10, rsi_p90], lookahead=barmerge.lookahead_off)
 
-f_percentiles_mtf(_tf) =>
-    [request.security(syminfo.tickerid, _tf, rsi_p10, lookahead=barmerge.lookahead_off),
-     request.security(syminfo.tickerid, _tf, rsi_p90, lookahead=barmerge.lookahead_off)]
+// Helper to returns NAs tuple (to satisfy ternary operator syntax)
+f_na_tuple() => [float(na), float(na), float(na)]
 
-rsi_tf1 = enable_mtf ? f_rsi_mtf(active_tf1) : na
-rsi_tf2 = enable_mtf ? f_rsi_mtf(active_tf2) : na
-rsi_tf3 = enable_mtf ? f_rsi_mtf(active_tf3) : na
+// Fetch all data in tuple form
+[rsi_tf1, p10_tf1_raw, p90_tf1_raw] = if enable_mtf 
+    f_rsi_data_mtf(active_tf1) 
+else 
+    f_na_tuple()
 
-// MTF percentiles
-[p10_tf1_raw, p90_tf1_raw] = f_percentiles_mtf(active_tf1)
-[p10_tf2_raw, p90_tf2_raw] = f_percentiles_mtf(active_tf2)
-[p10_tf3_raw, p90_tf3_raw] = f_percentiles_mtf(active_tf3)
+[rsi_tf2, p10_tf2_raw, p90_tf2_raw] = if enable_mtf 
+    f_rsi_data_mtf(active_tf2) 
+else 
+    f_na_tuple()
 
-p10_tf1 = enable_mtf ? p10_tf1_raw : na
-p90_tf1 = enable_mtf ? p90_tf1_raw : na
-p10_tf2 = enable_mtf ? p10_tf2_raw : na
-p90_tf2 = enable_mtf ? p90_tf2_raw : na
-p10_tf3 = enable_mtf ? p10_tf3_raw : na
-p90_tf3 = enable_mtf ? p90_tf3_raw : na
+[rsi_tf3, p10_tf3_raw, p90_tf3_raw] = if enable_mtf 
+    f_rsi_data_mtf(active_tf3) 
+else 
+    f_na_tuple()
+
+p10_tf1 = p10_tf1_raw
+p90_tf1 = p90_tf1_raw
+p10_tf2 = p10_tf2_raw
+p90_tf2 = p90_tf2_raw
+p10_tf3 = p10_tf3_raw
+p90_tf3 = p90_tf3_raw
 
 // 计算各时间框架状态
 f_status(_rsi, _p10, _p90) =>
@@ -351,27 +360,23 @@ f_status(_rsi, _p10, _p90) =>
 
 // 时间框架格式化函数 (统一显示为 1h/4h/D 等格式)
 f_tf_display(_tf) =>
-    switch _tf
-        "1" => "1m"
-        "3" => "3m"
-        "5" => "5m"
-        "15" => "15m"
-        "30" => "30m"
-        "45" => "45m"
-        "60" => "1h"
-        "120" => "2h"
-        "180" => "3h"
-        "240" => "4h"
-        "360" => "6h"
-        "480" => "8h"
-        "720" => "12h"
-        "D" => "D"
-        "1D" => "D"
-        "W" => "W"
-        "1W" => "W"
-        "M" => "M"
-        "1M" => "M"
-        => _tf
+    // V6 clean formatting: Handle minutes, hours, days
+    // Note: This manual mapping is still often clearer than automated logic for specific labels like "4h"
+    if str.contains(_tf, "D") or str.contains(_tf, "W") or str.contains(_tf, "M")
+        _tf
+    else
+        // Try to parse as int
+        int_tf = str.tonumber(_tf)
+        if not na(int_tf)
+            if int_tf < 60
+                str.format("{0}m", int_tf)
+            else if int_tf % 60 == 0
+                str.format("{0}h", int_tf / 60)
+            else
+                // Mixed hours/minutes, keep as minutes or format? Usually scripts stick to "Xm"
+                str.format("{0}m", int_tf)
+        else
+            _tf
 
 // 格式化后的时间框架显示
 mtf_tf1_display = f_tf_display(active_tf1)
@@ -513,23 +518,19 @@ if enable_divergence
 
 // 根据用户选择决定显示哪种阈值线
 show_unified = visual_line_mode == "Unified"
-show_zscore_lines = visual_line_mode == "Z-Score" or visual_line_mode == "Both"
+show_zscore_lines = show_unified or visual_line_mode == "Z-Score" or visual_line_mode == "Both"  // Unified也使用Z-Score线
 show_percentile_lines = visual_line_mode == "Percentile" or visual_line_mode == "Both"
 
-// Unified模式：Z-Score线上直接标注对应百分位（使用条件表达式而非if块）
-plot(show_unified ? zscore_upper_2 : na, "±2σ (≈P98)", color=color.new(color_bear, 50), linewidth=2, style=plot.style_line)
-plot(show_unified ? zscore_upper_1_5 : na, "±1.5σ (≈P93)", color=color.new(color_bear, 60), linewidth=1, style=plot.style_circles)
-plot(show_unified ? zscore_lower_1_5 : na, "±1.5σ (≈P7)", color=color.new(color_bull, 60), linewidth=1, style=plot.style_circles)
-plot(show_unified ? zscore_lower_2 : na, "±2σ (≈P2)", color=color.new(color_bull, 50), linewidth=2, style=plot.style_line)
 
-// Z-Score 阈值线 (统计学标准 - 仅在Z-Score/Both模式下显示)
+
+// Z-Score 阈倿线 (统一使用包含百分位的标签，更直观)
 zscore_extreme_color = show_zscore_lines ? (visual_line_mode == "Both" ? 50 : 70) : 100
 zscore_normal_color = show_zscore_lines ? (visual_line_mode == "Both" ? 60 : 80) : 100
 
-plot(show_zscore_lines ? zscore_upper_2 : na, "±2σ 极端超买", color=color.new(color_bear, zscore_extreme_color), linewidth=2, style=plot.style_line)
-plot(show_zscore_lines ? zscore_upper_1_5 : na, "±1.5σ 超买", color=color.new(color_bear, zscore_normal_color), linewidth=1, style=plot.style_circles)
-plot(show_zscore_lines ? zscore_lower_1_5 : na, "±1.5σ 超卖", color=color.new(color_bull, zscore_normal_color), linewidth=1, style=plot.style_circles)
-plot(show_zscore_lines ? zscore_lower_2 : na, "±2σ 极端超卖", color=color.new(color_bull, zscore_extreme_color), linewidth=2, style=plot.style_line)
+plot(show_zscore_lines ? zscore_upper_2 : na, "±2σ (≈P98)", color=color.new(color_bear, zscore_extreme_color), linewidth=2, style=plot.style_line)
+plot(show_zscore_lines ? zscore_upper_1_5 : na, "±1.5σ (≈P93)", color=color.new(color_bear, zscore_normal_color), linewidth=1, style=plot.style_circles)
+plot(show_zscore_lines ? zscore_lower_1_5 : na, "±1.5σ (≈P7)", color=color.new(color_bull, zscore_normal_color), linewidth=1, style=plot.style_circles)
+plot(show_zscore_lines ? zscore_lower_2 : na, "±2σ (≈P2)", color=color.new(color_bull, zscore_extreme_color), linewidth=2, style=plot.style_line)
 
 // 百分位线 (作为辅助参考)
 // 注意：在Unified和Z-Score模式下，百分位线设为透明（仅用于渐变填充）
@@ -742,9 +743,9 @@ if show_dashboard
     div_color = bullish_divergence ? #00BCD4 : bearish_divergence ? #FF9800 : color.gray
     
     // 共振状态 (使用动态的有效时间框架数)
-    resonance_text = oversold_resonance ? "🟢 " + str.tostring(oversold_count) + "/" + str.tostring(valid_tf_count) : 
-                     overbought_resonance ? "🔴 " + str.tostring(overbought_count) + "/" + str.tostring(valid_tf_count) : 
-                     "⚪ " + str.tostring(math.max(oversold_count, overbought_count)) + "/" + str.tostring(valid_tf_count)
+    resonance_text = oversold_resonance ? str.format("🟢 {0}/{1}", oversold_count, valid_tf_count) : 
+                     overbought_resonance ? str.format("🔴 {0}/{1}", overbought_count, valid_tf_count) : 
+                     str.format("⚪ {0}/{1}", math.max(oversold_count, overbought_count), valid_tf_count)
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     // 计算行数: Mobile模式3行, Lite模式5行(含Lookback), Full模式根据启用功能计算
@@ -829,29 +830,29 @@ if show_dashboard
             
             // Z-Score行 - 显示Z值和对应的近似百分位
             zscore_approx_pct = f_zscore_to_percentile(rsi_zscore)
-            zscore_display = str.tostring(rsi_zscore, "#.2") + "σ (≈P" + str.tostring(zscore_approx_pct, "#") + ")"
+            zscore_display = str.format("{0,number,#.2}σ (≈P{1,number,#})", rsi_zscore, zscore_approx_pct)
             table.cell(dashboard, 0, row, "Z-Score", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, zscore_display, text_color=status_color, text_size=txt_size_body)
             row += 1
             
             // 百分位行 - 显示百分位和对应的Z-Score范围
             pct_zscore_range = f_percentile_zscore_range(rsi_percentile)
-            percentile_display = "P" + str.tostring(rsi_percentile, "#") + pct_zscore_range
+            percentile_display = str.format("P{0,number,#}{1}", rsi_percentile, pct_zscore_range)
             table.cell(dashboard, 0, row, "Percentile", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, percentile_display, text_color=status_color, text_size=txt_size_body)
             row += 1
             
             // 状态 + 趋势
             table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, status_text + " " + trend_text, text_color=status_color, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.format("{0} {1}", status_text, trend_text), text_color=status_color, text_size=txt_size_body)
             row += 1
             
             // Lookback 信息 (显示模式和健康度)
             lookback_mode_display = lookback_mode == "Auto" ? "[Auto]" : "[Custom]"
             health_icons = (health_sample_coverage ? "✅" : "⚠️") + (health_distribution_spread ? "✅" : "⚠️") + (health_stat_valid ? "✅" : "⚠️")
             lookback_color = health_sample_coverage and health_distribution_spread and health_stat_valid ? color.white : color.yellow
-            table.cell(dashboard, 0, row, "Lookback " + lookback_mode_display, text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.tostring(lookback) + " " + health_icons, text_color=lookback_color, text_size=txt_size_body)
+            table.cell(dashboard, 0, row, str.format("Lookback {0}", lookback_mode_display), text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.format("{0} {1}", lookback, health_icons), text_color=lookback_color, text_size=txt_size_body)
             row += 1
             
             // ═══════════════════════════════════════════════════════════════════════
@@ -861,8 +862,8 @@ if show_dashboard
             if dashboard_mode == "Full"
                 // MTF 部分 (使用格式化后的时间框架名称)
                 if enable_mtf
-                    table.cell(dashboard, 0, row, "MTF " + mtf_tf1_display + "|" + mtf_tf2_display + "|" + mtf_tf3_display, text_color=color.gray, text_size=txt_size_body)
-                    table.cell(dashboard, 1, row, f_status_text(status_tf1) + "|" + f_status_text(status_tf2) + "|" + f_status_text(status_tf3), text_color=color.white, text_size=txt_size_body)
+                    table.cell(dashboard, 0, row, str.format("MTF {0}|{1}|{2}", mtf_tf1_display, mtf_tf2_display, mtf_tf3_display), text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.format("{0}|{1}|{2}", f_status_text(status_tf1), f_status_text(status_tf2), f_status_text(status_tf3)), text_color=color.white, text_size=txt_size_body)
                     row += 1
                     
                     table.cell(dashboard, 0, row, "Resonance", text_color=color.gray, text_size=txt_size_body)
@@ -871,9 +872,9 @@ if show_dashboard
                 
                 // 背离部分 (显示当前模式和参数)
                 if enable_divergence
-                    div_mode_display = div_mode == "Auto" ? "[" + active_div_mode + "]" : ""
-                    table.cell(dashboard, 0, row, "Divergence " + div_mode_display, text_color=color.gray, text_size=txt_size_body)
-                    table.cell(dashboard, 1, row, div_text + " (" + str.tostring(div_lookback) + "/" + str.tostring(div_range) + ")", text_color=div_color, text_size=txt_size_body)
+                    div_mode_display = div_mode == "Auto" ? str.format("[{0}]", active_div_mode) : ""
+                    table.cell(dashboard, 0, row, str.format("Divergence {0}", div_mode_display), text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.format("{0} ({1}/{2})", div_text, div_lookback, div_range), text_color=div_color, text_size=txt_size_body)
                     row += 1
                 
                 // 统计部分 (格式: 信号名(次数) | 收益% | 胜率%)
@@ -935,10 +936,10 @@ alertcondition(normal_overbought and enable_normal_alerts,
                title="⬇️ Overbought / 超买", 
                message="{{ticker}}: RSI Z-Score crossed above +1.5σ (≈P93.3). Overbought condition detected.")
 
-// 综合警报
-alertcondition(extreme_oversold or extreme_overbought, 
-               title="⚡ Any Extreme Signal / 任意极端信号", 
-               message="{{ticker}}: Extreme RSI signal detected (Z-Score ±2σ outside 95% confidence interval)")
+// 综合警报：MTF共振（最全面的信号）
+alertcondition((enable_mtf and oversold_resonance) or (enable_mtf and overbought_resonance), 
+               title="🌟 Any Signal (MTF) / 任意信号-多周期", 
+               message="{{ticker}}: MTF resonance detected - Multiple timeframes aligned")
 
 // MTF 共振警报
 alertcondition(enable_mtf and oversold_resonance and raw_extreme_oversold, 
@@ -966,3 +967,72 @@ alertcondition(ta.crossover(rsi, rsi_p50),
 alertcondition(ta.crossunder(rsi, rsi_p50), 
                title="📉 Trend Shift Bearish / 趋势转空", 
                message="{{ticker}}: RSI crossed below adaptive median (P50) - Trend shift to bearish")
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ DYNAMIC ALERTS (V6 Best Practice)
+// ══════════════════════════════════════════════════════════════════════════════
+// 实现 alert() 函数调用，支持动态消息
+// 注意：保持 alertcondition 存在以兼容旧版警报设置方式，
+// 但 alert() 允许用户选择 "Any function call" 来获取包含具体数值的富文本消息。
+
+if (enable_extreme_alerts and extreme_oversold)
+    alert(str.format("{0}:🔥 Extreme Oversold! RSI Z-Score is {1,number,#.2}σ (≈P{2,number,#.1})", syminfo.ticker, rsi_zscore, f_zscore_to_percentile(rsi_zscore)), alert.freq_once_per_bar_close)
+
+if (enable_extreme_alerts and extreme_overbought)
+    alert(str.format("{0}:❄️ Extreme Overbought! RSI Z-Score is {1,number,#.2}σ (≈P{2,number,#.1})", syminfo.ticker, rsi_zscore, f_zscore_to_percentile(rsi_zscore)), alert.freq_once_per_bar_close)
+
+if (enable_mtf and oversold_resonance and raw_extreme_oversold)
+    alert(str.format("{0}:🌟 MTF Resonance BUY! {1}/{2} timeframes oversold.", syminfo.ticker, oversold_count, valid_tf_count), alert.freq_once_per_bar_close)
+
+if (enable_mtf and overbought_resonance and raw_extreme_overbought)
+    alert(str.format("{0}:🌟 MTF Resonance SELL! {1}/{2} timeframes overbought.", syminfo.ticker, overbought_count, valid_tf_count), alert.freq_once_per_bar_close)
+
+if (enable_divergence and bullish_divergence)
+    alert(str.format("{0}:💎 Bullish Divergence! Price Low: {1}, RSI Low: {2}", syminfo.ticker, low[div_lookback], rsi[div_lookback]), alert.freq_once_per_bar_close)
+
+if (enable_divergence and bearish_divergence)
+    alert(str.format("{0}:💎 Bearish Divergence! Price High: {1}, RSI High: {2}", syminfo.ticker, high[div_lookback], rsi[div_lookback]), alert.freq_once_per_bar_close)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ SMART ALERT (Aggregated Signals)
+// ══════════════════════════════════════════════════════════════════════════════
+// 智能警报：单条消息汇总所有触发的信号，避免重复通知
+
+if enable_smart_alert
+    // 买入信号汇总
+    has_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme
+    if has_buy_signal
+        msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
+        
+        // 添加所有触发的信号标签
+        if sig_buy_mtf
+            msg := msg + "🌟MTF共振 "
+        if sig_buy_div
+            msg := msg + "💎背离 "
+        if sig_buy_extreme
+            msg := msg + "🔥极端 "
+        
+        // 添加上下文信息
+        zscore_pct = f_zscore_to_percentile(rsi_zscore)
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
+        
+        alert(msg, alert.freq_once_per_bar_close)
+    
+    // 卖出信号汇总
+    has_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme
+    if has_sell_signal
+        msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
+        
+        // 添加所有触发的信号标签
+        if sig_sell_mtf
+            msg := msg + "🌟MTF共振 "
+        if sig_sell_div
+            msg := msg + "💎背离 "
+        if sig_sell_extreme
+            msg := msg + "❄️极端 "
+        
+        // 添加上下文信息
+        zscore_pct = f_zscore_to_percentile(rsi_zscore)
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
+        
+        alert(msg, alert.freq_once_per_bar_close)

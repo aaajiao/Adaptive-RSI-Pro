@@ -71,13 +71,16 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 | Emoji | Alert Type | Description |
 |-------|------------|-------------|
-| 🌟 | MTF Resonance | Multiple timeframes agree / 多周期共振 |
+| Emoji | Alert Type | Description |
+|-------|------------|-------------|
+| 🌟 | MTF Resonance | Multi-timeframe resonance (most reliable) / 多周期共振（最可靠） |
 | 💎 | Divergence | RSI divergence detected / 检测到背离 |
 | 🔥 | Extreme Oversold | Z-Score < −2σ (≈P2) / Z值达到−2σ |
 | ❄️ | Extreme Overbought | Z-Score > +2σ (≈P98) / Z值达到+2σ |
-| ⚡ | Any Extreme | Any extreme signal / 任意极端信号 |
+| ⚡ | Basic Extreme | Basic Z-Score ±2σ signal / 基础极端信号 |
 | 📈 | Trend Shift Up | RSI crossed above P50/mean / 趋势转多 |
 | 📉 | Trend Shift Down | RSI crossed below P50/mean / 趋势转空 |
+| 🎯 | Smart Alert | Dynamic rich message (Recommended) / 动态富文本（推荐） |
 
 ---
 
@@ -401,6 +404,7 @@ Dashboard显示:
 | Normal Signal Threshold | 1.5σ | Z-Score threshold (1.0-2.0σ) / 普通信号阈值 |
 | Enable Signal Cooldown | ON | Prevent duplicate signal counting / 防止重复信号 |
 | Cooldown Period | 5 bars | Bars between same signal type / 冷却K线数 |
+| **Smart Alert** (New) | **ON** | **V6 Dynamic Alert** (Recommended) / 智能动态警报（推荐） |
 
 ### Multi-Timeframe / 多时间框架
 | Setting | Default | Description |
@@ -435,10 +439,12 @@ Dashboard显示:
 
 | Alert | Description |
 |-------|-------------|
-| 🌟 MTF Resonance | Multiple timeframes agree / 多周期共振 |
-| � Divergence | RSI divergence detected / 检测到背离 |
-| 🔥❄️ Extreme | RSI at P5/P95 / 极端超买/超卖 |
-| 📈📉 Trend Shift | RSI crossed P50 / 趋势转换 |
+| **🎯 Smart Alert** | **(Recommended)** Aggregates all signals into one dynamic message with context (RSI, Z-Score) / 智能聚合所有信号 |
+| 🌟 Any Signal (MTF) | MTF Resonance signals only / 仅MTF共振信号 |
+| 💎 Any Signal (Enh) | Divergence + Extreme signals / 背离+极端信号 |
+| ⚡ Any Signal (Basic)| Basic Extreme signals (±2σ) / 基础极端信号 |
+| 🔥❄️ Extreme | Individual extreme signal / 单独的极端信号 |
+| 📈📉 Trend Shift | Trend reversal signal / 趋势反转信号 |
 
 ---
 
@@ -459,7 +465,18 @@ Dashboard显示:
 
 ## Changelog / 更新日志
 
-### v5.0 - Adaptive Fractal MTF (Current)
+### v6.0 - Code Optimization & Smart Alerts (Current)
+- 🎯 **Smart Alert System / 智能警报系统**: 
+  - V6 Dynamic Alerts (`alert()`): Aggregates multiple signals into a single rich message.
+  - Context-Aware: Includes real-time RSI, Z-Score, and Percentile values in the alert message.
+  - **Dynamic Message**: "AAPL: 🟢 BUY → 🌟MTF 💎Div | RSI:30.5 Z:-2.1σ"
+- 🛠 **Performance Optimization / 性能优化**: 
+  - Reduced `request.security` calls by 50% using Tuple Requests.
+  - Implemented `str.format()` for cleaner and faster string processing.
+- 🧹 **Code Cleanup / 代码清理**: Refactored timeframe display and alert logic for better maintainability.
+- 📊 **Layered Alerts / 分层警报**: Reorganized static alertconditions into Basic/Enhanced/MTF tiers.
+
+### v5.0 - Adaptive Fractal MTF
 - 🧠 **Adaptive Fractal MTF / 自适应分形MTF**: New "Auto" mode automatically selects lower timeframes for precision structure analysis (Internal Fractal Resonance).
   - Daily Chart → Analyzes 1H & 4H
   - 1H Chart → Analyzes 5m & 15m
