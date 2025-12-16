@@ -297,6 +297,20 @@ Dashboard显示:
 - ✅✅✅ = All healthy (所有健康): Sample coverage ≥ 80%, Distribution spread ≥ 15, Statistical validity ≥ 90%
 - ⚠️ present = Warning (警告): One or more health checks failed, consider using Custom mode with larger lookback
 
+### Dashboard Modes / 面板模式
+
+#### 📱 Mobile Mode (New)
+Optimized for small screens, displaying only essential information in 3 compact rows:
+- **Row 1**: RSI Value
+- **Row 2**: Signal Emjois (if any)
+- **Row 3**: Status Text
+
+#### 📉 Lite Mode
+Displays core lines without statistical clutter. Perfect for a clean chart view.
+
+#### 📊 Full Mode
+Displays everything including MTF logic, Divergence status, and detailed Signal Statistics.
+
 ---
 
 ## Chart Lines Guide / 图表线条指南
@@ -376,7 +390,7 @@ Dashboard显示:
 |---------|---------|-------------|
 | Threshold Line Mode | **Unified** | Unified(推荐)/Z-Score/Percentile/Both / 阈值线模式 |
 | Show Gradient Fill | ON | Display background gradients / 显示背景渐变 |
-| Dashboard Mode | Full | Full (all stats) / Lite (core only) / 面板模式 |
+| Dashboard Mode | Full | Full (all stats) / Lite (core only) / Mobile (minimal) / 面板模式 |
 | Dashboard Size | Normal | Tiny/Small/Normal/Large / 面板大小 |
 | Dashboard Transparency | 30 | 0-100% transparency level / 透明度 |
 
@@ -467,7 +481,11 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 
 ## Changelog / 更新日志
 
-### v6.0 - Alert System Simplification & V6 Optimization (Current)
+### v6.1 - Mobile Experience
+- ✨ **Mobile Dashboard Mode**: New compact dashboard designed specifically for mobile devices
+- 🔧 **Documentation**: Updated README with detailed mode descriptions
+
+### v6.0 - Alert System Simplification & V6 Optimization
 - 🎯 **Smart Alert System / 智能警报系统简化**: 
   - **唯一警报入口**: 移除所有legacy alertcondition，统一为V6 Smart Alert
   - **实时触发**: 改为 `alert.freq_once_per_bar` 实现K线内实时响应
