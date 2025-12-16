@@ -71,16 +71,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 | Emoji | Alert Type | Description |
 |-------|------------|-------------|
-| Emoji | Alert Type | Description |
-|-------|------------|-------------|
-| 🌟 | MTF Resonance | Multi-timeframe resonance (most reliable) / 多周期共振（最可靠） |
-| 💎 | Divergence | RSI divergence detected / 检测到背离 |
-| 🔥 | Extreme Oversold | Z-Score < −2σ (≈P2) / Z值达到−2σ |
-| ❄️ | Extreme Overbought | Z-Score > +2σ (≈P98) / Z值达到+2σ |
-| ⚡ | Basic Extreme | Basic Z-Score ±2σ signal / 基础极端信号 |
-| 📈 | Trend Shift Up | RSI crossed above P50/mean / 趋势转多 |
-| 📉 | Trend Shift Down | RSI crossed below P50/mean / 趋势转空 |
-| 🎯 | Smart Alert | Dynamic rich message (Recommended) / 动态富文本（推荐） |
+| � | Smart Alert | V6 Unified Alert System / V6统一警报系统 |
 
 ---
 
@@ -398,13 +389,11 @@ Dashboard显示:
 ### Alert Settings / 警报设置
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Enable Extreme Alerts | ON | Alerts for ±2σ signals / 极端信号警报 |
-| Enable Normal Alerts | OFF | Alerts for normal threshold / 普通信号警报 |
+| **🎯 Smart Alert** | **ON** | **V6 Unified Alert System** / V6统一警报系统 |
 | Show Normal Signals | OFF | Display ⬆️⬇️ on chart / 图表显示普通信号 |
 | Normal Signal Threshold | 1.5σ | Z-Score threshold (1.0-2.0σ) / 普通信号阈值 |
 | Enable Signal Cooldown | ON | Prevent duplicate signal counting / 防止重复信号 |
 | Cooldown Period | 5 bars | Bars between same signal type / 冷却K线数 |
-| **Smart Alert** (New) | **ON** | **V6 Dynamic Alert** (Recommended) / 智能动态警报（推荐） |
 
 ### Multi-Timeframe / 多时间框架
 | Setting | Default | Description |
@@ -437,14 +426,27 @@ Dashboard显示:
 
 ## Alerts / 警报
 
-| Alert | Description |
-|-------|-------------|
-| **🎯 Smart Alert** | **(Recommended)** Aggregates all signals into one dynamic message with context (RSI, Z-Score) / 智能聚合所有信号 |
-| 🌟 Any Signal (MTF) | MTF Resonance signals only / 仅MTF共振信号 |
-| 💎 Any Signal (Enh) | Divergence + Extreme signals / 背离+极端信号 |
-| ⚡ Any Signal (Basic)| Basic Extreme signals (±2σ) / 基础极端信号 |
-| 🔥❄️ Extreme | Individual extreme signal / 单独的极端信号 |
-| 📈📉 Trend Shift | Trend reversal signal / 趋势反转信号 |
+### 🎯 Smart Alert (V6 Unified System)
+
+**唯一的警报方式** - 自动聚合所有信号到一条富文本消息
+
+**设置方法**:
+1. 指标设置中保持 "🎯 Smart Alert" 开启（默认）
+2. 创建警报时选择 **"Any alert() function call"**
+3. 完成！您会收到实时的聚合警报
+
+**消息示例**:
+```
+AAPL: 🟢 BUY SIGNALS → 🌟MTF共振 💎背离 🔥极端 | RSI:25.3 Z:-2.1σ (≈P2)
+AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
+```
+
+**特性 / Features**:
+- ✅ **实时触发** - K线运行中触发条件即发送
+- ✅ **智能去重** - 上升沿检测，只在新信号出现时触发
+- ✅ **完整上下文** - 包含RSI值、Z-Score、近似百分位
+- ✅ **自动聚合** - 一条消息包含所有触发的信号
+- ✅ **无重复** - 同一信号不会重复通知
 
 ---
 
@@ -465,16 +467,20 @@ Dashboard显示:
 
 ## Changelog / 更新日志
 
-### v6.0 - Code Optimization & Smart Alerts (Current)
-- 🎯 **Smart Alert System / 智能警报系统**: 
-  - V6 Dynamic Alerts (`alert()`): Aggregates multiple signals into a single rich message.
-  - Context-Aware: Includes real-time RSI, Z-Score, and Percentile values in the alert message.
-  - **Dynamic Message**: "AAPL: 🟢 BUY → 🌟MTF 💎Div | RSI:30.5 Z:-2.1σ"
+### v6.0 - Alert System Simplification & V6 Optimization (Current)
+- 🎯 **Smart Alert System / 智能警报系统简化**: 
+  - **唯一警报入口**: 移除所有legacy alertcondition，统一为V6 Smart Alert
+  - **实时触发**: 改为 `alert.freq_once_per_bar` 实现K线内实时响应
+  - **智能去重**: 上升沿检测 (`signal and not signal[1]`)，只在新信号出现时触发
+  - **自动聚合**: 单条消息包含所有触发信号 + RSI + Z-Score + 百分位
+  - **简化设置**: 移除 "Extreme Alerts" 和 "Normal Alerts"，只保留Smart Alert开关
 - 🛠 **Performance Optimization / 性能优化**: 
-  - Reduced `request.security` calls by 50% using Tuple Requests.
-  - Implemented `str.format()` for cleaner and faster string processing.
-- 🧹 **Code Cleanup / 代码清理**: Refactored timeframe display and alert logic for better maintainability.
-- 📊 **Layered Alerts / 分层警报**: Reorganized static alertconditions into Basic/Enhanced/MTF tiers.
+  - Reduced `request.security` calls by 50% using Tuple Requests
+  - Implemented `str.format()` for cleaner and faster string processing
+- 🧹 **Code Cleanup / 代码清理**: 
+  - Refactored timeframe display and alert logic for better maintainability
+  - Fixed plot limit issues and tuple assignment syntax
+  - Unified plot titles with percentile annotations
 
 ### v5.0 - Adaptive Fractal MTF
 - 🧠 **Adaptive Fractal MTF / 自适应分形MTF**: New "Auto" mode automatically selects lower timeframes for precision structure analysis (Internal Fractal Resonance).
