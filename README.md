@@ -73,7 +73,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 | Emoji | Alert Type | Description |
 |-------|------------|-------------|
-| � | Smart Alert | V6 Unified Alert System / V6统一警报系统 |
+| 🎯 | Smart Alert | V6 Unified Alert System / V6统一警报系统 |
 
 ---
 
@@ -166,30 +166,35 @@ This indicator displays **both Z-Score and Percentile** to provide complementary
 
 ### Why Both? / 为什么同时显示？
 
-**本质关联**：两者都是描述RSI在历史分布中位置的统计方法
-- **Z-Score（标准分数）**：`(RSI - 均值) / 标准差` - 基于正态分布假设
-- **百分位（Percentile）**：RSI在历史数据中的排名位置 - 不假设分布类型
+**Fundamental Connection / 本质关联**：
+两者都是描述RSI在历史分布中位置的统计方法。
+Both are statistical methods describing RSI's position in historical distribution.
 
-**互补优势**：
+- **Z-Score（标准分数）**: `(RSI - 均值) / 标准差` - 基于正态分布假设
+  Based on normal distribution assumption.
+- **百分位（Percentile）**: RSI在历史数据中的排名位置 - 不假设分布类型
+  RSI's ranking position in historical data - no distribution assumption.
 
-| 维度 | Z-Score | Percentile |
+**Complementary Advantages / 互补优势**：
+
+| Dimension 维度 | Z-Score | Percentile 百分位 |
 |------|---------|------------|
-| **跨资产一致性** | ✅ 优秀 - BTC和SPY都用±2σ | ⚠️ 因波动率不同而异 |
-| **统计学严谨性** | ✅ 置信区间、假设检验 | ⚠️ 非参数统计 |
-| **直观易懂** | ⚠️ 需要统计学知识 | ✅ "低于95%历史值" |
-| **适用场景** | 📊 量化回测、信号触发 | 📈 可视化、用户理解 |
+| **Cross-asset Consistency / 跨资产一致性** | ✅ Excellent 优秀 - BTC和SPY都用±2σ | ⚠️ Varies by volatility 因波动率不同而异 |
+| **Statistical Rigor / 统计学严谨性** | ✅ Confidence intervals 置信区间、假设检验 | ⚠️ Non-parametric 非参数统计 |
+| **Intuitive / 直观易懂** | ⚠️ Stats knowledge needed 需要统计学知识 | ✅ "Below 95% of history" "低于95%历史值" |
+| **Use Case / 适用场景** | 📊 Quant backtesting 量化回测、信号触发 | 📈 Visualization 可视化、用户理解 |
 
 ### Conversion Reference / 转换对照表
 
-**快速对照**（假设正态分布）：
+**Quick Reference / 快速对照**（Assuming normal distribution / 假设正态分布）：
 
-| Z-Score | 百分位 | 含义 / Meaning | 信号类型 |
+| Z-Score | Percentile 百分位 | Meaning 含义 | Signal 信号类型 |
 |---------|--------|---------------|----------|
-| **±2.5σ** | **P0.6 / P99.4** | 极端异常（99%置信区间外） | 罕见机会 |
-| **±2.0σ** | **P2.3 / P97.7** | 极端超买/超卖（95%置信区间外） | 🔥❄️ 极端信号 |
-| ±1.5σ | P6.7 / P93.3 | 显著偏离 | ⬆️⬇️ 普通信号（默认） |
-| ±1.0σ | P15.9 / P84.1 | 轻度偏强/偏弱 | — |
-| 0σ | P50 | 中位数 | — |
+| **±2.5σ** | **P0.6 / P99.4** | Extreme anomaly (outside 99% CI) / 极端异常（99%置信区间外） | Rare opportunity 罕见机会 |
+| **±2.0σ** | **P2.3 / P97.7** | Extreme OB/OS (outside 95% CI) / 极端超买/超卖（95%置信区间外） | 🔥❄️ Extreme 极端信号 |
+| ±1.5σ | P6.7 / P93.3 | Notable deviation / 显著偏离 | ⬆️⬇️ Normal 普通信号（默认） |
+| ±1.0σ | P15.9 / P84.1 | Mildly strong/weak / 轻度偏强/偏弱 | — |
+| 0σ | P50 | Median / 中位数 | — |
 
 ### Dashboard Dual Display / 仪表盘双重显示
 
@@ -211,61 +216,61 @@ This indicator displays **both Z-Score and Percentile** to provide complementary
 
 ### Threshold Line Modes / 阈值线模式
 
-**Unified模式（推荐）** - 兼顾严谨性和直观性：
-- 绘制：Z-Score阈值线（±2σ、±1.5σ）
-- 标注：对应百分位（≈P98、≈P93、≈P7、≈P2）
-- 优势：一眼看懂统计意义和历史位置
+**Unified Mode (Recommended) / Unified模式（推荐）** - Balances rigor and intuitiveness / 兼顾严谨性和直观性：
+- Draws: Z-Score threshold lines (±2σ, ±1.5σ) / 绘制：Z-Score阈值线（±2σ、±1.5σ）
+- Labels: Corresponding percentiles (≈P98, ≈P93, ≈P7, ≈P2) / 标注：对应百分位（≈P98、≈P93、≈P7、≈P2）
+- Advantage: Instantly understand statistical meaning and historical position / 优势：一眼看懂统计意义和历史位置
 
-**其他模式**：
-- `Z-Score`：仅显示统计学阈值线
-- `Percentile`：仅显示百分位线
-- `Both`：同时显示两类线（较密集）
+**Other Modes / 其他模式**：
+- `Z-Score`: Statistical threshold lines only / 仅显示统计学阈值线
+- `Percentile`: Percentile lines only / 仅显示百分位线
+- `Both`: Display both types (denser) / 同时显示两类线（较密集）
 
 ### Practical Examples / 实际应用示例
 
-**场景1：识别极端机会**
+**Scenario 1: Identifying Extreme Opportunities / 场景1：识别极端机会**
 ```
-当前RSI: 25.3
-Dashboard显示:
+Current RSI / 当前RSI: 25.3
+Dashboard shows / Dashboard显示:
   Z-Score: −2.35σ (≈P1)
   Percentile: P5 (< −2σ)
   Status: 🟢 EXTREME OVERSOLD
 
-解读：
-• 统计学视角：超过99%置信区间（|Z| > 2.3），极端异常
-• 直观视角：比99%的历史值都低，罕见超卖
-• 结论：强力买入信号 🔥
+Interpretation / 解读：
+• Statistical perspective / 统计学视角: Beyond 99% confidence interval (|Z| > 2.3) / 超过99%置信区间，极端异常
+• Intuitive perspective / 直观视角: Lower than 99% of historical values / 低于99%的历史值都低，罕见超卖
+• Conclusion / 结论: Strong buy signal 🔥 / 强力买入信号 🔥
 ```
 
-**场景2：普通信号判断**
+**Scenario 2: Normal Signal Judgment / 场景2：普通信号判断**
 ```
-当前RSI: 63.8
-Dashboard显示:
+Current RSI / 当前RSI: 63.8
+Dashboard shows / Dashboard显示:
   Z-Score: +1.52σ (≈P94)
   Percentile: P90 (+1.5σ ~ +2σ)
   Status: 🟠 OVERBOUGHT
 
-解读：
-• 统计学视角：约1.5倍标准差，显著偏高但未极端
-• 直观视角：高于90%的历史值，轻度超买
-• 结论：考虑减仓，非强制卖出 ⬇️
+Interpretation / 解读：
+• Statistical perspective / 统计学视角: ~1.5 std dev, notably high but not extreme / 约1.5倍标准差，显著偏高但未极端
+• Intuitive perspective / 直观视角: Higher than 90% of historical values / 高于90%的历史值，轻度超买
+• Conclusion / 结论: Consider reducing position, not forced sell ⬇️ / 考虑减仓，非强制卖出 ⬇️
 ```
 
-### Dashboard显示逻辑 / Display Logic
+### Dashboard Display Logic / Dashboard显示逻辑
 
-**Z-Score行显示**：
-- 始终显示当前Z值（精确到2位小数）
-- 自动计算对应的近似百分位：`≈P[数值]`
-- 使用误差函数（Error Function）精确转换
+**Z-Score Row Display / Z-Score行显示**：
+- Always shows current Z-value (2 decimal places) / 始终显示当前Z值（精确到2位小数）
+- Auto-calculates approximate percentile: `≈P[value]` / 自动计算对应的近似百分位：`≈P[数值]`
+- Uses Error Function for precise conversion / 使用误差函数（Error Function）精确转换
 
-**Percentile行显示**：
-- 显示RSI所处的百分位区间（P5, P10, P25等）
-- 标注对应的Z值范围（如：`−1.5σ ~ −2σ`）
-- 帮助理解"P10"的统计意义
+**Percentile Row Display / Percentile行显示**：
+- Shows RSI's percentile range (P5, P10, P25, etc.) / 显示RSI所处的百分位区间（P5, P10, P25等）
+- Labels corresponding Z-value range (e.g., `−1.5σ ~ −2σ`) / 标注对应的Z值范围（如：`−1.5σ ~ −2σ`）
+- Helps understand what "P10" means statistically / 帮助理解"P10"的统计意义
 
-**颜色关联**：
-- 两行使用相同的状态颜色（绿/黄/白/橙/红）
-- 视觉上强化"同一指标的不同表达"概念
+**Color Association / 颜色关联**：
+- Both rows use same status color (green/yellow/white/orange/red) / 两行使用相同的状态颜色（绿/黄/白/橙/红）
+- Visually reinforces "same indicator, different expressions" / 视觉上强化"同一指标的不同表达"概念
 
 ---
 
@@ -275,12 +280,12 @@ Dashboard显示:
 Shows detailed stats, MTF status, and divergence info.
 显示详细统计、MTF状态和背离信息。
 
-#### Mobile Mode (Phone)
+#### Mobile Mode (Phone) / 手机模式
 Simplified 3-row layout optimized for small screens.
 极简3行布局，专为手机屏幕优化。
-- Row 1: RSI Value
-- Row 2: Signal Status (Emoji)
-- Row 3: Trend/Filter Status
+- Row 1: RSI Value / 第1行：RSI数值
+- Row 2: Signal Status (Emoji) / 第2行：信号状态 (Emoji)
+- Row 3: Trend/Filter Status / 第3行：趋势/过滤状态
 
 ### 📈 Dashboard Example / 面板示例
 
@@ -391,9 +396,13 @@ Simplified 3-row layout optimized for small screens.
 |---------|---------|-------------|
 | Threshold Line Mode | **Unified** | Unified(推荐)/Z-Score/Percentile/Both / 阈值线模式 |
 | Show Gradient Fill | ON | Display background gradients / 显示背景渐变 |
+| Show Dashboard | ON | Display dashboard panel / 显示仪表盘面板 |
 | Dashboard Mode | Full | Full/Lite/Mobile(Phone) / 面板模式 |
 | Dashboard Size | Normal | Tiny/Small/Normal/Large / 面板大小 |
 | Dashboard Transparency | 30 | 0-100% transparency level / 透明度 |
+| Bullish Color | #00E676 | Custom color for bullish signals / 牛市信号颜色 |
+| Bearish Color | #FF5252 | Custom color for bearish signals / 熊市信号颜色 |
+| RSI Line Color | #FFEB3B | RSI line color / RSI主线颜色 |
 
 ### Trend Filter / 趋势过滤
 | Setting | Default | Description |
@@ -443,25 +452,26 @@ Simplified 3-row layout optimized for small screens.
 
 ### 🎯 Smart Alert (V6 Unified System)
 
-**唯一的警报方式** - 自动聚合所有信号到一条富文本消息
+**The only alert method / 唯一的警报方式** - 自动聚合所有信号到一条富文本消息
+Automatically aggregates all signals into a single rich-text message.
 
-**设置方法**:
-1. 指标设置中保持 "🎯 Smart Alert" 开启（默认）
-2. 创建警报时选择 **"Any alert() function call"**
-3. 完成！您会收到实时的聚合警报
+**Setup Steps / 设置方法**:
+1. Keep "🎯 Smart Alert" enabled in indicator settings (default) / 指标设置中保持 "🎯 Smart Alert" 开启（默认）
+2. When creating alert, select **"Any alert() function call"** / 创建警报时选择 **"Any alert() function call"**
+3. Done! You'll receive real-time aggregated alerts / 完成！您会收到实时的聚合警报
 
-**消息示例**:
+**Message Example / 消息示例**:
 ```
 AAPL: 🟢 BUY SIGNALS → 🌟MTF共振 💎背离 🔥极端 | RSI:25.3 Z:-2.1σ (≈P2)
 AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 ```
 
-**特性 / Features**:
-- ✅ **实时触发** - K线运行中触发条件即发送
-- ✅ **智能去重** - 上升沿检测，只在新信号出现时触发
-- ✅ **完整上下文** - 包含RSI值、Z-Score、近似百分位
-- ✅ **自动聚合** - 一条消息包含所有触发的信号
-- ✅ **无重复** - 同一信号不会重复通知
+**Features / 特性**:
+- ✅ **Real-time trigger / 实时触发** - Sends when condition met within bar / K线运行中触发条件即发送
+- ✅ **Smart dedup / 智能去重** - Rising edge detection, only triggers on new signals / 上升沿检测，只在新信号出现时触发
+- ✅ **Full context / 完整上下文** - Includes RSI value, Z-Score, approximate percentile / 包含RSI值、Z-Score、近似百分位
+- ✅ **Auto-aggregation / 自动聚合** - One message contains all triggered signals / 一条消息包含所有触发的信号
+- ✅ **No duplicates / 无重复** - Same signal won't notify again / 同一信号不会重复通知
 
 ---
 
@@ -474,67 +484,67 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 | 1H | 2000 | Day trading / 日内交易 |
 
 **Best Practices / 最佳实践:**
-1. Focus on 🌟 and 💎 signals (highest priority)
-2. Use MTF resonance for high-confidence entries
-3. Check win rate in stats before trading
+1. Focus on 🌟 and 💎 signals (highest priority) / 优先关注 🌟 和 💎 信号（最高优先级）
+2. Use MTF resonance for high-confidence entries / 使用 MTF 共振确认高置信度入场
+3. Check win rate in stats before trading / 交易前查看统计胜率
 
 ---
 
 ## Changelog / 更新日志
 
-### v6.1 - Mobile Experience (Current)
-- 📱 **Mobile Dashboard / 手机端面板**: Added simplified "Mobile" mode optimized for phone screens (RSI + Signal Emoji only).
-- 🔧 **UX Improvements**: Optimized font sizes and layout for small screens.
+### v6.1 - Mobile Experience / 移动端体验 (Current / 当前版本)
+- 📱 **Mobile Dashboard / 手机端面板**: Added simplified "Mobile" mode optimized for phone screens (RSI + Signal Emoji only). / 新增简化的"Mobile"模式，针对手机屏幕优化（仅显示RSI+信号Emoji）。
+- 🔧 **UX Improvements / 用户体验优化**: Optimized font sizes and layout for small screens. / 优化字体大小和小屏幕布局。
 
-### v6.0 - Alert System Simplification & V6 Optimization
+### v6.0 - Alert System Simplification & V6 Optimization / 警报系统简化与V6优化
 - 🎯 **Smart Alert System / 智能警报系统简化**: 
-  - **唯一警报入口**: 移除所有legacy alertcondition，统一为V6 Smart Alert
-  - **实时触发**: 改为 `alert.freq_once_per_bar` 实现K线内实时响应
-  - **智能去重**: 上升沿检测 (`signal and not signal[1]`)，只在新信号出现时触发
-  - **自动聚合**: 单条消息包含所有触发信号 + RSI + Z-Score + 百分位
-  - **简化设置**: 移除 "Extreme Alerts" 和 "Normal Alerts"，只保留Smart Alert开关
+  - **Unified entry / 唯一警报入口**: Removed all legacy alertcondition, unified to V6 Smart Alert / 移除所有legacy alertcondition，统一为V6 Smart Alert
+  - **Real-time trigger / 实时触发**: Changed to `alert.freq_once_per_bar` for intra-bar response / 改为 `alert.freq_once_per_bar` 实现K线内实时响应
+  - **Smart dedup / 智能去重**: Rising edge detection (`signal and not signal[1]`) / 上升沿检测，只在新信号出现时触发
+  - **Auto-aggregation / 自动聚合**: Single message with all signals + RSI + Z-Score + Percentile / 单条消息包含所有触发信号 + RSI + Z-Score + 百分位
+  - **Simplified settings / 简化设置**: Removed "Extreme Alerts" and "Normal Alerts", only Smart Alert toggle / 移除 "Extreme Alerts" 和 "Normal Alerts"，只保留Smart Alert开关
 - 🛠 **Performance Optimization / 性能优化**: 
-  - Reduced `request.security` calls by 50% using Tuple Requests
-  - Implemented `str.format()` for cleaner and faster string processing
+  - Reduced `request.security` calls by 50% using Tuple Requests / 使用元组请求减少50%的`request.security`调用
+  - Implemented `str.format()` for cleaner and faster string processing / 实现`str.format()`使字符串处理更简洁高效
 - 🧹 **Code Cleanup / 代码清理**: 
-  - Refactored timeframe display and alert logic for better maintainability
-  - Fixed plot limit issues and tuple assignment syntax
-  - Unified plot titles with percentile annotations
+  - Refactored timeframe display and alert logic / 重构时间框架显示和警报逻辑
+  - Fixed plot limit issues and tuple assignment syntax / 修复绑点限制问题和元组赋值语法
+  - Unified plot titles with percentile annotations / 统一绑点标题与百分位标注
 
-### v5.0 - Adaptive Fractal MTF
-- 🧠 **Adaptive Fractal MTF / 自适应分形MTF**: New "Auto" mode automatically selects lower timeframes for precision structure analysis (Internal Fractal Resonance).
-  - Daily Chart → Analyzes 1H & 4H
-  - 1H Chart → Analyzes 5m & 15m
-  - 15m Chart → Analyzes 1m & 5m
-- 🛠 **Code Refactoring / 代码重构**: Implemented Pine Script v6 UDTs (Objects) and Methods for robust signal statistics.
-- 🎨 **Dashboard Optimization**: Enhanced string formatting using `str.format` for cleaner display.
+### v5.0 - Adaptive Fractal MTF / 自适应分形MTF
+- 🧠 **Adaptive Fractal MTF / 自适应分形MTF**: New "Auto" mode automatically selects lower timeframes for precision structure analysis (Internal Fractal Resonance). / 新增"Auto"模式，自动选择更低时间框架进行精确结构分析（内部分形共振）。
+  - Daily Chart → Analyzes 1H & 4H / 日线图 → 分析1小时和4小时
+  - 1H Chart → Analyzes 5m & 15m / 1小时图 → 分析5分钟和15分钟
+  - 15m Chart → Analyzes 1m & 5m / 15分钟图 → 分析1分钟和5分钟
+- 🛠 **Code Refactoring / 代码重构**: Implemented Pine Script v6 UDTs (Objects) and Methods for robust signal statistics. / 实现Pine Script v6 UDT（对象）和方法，增强信号统计的健壮性。
+- 🎨 **Dashboard Optimization / 面板优化**: Enhanced string formatting using `str.format` for cleaner display. / 使用`str.format`优化字符串格式，显示更简洁。
 
-### v4.0 - Pine Script v6 Upgrade
-- 🚀 Upgraded entire codebase to **Pine Script v6** engine
-- ⚡ Optimization for better performance and future-proofing
-- 🛠 Maintenance updates for latest TradingView standards
+### v4.0 - Pine Script v6 Upgrade / Pine Script v6升级
+- 🚀 Upgraded entire codebase to **Pine Script v6** engine / 将整个代码库升级到 **Pine Script v6** 引擎
+- ⚡ Optimization for better performance and future-proofing / 性能优化，面向未来
+- 🛠 Maintenance updates for latest TradingView standards / 维护更新以符合最新TradingView标准
 
-### v3.0 - Auto-Adaptive Systems
-- ✨ Auto-adaptive lookback calculation using statistical formula `n = (Z × σ / E)²`
-- ✨ Auto-adaptive trend filter with 5 modes and volatility-based selection
-- ✨ Auto-adaptive divergence detection with 4 volatility presets
-- ✨ Layered statistics system (MTF/Divergence/Extreme/Normal tiers)
-- ✨ Signal cooldown mechanism to prevent duplicate counting
-- ✨ Health indicators for lookback validation
-- ✨ Dashboard modes (Lite/Full) with customizable size and transparency
-- ✨ Dual volatility system (short-term + long-term) for robust calculations
+### v3.0 - Auto-Adaptive Systems / 自动自适应系统
+- ✨ Auto-adaptive lookback using formula `n = (Z × σ / E)²` / 使用统计公式 `n = (Z × σ / E)²` 自动计算回看期
+- ✨ Auto-adaptive trend filter with 5 modes / 5种模式的自动自适应趋势过滤器
+- ✨ Auto-adaptive divergence detection with 4 presets / 4种预设的自动自适应背离检测
+- ✨ Layered statistics (MTF/Divergence/Extreme/Normal) / 分层统计系统（MTF/背离/极端/普通）
+- ✨ Signal cooldown to prevent duplicate counting / 信号冷却机制防止重复计数
+- ✨ Health indicators for lookback validation / 回看期健康度指标验证
+- ✨ Dashboard modes (Lite/Full) with customization / 面板模式（Lite/Full）支持自定义大小和透明度
+- ✨ Dual volatility system (short + long-term) / 双重波动率系统（短期+长期）
 
-### v2.1 - Signal Optimization
-- ✨ Consolidated signals with priority system (no overlapping)
-- ✨ Emoji-based signal display for clarity
-- ✨ MTF timeframe auto-skip for duplicates
+### v2.1 - Signal Optimization / 信号优化
+- ✨ Consolidated signals with priority system / 信号合并与优先级系统（无重叠）
+- ✨ Emoji-based signal display / 基于Emoji的信号显示
+- ✨ MTF timeframe auto-skip for duplicates / MTF时间框架自动跳过重复
 
-### v2.0 - Pro Edition
-- ✨ Added Trend Filter, MTF RSI, Statistics, Divergence
-- ✨ Z-Score based signal triggering
+### v2.0 - Pro Edition / 专业版
+- ✨ Added Trend Filter, MTF RSI, Statistics, Divergence / 新增趋势过滤、MTF RSI、统计、背离检测
+- ✨ Z-Score based signal triggering / 基于Z-Score的信号触发
 
-### v1.0 - Initial Release
-- ✨ Adaptive percentile-based thresholds
+### v1.0 - Initial Release / 初始发布
+- ✨ Adaptive percentile-based thresholds / 自适应百分位阈值
 
 ---
 
