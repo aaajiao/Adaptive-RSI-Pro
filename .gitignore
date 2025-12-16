@@ -18,6 +18,3 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
-
-# Agent specific
-.agent/
