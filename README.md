@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-17**
+**Pine Script v6** | **Last Update: 2025-12-17** | **v6.2**
 
 ---
 
@@ -468,10 +468,19 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 
 **Features / 特性**:
 - ✅ **Real-time trigger / 实时触发** - Sends when condition met within bar / K线运行中触发条件即发送
-- ✅ **Smart dedup / 智能去重** - Rising edge detection, only triggers on new signals / 上升沿检测，只在新信号出现时触发
+- ✅ **Anti-flicker / 防闪烁** - Uses `varip` to prevent duplicate alerts from signal flickering within same bar / 使用 `varip` 防止信号闪烁导致同一K线内重复警报
+- ✅ **Signal upgrade detection / 信号升级检测** - Alerts when stronger signal appears (e.g., 🔥Extreme → 🌟MTF) even on same bar / 同一K线内出现更强信号时也会触发（如：🔥极端 → 🌟MTF共振）
 - ✅ **Full context / 完整上下文** - Includes RSI value, Z-Score, approximate percentile / 包含RSI值、Z-Score、近似百分位
 - ✅ **Auto-aggregation / 自动聚合** - One message contains all triggered signals / 一条消息包含所有触发的信号
-- ✅ **No duplicates / 无重复** - Same signal won't notify again / 同一信号不会重复通知
+- ✅ **Buy/Sell independent tracking / 买卖独立追踪** - Buy and Sell alerts tracked separately / 买入和卖出警报独立追踪，互不干扰
+
+**Signal Priority Levels / 信号优先级**:
+| Level 等级 | Signal 信号 | Description 描述 |
+|------------|-------------|------------------|
+| 4 (Highest) | 🌟 MTF Resonance | Multi-timeframe agreement / 多周期共振 |
+| 3 | 💎 Divergence | Divergence + Extreme zone / 背离+极端区 |
+| 2 | 🔥❄️ Extreme | Extreme oversold/overbought / 极端超卖/超买 |
+| 1 (Lowest) | ⬆️⬇️ Normal | Normal oversold/overbought / 普通超卖/超买 |
 
 ---
 
@@ -492,7 +501,12 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 
 ## Changelog / 更新日志
 
-### v6.1 - Mobile Experience / 移动端体验 (Current / 当前版本)
+### v6.2 - Smart Alert Anti-Flicker / 智能防抖警报 (Current / 当前版本)
+- 🛡️ **Anti-flicker Mechanism / 防闪烁机制**: Fixed issue where signal flickering caused multiple duplicate alerts within same bar. Now uses `varip` to track alert status per bar. / 修复信号闪烁导致同一K线内发送多次重复警报的问题，使用 `varip` 追踪每根K线的警报状态。
+- 📈 **Signal Upgrade Detection / 信号升级检测**: Tracks signal priority level (MTF=4, Divergence=3, Extreme=2, Normal=1). Sends new alert when stronger signal appears on same bar. / 追踪信号优先级等级。同一K线内出现更强信号时会发送新警报。
+- 🔄 **Independent Buy/Sell Tracking / 买卖独立追踪**: Buy and Sell alerts are tracked independently, allowing direction changes within same bar. / 买入和卖出警报独立追踪，允许同一K线内捕捉方向变化。
+
+### v6.1 - Mobile Experience / 移动端体验
 - 📱 **Mobile Dashboard / 手机端面板**: Added simplified "Mobile" mode optimized for phone screens (RSI + Signal Emoji only). / 新增简化的"Mobile"模式，针对手机屏幕优化（仅显示RSI+信号Emoji）。
 - 🔥 **Persistent Zone Status / 持续区域状态**: Mobile Dashboard now shows persistent extreme zone indicators when no new signal but RSI remains in zone: `🔥持续` (Extreme Oversold), `❄️持续` (Extreme Overbought), `⬆️区` (Oversold), `⬇️区` (Overbought). / 手机端面板现在显示持续极端区域指示器：无新信号但RSI仍在区域内时显示持续状态。
 - 🔧 **UX Improvements / 用户体验优化**: Optimized font sizes and layout for small screens. / 优化字体大小和小屏幕布局。

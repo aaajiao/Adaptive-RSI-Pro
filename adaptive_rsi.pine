@@ -29,10 +29,14 @@
 // │   🟠 Mild Overbought   轻度超买                                             │
 // │   ⚪ Neutral           中性状态                                             │
 // ├─────────────────────────────────────────────────────────────────────────────┤
-// │ ALERTS / 警报                                                               │
-// │   📈 Trend Shift Up    趋势向上 (RSI上穿P50/均值)                           │
-// │   📉 Trend Shift Down  趋势向下 (RSI下穿P50/均值)                           │
-// │   ⚡ Any Extreme       任意极端信号 (Z-Score±2σ)                            │
+// │ MOBILE DASHBOARD 持续状态 / Persistent Zone Status (无新信号时显示)         │
+// │   🔥持续  Extreme Oversold Zone   持续处于极端超卖区                        │
+// │   ❄️持续  Extreme Overbought Zone 持续处于极端超买区                        │
+// │   ⬆️区   Oversold Zone           持续处于超卖区                             │
+// │   ⬇️区   Overbought Zone         持续处于超买区                             │
+// ├─────────────────────────────────────────────────────────────────────────────┤
+// │ SMART ALERT / 智能警报 (V6 Unified)                                         │
+// │   🎯 Smart Alert  统一警报入口 (自动聚合所有信号+上下文)                     │
 // └─────────────────────────────────────────────────────────────────────────────┘
 //
 // ══════════════════════════════════════════════════════════════════════════════
@@ -939,16 +943,33 @@ if show_dashboard
 // 智能警报：单条消息汇总所有触发的信号，避免重复通知
 // 使用上升沿检测：只在有新信号出现时触发
 
+// varip: 追踪当前K线内已发送的最高信号等级 (K线收盘时自动重置)
+// 信号等级: 0=无, 1=普通, 2=极端, 3=背离, 4=MTF共振
+// 优化：当出现更强信号时也会触发新警报
+varip int buy_alert_level_sent = 0
+varip int sell_alert_level_sent = 0
+
+// 计算当前信号等级 (优先级越高值越大)
+f_signal_level(_mtf, _div, _ext, _norm) =>
+    _mtf ? 4 : _div ? 3 : _ext ? 2 : _norm ? 1 : 0
+
+// 新K线开始时重置
+if barstate.isnew
+    buy_alert_level_sent := 0
+    sell_alert_level_sent := 0
+
 if enable_smart_alert
-    // 买入信号汇总 (包含所有信号类型)
+    // 买入信号汇总
     has_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal
     has_buy_signal_prev = sig_buy_mtf[1] or sig_buy_div[1] or sig_buy_extreme[1] or sig_buy_normal[1]
+    current_buy_level = f_signal_level(sig_buy_mtf, sig_buy_div, sig_buy_extreme, sig_buy_normal)
     
-    // 只在新信号出现时触发（上升沿）
-    if has_buy_signal and not has_buy_signal_prev
+    // 触发条件：新信号出现(上升沿) 且 (未发送过 或 当前等级更高)
+    should_alert_buy = has_buy_signal and not has_buy_signal_prev and current_buy_level > buy_alert_level_sent
+    
+    if should_alert_buy
         msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
         
-        // 添加所有触发的信号标签
         if sig_buy_mtf
             msg := msg + "🌟MTF共振 "
         if sig_buy_div
@@ -958,21 +979,23 @@ if enable_smart_alert
         if sig_buy_normal
             msg := msg + "⬆️超卖 "
         
-        // 添加上下文信息
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
         msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
         
         alert(msg, alert.freq_once_per_bar)
+        buy_alert_level_sent := current_buy_level  // 记录已发送的最高等级
     
-    // 卖出信号汇总 (包含所有信号类型)
+    // 卖出信号汇总
     has_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal
     has_sell_signal_prev = sig_sell_mtf[1] or sig_sell_div[1] or sig_sell_extreme[1] or sig_sell_normal[1]
+    current_sell_level = f_signal_level(sig_sell_mtf, sig_sell_div, sig_sell_extreme, sig_sell_normal)
     
-    // 只在新信号出现时触发（上升沿）
-    if has_sell_signal and not has_sell_signal_prev
+    // 触发条件：新信号出现(上升沿) 且 (未发送过 或 当前等级更高)
+    should_alert_sell = has_sell_signal and not has_sell_signal_prev and current_sell_level > sell_alert_level_sent
+    
+    if should_alert_sell
         msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
         
-        // 添加所有触发的信号标签
         if sig_sell_mtf
             msg := msg + "🌟MTF共振 "
         if sig_sell_div
@@ -982,8 +1005,8 @@ if enable_smart_alert
         if sig_sell_normal
             msg := msg + "⬇️超买 "
         
-        // 添加上下文信息
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
         msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
         
         alert(msg, alert.freq_once_per_bar)
+        sell_alert_level_sent := current_sell_level  // 记录已发送的最高等级
