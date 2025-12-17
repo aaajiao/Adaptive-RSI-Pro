@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-16**
+**Pine Script v6** | **Last Update: 2025-12-17**
 
 ---
 
@@ -494,6 +494,7 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 
 ### v6.1 - Mobile Experience / 移动端体验 (Current / 当前版本)
 - 📱 **Mobile Dashboard / 手机端面板**: Added simplified "Mobile" mode optimized for phone screens (RSI + Signal Emoji only). / 新增简化的"Mobile"模式，针对手机屏幕优化（仅显示RSI+信号Emoji）。
+- 🔥 **Persistent Zone Status / 持续区域状态**: Mobile Dashboard now shows persistent extreme zone indicators when no new signal but RSI remains in zone: `🔥持续` (Extreme Oversold), `❄️持续` (Extreme Overbought), `⬆️区` (Oversold), `⬇️区` (Overbought). / 手机端面板现在显示持续极端区域指示器：无新信号但RSI仍在区域内时显示持续状态。
 - 🔧 **UX Improvements / 用户体验优化**: Optimized font sizes and layout for small screens. / 优化字体大小和小屏幕布局。
 
 ### v6.0 - Alert System Simplification & V6 Optimization / 警报系统简化与V6优化

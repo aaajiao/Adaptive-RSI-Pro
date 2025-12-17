@@ -770,10 +770,11 @@ if show_dashboard
             table.cell(dashboard, 1, row, str.tostring(rsi, "#.1"), text_color=color_rsi, text_size=txt_size_body, bgcolor=color.new(#2962FF, dashboard_transparency))
             row += 1
             
-            // 第2行：信号emoji
+            // 第2行：信号emoji (优化：无新信号时显示持续状态)
             signal_text = "⚪"
             signal_color = color.gray
             
+            // 优先级1: 触发的信号 (事件)
             if sig_buy_mtf
                 signal_text := "🌟"
                 signal_color := color_bull
@@ -804,6 +805,20 @@ if show_dashboard
             else if sig_div_bear_only
                 signal_text := "↘️"
                 signal_color := #FF9800
+            // 优先级2: 持续极端状态 (无新信号但仍在极端区域)
+            else if in_extreme_oversold
+                signal_text := "🔥持续"
+                signal_color := color.new(color_bull, 30)
+            else if in_extreme_overbought
+                signal_text := "❄️持续"
+                signal_color := color.new(color_bear, 30)
+            // 优先级3: 持续普通超买/超卖状态
+            else if rsi_zscore < -normal_threshold
+                signal_text := "⬆️区"
+                signal_color := color.new(color_bull, 50)
+            else if rsi_zscore > normal_threshold
+                signal_text := "⬇️区"
+                signal_color := color.new(color_bear, 50)
             
             table.cell(dashboard, 0, row, "信号", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, signal_text, text_color=signal_color, text_size=txt_size_body)
