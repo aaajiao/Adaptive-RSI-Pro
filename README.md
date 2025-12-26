@@ -303,6 +303,10 @@ Interpretation / 解读：
 Shows detailed stats, MTF status, and divergence info.
 显示详细统计、MTF状态和背离信息。
 
+#### Lite Mode
+Core information without statistics section.
+核心信息，不含统计部分。
+
 #### Mobile Mode (Phone) / 手机模式
 Simplified 3-row layout optimized for small screens.
 极简3行布局，专为手机屏幕优化。
@@ -314,21 +318,21 @@ Simplified 3-row layout optimized for small screens.
 
 ```
 ┌─────────────────────────────────┐
-│   ADAPTIVE RSI PRO       35.2  │
+│   ADAPTIVE RSI PRO       35.2  │  ← Row 1: Title + RSI Value
 ├─────────────────────────────────┤
-│ Z-Score     -2.15σ (≈P2)       │
-│ Percentile  P5 (< -2σ)          │
-│ Status      🟢 EXTREME OVERSOLD [A] │  ← 信号质量等级
-│ Protection[Moderate] ✓ W.RSI:45 📊↑│  ← 周线保护+成交量
-│ Lookback[Auto] 456 ✅✅✅     │
-├─────────────────────────────────├ (Full Mode Only)
-│ MTF 1h|4h|D   🟢|⚪|🟢          │
-│ Resonance    🟢 3/4             │
+│ Z-Score     -2.15σ (≈P2)       │  ← Row 2: Z-Score + Approx Percentile
+│ Percentile  P5 (< -2σ)          │  ← Row 3: Percentile + Z-Score Range
+│ Status      🟢 EXTREME OVERSOLD [A] │  ← Row 4: Status + Quality Grade
+│ Protection[Mod] ✓ W.RSI:45 📊↑ │  ← Row 5: Weekly Protection + Volume
+│ Lookback[Auto] 456 ✅✅✅      │  ← Row 6: Lookback + Health Icons
+├─────────────────────────────────┤ (Full Mode Only ↓)
+│ MTF 1h|4h|D   🟢|⚪|🟢          │  ← Row 7: MTF Timeframes + Status
+│ Resonance    🟢 3/4             │  ← Row 8: Resonance Count
 ├─────────────────────────────────┤
-│ Divergence[Normal] 🟢 BULL (5/60) │
+│ Divergence[Normal] 🟢 BULL (5/60) │  ← Row 9: Divergence Status
 ├─────────────────────────────────┤
-│ ── STATS ──   (20 bars)         │
-│ 🌟 MTF Buy(12)  +4.2% | 83%    │
+│ ── STATS ──   (20 bars)         │  ← Row 10: Stats Header
+│ 🌟 MTF Buy(12)  +4.2% | 83%    │  ← Row 11-18: Signal Statistics
 │ 🌟 MTF Sell(8)  +3.8% | 75%    │
 │ 💎 Div Buy(15)  +3.5% | 80%    │
 │ 💎 Div Sell(11) +2.9% | 73%    │
@@ -336,6 +340,53 @@ Simplified 3-row layout optimized for small screens.
 │ ❄️ Ext Sell(38) +1.8% | 63%    │
 └─────────────────────────────────┘
 ```
+
+### Dashboard Field Reference / 面板字段详解
+
+| Row | Field | Description / 描述 |
+|-----|-------|-------------------|
+| 1 | `ADAPTIVE RSI 35.2` | Current RSI value / 当前RSI数值 |
+| 2 | `Z-Score -2.15σ (≈P2)` | Z-Score (std devs from mean) + approximate percentile / Z值（距均值标准差倍数）+ 近似百分位 |
+| 3 | `Percentile P5 (<-2σ)` | Percentile range + corresponding Z-Score range / 百分位区间 + 对应Z值范围 |
+| 4 | `Status 🟢 EXTREME [A]` | 5-level status + signal quality grade (A/B/C/D) / 5级状态 + 信号质量等级 |
+| 5 | `Protection[Mod] ✓ W.RSI:45 📊↑` | Protection level + status + weekly RSI + volume / 保护级别 + 状态 + 周线RSI + 成交量 |
+| 6 | `Lookback[Auto] 456 ✅✅✅` | Lookback mode + period + 3 health indicators / 回看模式 + 周期 + 3个健康度指标 |
+| 7 | `MTF 1h\|4h\|D 🟢\|⚪\|🟢` | 3 timeframe names + their RSI status / 3个周期名称 + 各自RSI状态 |
+| 8 | `Resonance 🟢 3/4` | Resonance status (aligned TFs / total valid TFs) / 共振状态（一致周期数/有效周期总数） |
+| 9 | `Divergence[Normal] 🟢 BULL` | Divergence mode + status + (lookback/range) / 背离模式 + 状态 + (回看/范围) |
+| 10-18 | `🌟 MTF Buy(12) +4.2% \| 83%` | Signal type (count) + avg return + win rate / 信号类型(次数) + 平均收益 + 胜率 |
+
+### Dashboard Symbols / 面板符号说明
+
+**Protection Status / 保护状态**:
+| Symbol | Meaning / 含义 |
+|--------|---------------|
+| `✓` | Protection passed, signals allowed / 保护通过，允许信号 |
+| `BUY✓` | Only buy signals allowed / 仅允许买入信号 |
+| `SELL✓` | Only sell signals allowed / 仅允许卖出信号 |
+| `⚠️` | Both directions blocked / 双向阻断 |
+| `OFF` | Protection disabled / 保护已禁用 |
+
+**Volume Status / 成交量状态**:
+| Symbol | Meaning / 含义 |
+|--------|---------------|
+| `📊↑` | Volume surge (>1.5x average) / 放量（>1.5倍均量） |
+| `📊↓` | Low volume (<0.8x average) / 缩量（<0.8倍均量） |
+| `📊` | Normal volume / 正常成交量 |
+
+**Health Indicators / 健康度指标** (3 icons):
+| Position | Check / 检查项 | ✅ Pass / ⚠️ Fail |
+|----------|---------------|-------------------|
+| 1st | Sample Coverage / 样本覆盖 | ≥80% of lookback / ≥80%回看期 |
+| 2nd | Distribution Spread / 分布宽度 | P95-P5 ≥ 15 points / ≥15点 |
+| 3rd | Statistical Validity / 统计有效性 | Actual ≥ 90% of required / 实际值≥需求的90% |
+
+**MTF Status / MTF状态**:
+| Symbol | Meaning / 含义 |
+|--------|---------------|
+| `🟢` | Oversold (RSI < P10) / 超卖 |
+| `🔴` | Overbought (RSI > P90) / 超买 |
+| `⚪` | Neutral / 中性 |
 
 **Signal Quality Grades / 信号质量等级** (v6.4 Updated):
 - **[A]** (≥90分): Excellent - 多因素共振，高胜率 / Multiple factors aligned, high win rate
