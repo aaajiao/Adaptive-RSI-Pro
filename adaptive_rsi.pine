@@ -523,6 +523,47 @@ if enable_divergence
         bearish_divergence := false
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ▶ CONFIRMATION & REVERSAL SIGNALS / 确认信号与反转信号
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 确认信号: RSI在极端区内形成pivot (底部/顶部形态)
+// 当处于极端超卖且RSI开始回升时，说明底部正在形成
+rsi_pivot_low_current = ta.pivotlow(rsi, 3, 1)  // 快速pivot检测 (3根K线回看, 1根确认)
+rsi_pivot_high_current = ta.pivothigh(rsi, 3, 1)
+
+// 极端区内的pivot确认 (用于评分)
+bool confirmation_buy = not na(rsi_pivot_low_current) and rsi_zscore[1] < -2    // RSI在极端超卖区形成低点
+bool confirmation_sell = not na(rsi_pivot_high_current) and rsi_zscore[1] > 2  // RSI在极端超买区形成高点
+
+// 反转信号: Z-Score从极端区回归 (动量转向)
+bool reversal_buy = ta.crossover(rsi_zscore, -2) and rsi_zscore[1] < -2     // Z从<-2回升到>-2
+bool reversal_sell = ta.crossunder(rsi_zscore, 2) and rsi_zscore[1] > 2     // Z从>2回落到<2
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ REAL-TIME DIVERGENCE / 实时背离检测 (领先指标)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 实时背离: 不等待pivot确认，作为早期预警
+// 检测逻辑: 当前价格接近近期低点/高点，但RSI没有
+
+// 计算近期价格和RSI的极值 (使用20根K线窗口)
+realtime_lookback = 20
+lowest_price_20 = ta.lowest(low, realtime_lookback)
+highest_price_20 = ta.highest(high, realtime_lookback)
+lowest_rsi_20 = ta.lowest(rsi, realtime_lookback)
+highest_rsi_20 = ta.highest(rsi, realtime_lookback)
+
+// 实时看涨背离: 价格接近近期低点(误差1%), RSI明显高于近期低点
+price_near_low = low <= lowest_price_20 * 1.01
+rsi_not_at_low = rsi > lowest_rsi_20 + 3  // RSI至少高于低点3个单位
+bool realtime_bullish_div = price_near_low and rsi_not_at_low and rsi_zscore < -1.5
+
+// 实时看跌背离: 价格接近近期高点(误差1%), RSI明显低于近期高点
+price_near_high = high >= highest_price_20 * 0.99
+rsi_not_at_high = rsi < highest_rsi_20 - 3
+bool realtime_bearish_div = price_near_high and rsi_not_at_high and rsi_zscore > 1.5
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ▶ VISUAL PLOTTING
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -667,7 +708,7 @@ bool sig_div_bear_only = enable_divergence and bearish_divergence and not was_ex
 // ▶ SIGNAL QUALITY SCORING / 信号质量评分
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 计算买入信号质量分数
+// 计算买入信号质量分数 (满分约130)
 f_buy_quality() =>
     score = 0
 
@@ -675,7 +716,7 @@ f_buy_quality() =>
     if oversold_resonance
         score += 25
 
-    // 背离确认 (+20)
+    // Pivot背离确认 (+20)
     if bullish_divergence
         score += 20
 
@@ -695,9 +736,23 @@ f_buy_quality() =>
     else if rsi_zscore < -2
         score += 10
 
+    // ═══ 新增评分项 (Phase 2) ═══
+
+    // 确认信号: 极端区内RSI pivot形成 (+10)
+    if confirmation_buy
+        score += 10
+
+    // 反转信号: Z-Score从极端区回归 (+10)
+    if reversal_buy
+        score += 10
+
+    // 实时背离: 早期预警信号 (+10)
+    if realtime_bullish_div
+        score += 10
+
     score
 
-// 计算卖出信号质量分数
+// 计算卖出信号质量分数 (满分约130)
 f_sell_quality() =>
     score = 0
 
@@ -705,7 +760,7 @@ f_sell_quality() =>
     if overbought_resonance
         score += 25
 
-    // 背离确认 (+20)
+    // Pivot背离确认 (+20)
     if bearish_divergence
         score += 20
 
@@ -725,15 +780,30 @@ f_sell_quality() =>
     else if rsi_zscore > 2
         score += 10
 
+    // ═══ 新增评分项 (Phase 2) ═══
+
+    // 确认信号: 极端区内RSI pivot形成 (+10)
+    if confirmation_sell
+        score += 10
+
+    // 反转信号: Z-Score从极端区回归 (+10)
+    if reversal_sell
+        score += 10
+
+    // 实时背离: 早期预警信号 (+10)
+    if realtime_bearish_div
+        score += 10
+
     score
 
 // 当前信号质量
 current_buy_quality = f_buy_quality()
 current_sell_quality = f_sell_quality()
 
-// 质量等级转换
+// 质量等级转换 (阈值已调整以适应新评分体系)
+// A: ≥90 (高质量信号), B: ≥70, C: ≥50, D: <50
 f_quality_grade(_score) =>
-    _score >= 80 ? "A" : _score >= 60 ? "B" : _score >= 40 ? "C" : "D"
+    _score >= 90 ? "A" : _score >= 70 ? "B" : _score >= 50 ? "C" : "D"
 
 buy_quality_grade = f_quality_grade(current_buy_quality)
 sell_quality_grade = f_quality_grade(current_sell_quality)

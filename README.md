@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-26** | **v6.3**
+**Pine Script v6** | **Last Update: 2025-12-26** | **v6.4**
 
 ---
 
@@ -125,11 +125,18 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 - **Reversal Logic**: Early reversals often occur on low volume (exhaustion), so blocking would miss opportunities
   反转逻辑：反转初期常缩量（卖盘衰竭），强制过滤会错过最佳入场点
 
-### 🏆 Signal Quality Grading / 信号质量评级 (v6.3 NEW)
+### 🏆 Signal Quality Grading / 信号质量评级 (v6.4 Enhanced)
 - **A/B/C/D Grades**: Each signal shows quality grade based on multiple factors
   A/B/C/D等级：每个信号显示综合质量等级
-- **Scoring Factors**: MTF resonance (+25), Divergence (+20), Volume (+20), Weekly trend (+20), Extreme level (+15)
-  评分项：MTF共振(+25)、背离(+20)、成交量(+20)、周线趋势(+20)、极端程度(+15)
+- **Base Scoring Factors (v6.3)**: MTF resonance (+25), Pivot Divergence (+20), Volume (+20), Weekly trend (+20), Extreme level (+15)
+  基础评分项：MTF共振(+25)、Pivot背离(+20)、成交量(+20)、周线趋势(+20)、极端程度(+15)
+- **NEW Scoring Factors (v6.4)**:
+  - Confirmation Signal (+10): RSI pivot forming in extreme zone / 确认信号：极端区内RSI形成pivot
+  - Reversal Signal (+10): Z-Score exiting extreme zone / 反转信号：Z-Score脱离极端区
+  - Real-time Divergence (+10): Early warning divergence (no pivot wait) / 实时背离：早期预警（无需等待pivot确认）
+- **Max Score**: ~130 points (previously ~100) / 满分约130分（原约100分）
+- **Updated Thresholds**: A ≥90 (was 80), B ≥70 (was 60), C ≥50 (was 40), D <50
+  更新阈值：A≥90（原80）、B≥70（原60）、C≥50（原40）、D<50
 - **Decision Aid**: Only trade A/B grade signals for higher win rate
   决策辅助：只交易A/B级信号可提高胜率
 
@@ -330,11 +337,11 @@ Simplified 3-row layout optimized for small screens.
 └─────────────────────────────────┘
 ```
 
-**Signal Quality Grades / 信号质量等级**:
-- **[A]** (≥80分): Excellent - 多因素共振，高胜率 / Multiple factors aligned, high win rate
-- **[B]** (60-79分): Good - 建议交易 / Recommended to trade
-- **[C]** (40-59分): Fair - 谨慎或小仓 / Trade with caution or smaller size
-- **[D]** (<40分): Weak - 建议观望 / Consider waiting
+**Signal Quality Grades / 信号质量等级** (v6.4 Updated):
+- **[A]** (≥90分): Excellent - 多因素共振，高胜率 / Multiple factors aligned, high win rate
+- **[B]** (70-89分): Good - 建议交易 / Recommended to trade
+- **[C]** (50-69分): Fair - 谨慎或小仓 / Trade with caution or smaller size
+- **[D]** (<50分): Weak - 建议观望 / Consider waiting
 
 **Health Indicators / 健康度指标**:
 - ✅✅✅ = All healthy (所有健康): Sample coverage ≥ 80%, Distribution spread ≥ 15, Statistical validity ≥ 90%
@@ -530,7 +537,25 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 
 ## Changelog / 更新日志
 
-### v6.3 - Win Rate Optimization / 胜率优化 (Current / 当前版本)
+### v6.4 - Enhanced Signal Timing / 增强信号时机 (Current / 当前版本)
+- 🎯 **Confirmation Signal Detection / 确认信号检测**:
+  - Detects RSI pivot forming within extreme zone / 检测极端区内RSI形成pivot
+  - Indicates bottom/top pattern formation / 表明底部/顶部形态正在形成
+  - Adds +10 to quality score / 评分加10分
+- 🔄 **Reversal Signal Detection / 反转信号检测**:
+  - Detects Z-Score exiting extreme zone (crossing back above -2σ or below +2σ) / 检测Z-Score脱离极端区
+  - Indicates momentum turning / 表明动量转向
+  - Adds +10 to quality score / 评分加10分
+- ⚡ **Real-time Divergence Detection / 实时背离检测**:
+  - Early warning divergence without waiting for pivot confirmation / 早期预警背离，无需等待pivot确认
+  - Price near recent extreme but RSI not / 价格接近近期极值但RSI未创新值
+  - Adds +10 to quality score (complements pivot-based divergence) / 评分加10分（与pivot背离互补）
+- 📊 **Updated Scoring System / 更新评分系统**:
+  - Max score increased to ~130 (was ~100) / 满分提升至约130分（原约100分）
+  - A-grade threshold raised to ≥90 (was 80) for higher quality filtering / A级阈值提升至≥90（原80）以提高过滤质量
+  - B ≥70, C ≥50, D <50 (adjusted proportionally) / 其他阈值相应调整
+
+### v6.3 - Win Rate Optimization / 胜率优化
 - 🛡️ **Weekly Trend Protection / 周线趋势保护**:
   - Replaces old Trend Filter with weekly-based protection / 用周线保护替代旧的趋势过滤
   - 3 levels: Aggressive (weekly uptrend only), **Moderate** (avoid extreme bearish), Loose / 3档：激进、适中（默认）、宽松
