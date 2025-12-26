@@ -496,11 +496,17 @@ Automatically aggregates all signals into a single rich-text message.
 2. When creating alert, select **"Any alert() function call"** / 创建警报时选择 **"Any alert() function call"**
 3. Done! You'll receive real-time aggregated alerts / 完成！您会收到实时的聚合警报
 
-**Message Example / 消息示例**:
+**Message Example / 消息示例** (v6.4 Enhanced):
 ```
-AAPL: 🟢 BUY SIGNALS → 🌟MTF共振 💎背离 🔥极端 | RSI:25.3 Z:-2.1σ (≈P2)
-AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
+AAPL: 🟢 BUY SIGNALS → 🌟MTF共振 🔥极端 ✓确认 ↩反转 | RSI:25.3 Z:-2.1σ (≈P2) [A]
+AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈P98) [B]
 ```
+
+**New Alert Elements / 新增警报元素**:
+- `✓确认` - Confirmation signal (RSI pivot in extreme zone) / 确认信号
+- `↩反转` - Reversal signal (exiting extreme zone) / 反转信号
+- `⚡实时背离` - Real-time divergence detected / 实时背离
+- `[A/B/C/D]` - Quality grade for quick decision / 质量等级便于快速决策
 
 **Features / 特性**:
 - ✅ **Real-time trigger / 实时触发** - Sends when condition met within bar / K线运行中触发条件即发送
@@ -554,6 +560,10 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
   - Max score increased to ~130 (was ~100) / 满分提升至约130分（原约100分）
   - A-grade threshold raised to ≥90 (was 80) for higher quality filtering / A级阈值提升至≥90（原80）以提高过滤质量
   - B ≥70, C ≥50, D <50 (adjusted proportionally) / 其他阈值相应调整
+- 🔔 **Enhanced Smart Alert / 增强智能警报**:
+  - Now shows quality grade [A/B/C/D] at end of message / 消息末尾显示质量等级
+  - New indicators: ✓确认, ↩反转, ⚡实时背离 / 新增指示符
+  - Quick decision support without opening chart / 无需打开图表即可快速决策
 
 ### v6.3 - Win Rate Optimization / 胜率优化
 - 🛡️ **Weekly Trend Protection / 周线趋势保护**:

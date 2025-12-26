@@ -1136,7 +1136,7 @@ if enable_smart_alert
     
     if should_alert_buy
         msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
-        
+
         if sig_buy_mtf
             msg := msg + "🌟MTF共振 "
         if sig_buy_div
@@ -1145,10 +1145,18 @@ if enable_smart_alert
             msg := msg + "🔥极端 "
         if sig_buy_normal
             msg := msg + "⬆️超卖 "
-        
+
+        // 添加新增评分因素提示
+        if confirmation_buy
+            msg := msg + "✓确认 "
+        if reversal_buy
+            msg := msg + "↩反转 "
+        if realtime_bullish_div
+            msg := msg + "⚡实时背离 "
+
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
-        
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]", rsi, rsi_zscore, zscore_pct, buy_quality_grade)
+
         alert(msg, alert.freq_once_per_bar)
         buy_alert_level_sent := current_buy_level  // 记录已发送的最高等级
     
@@ -1162,7 +1170,7 @@ if enable_smart_alert
     
     if should_alert_sell
         msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
-        
+
         if sig_sell_mtf
             msg := msg + "🌟MTF共振 "
         if sig_sell_div
@@ -1171,9 +1179,17 @@ if enable_smart_alert
             msg := msg + "❄️极端 "
         if sig_sell_normal
             msg := msg + "⬇️超买 "
-        
+
+        // 添加新增评分因素提示
+        if confirmation_sell
+            msg := msg + "✓确认 "
+        if reversal_sell
+            msg := msg + "↩反转 "
+        if realtime_bearish_div
+            msg := msg + "⚡实时背离 "
+
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
-        
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]", rsi, rsi_zscore, zscore_pct, sell_quality_grade)
+
         alert(msg, alert.freq_once_per_bar)
         sell_alert_level_sent := current_sell_level  // 记录已发送的最高等级
