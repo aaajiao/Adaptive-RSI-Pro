@@ -256,24 +256,17 @@ weekly_extreme_bearish = weekly_rsi < 30 and weekly_sma20 < weekly_sma50  // 周
 weekly_ultra_bearish = weekly_rsi < 20                 // 周线超级熊市
 
 // 根据保护级别决定是否允许买入
-trend_allows_buy = protection_level == "Aggressive" ? weekly_uptrend :
-                   protection_level == "Moderate" ? not weekly_extreme_bearish :
-                   not weekly_ultra_bearish  // Loose: 仅排除RSI<20
+trend_allows_buy = protection_level == "Aggressive" ? weekly_uptrend : protection_level == "Moderate" ? not weekly_extreme_bearish : not weekly_ultra_bearish
 
 // 根据保护级别决定是否允许卖出 (对称逻辑)
 weekly_downtrend = weekly_sma20 < weekly_sma50
 weekly_extreme_bullish = weekly_rsi > 70 and weekly_sma20 > weekly_sma50
 weekly_ultra_bullish = weekly_rsi > 80
 
-trend_allows_sell = protection_level == "Aggressive" ? weekly_downtrend :
-                    protection_level == "Moderate" ? not weekly_extreme_bullish :
-                    not weekly_ultra_bullish  // Loose
+trend_allows_sell = protection_level == "Aggressive" ? weekly_downtrend : protection_level == "Moderate" ? not weekly_extreme_bullish : not weekly_ultra_bullish
 
 // 保护状态显示文本
-protection_status = not enable_trend_protection ? "OFF" :
-                    trend_allows_buy and trend_allows_sell ? "✓" :
-                    trend_allows_buy ? "BUY✓" :
-                    trend_allows_sell ? "SELL✓" : "⚠️"
+protection_status = not enable_trend_protection ? "OFF" : trend_allows_buy and trend_allows_sell ? "✓" : trend_allows_buy ? "BUY✓" : trend_allows_sell ? "SELL✓" : "⚠️"
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ VOLUME CONFIRMATION / 成交量确认
