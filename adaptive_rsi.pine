@@ -76,9 +76,13 @@ enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号
 cooldown_bars = input.int(5, "Cooldown Period (Bars) / 冷却期(K线数)", minval=1, maxval=20, group=grp_alerts, tooltip="同类信号触发后的冷却时间")
 enable_smart_alert = input.bool(true, "🎯 Smart Alert / 智能警报", group=grp_alerts, tooltip="V6动态警报：自动聚合所有信号到一条消息\n包含完整上下文（RSI值、Z-Score、百分位）\n实时触发，智能去重")
 
-grp_trend = "═══ Trend Filter / 趋势过滤 ═══"
-enable_trend_filter = input.bool(false, "Enable Trend Filter / 启用趋势过滤", group=grp_trend, tooltip="仅在趋势方向触发信号：上升趋势只做多，下降趋势只做空")
-trend_filter_mode = input.string("Auto", "Filter Mode / 过滤模式", options=["Auto", "Fixed 50", "Adaptive P50", "SMA(RSI)", "BB(RSI)"], group=grp_trend, tooltip="Auto: 根据RSI波动自动选择最佳模式")
+grp_protection = "═══ Trend Protection / 趋势保护 ═══"
+enable_trend_protection = input.bool(true, "Enable Trend Protection / 启用趋势保护", group=grp_protection, tooltip="使用周线趋势过滤极端风险：避免在周线极端下跌中抄底")
+protection_level = input.string("Moderate", "Protection Level / 保护级别", options=["Aggressive", "Moderate", "Loose"], group=grp_protection, tooltip="Aggressive: 周线必须上升趋势\nModerate(推荐): 排除周线极端下跌\nLoose: 仅排除周线RSI<20的极端情况")
+
+grp_volume = "═══ Volume Confirmation / 成交量确认 ═══"
+enable_volume_scoring = input.bool(true, "Enable Volume Scoring / 启用成交量评分", group=grp_volume, tooltip="成交量作为信号质量评分项，不强制过滤")
+volume_surge_mult = input.float(1.5, "Volume Surge Multiplier / 放量倍数", minval=1.0, maxval=3.0, step=0.1, group=grp_volume, tooltip="高于均量X倍视为放量")
 
 grp_mtf = "═══ Multi-Timeframe / 多时间框架 ═══"
 enable_mtf = input.bool(true, "Enable MTF RSI / 启用多时间框架", group=grp_mtf)
@@ -239,41 +243,45 @@ f_percentile_zscore_range(_pct) =>
     _pct < 2.3 ? " (< −2σ)" : _pct <= 6.7 ? " (−1.5σ ~ −2σ)" : _pct <= 15.9 ? " (−1σ ~ −1.5σ)" : _pct >= 97.7 ? " (> +2σ)" : _pct >= 93.3 ? " (+1.5σ ~ +2σ)" : _pct >= 84.1 ? " (+1σ ~ +1.5σ)" : ""
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ▶ TREND FILTER / 趋势过滤 (Auto-Adaptive)
+// ▶ TREND PROTECTION / 大周期趋势保护 (Weekly-based)
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 计算各种过滤基准线
-rsi_sma = ta.sma(rsi, 20)
-rsi_bb_basis = ta.sma(rsi, 20)  // BB(RSI) 中轨
+// 周线数据请求 (用于趋势保护)
+[weekly_rsi, weekly_close, weekly_sma20, weekly_sma50] = request.security(syminfo.tickerid, "W",
+    [ta.rsi(close, 14), close, ta.sma(close, 20), ta.sma(close, 50)], lookahead=barmerge.lookahead_off)
 
-// RSI 波动率检测 (用于自动模式选择)
-rsi_volatility = ta.stdev(rsi, 50)
+// 周线趋势状态判断
+weekly_uptrend = weekly_sma20 > weekly_sma50           // 周线上升趋势
+weekly_extreme_bearish = weekly_rsi < 30 and weekly_sma20 < weekly_sma50  // 周线极端下跌
+weekly_ultra_bearish = weekly_rsi < 20                 // 周线超级熊市
 
-// 计算波动率的历史分位数 (自适应阈值)
-rsi_vol_p25 = ta.percentile_nearest_rank(rsi_volatility, 100, 25)  // 低波动阈值
-rsi_vol_p75 = ta.percentile_nearest_rank(rsi_volatility, 100, 75)  // 高波动阈值
+// 根据保护级别决定是否允许买入
+trend_allows_buy = protection_level == "Aggressive" ? weekly_uptrend : protection_level == "Moderate" ? not weekly_extreme_bearish : not weekly_ultra_bearish
 
-// 自动模式选择逻辑 (完全自适应):
-// - 低波动 (< P25): Fixed 50 足够稳定
-// - 中波动 (P25-P75): Adaptive P50 适应性更好  
-// - 高波动 (> P75): BB(RSI) 更能处理剧烈波动
-auto_selected_mode = rsi_volatility < rsi_vol_p25 ? "Fixed 50" :
-                     rsi_volatility > rsi_vol_p75 ? "BB(RSI)" : "Adaptive P50"
+// 根据保护级别决定是否允许卖出 (对称逻辑)
+weekly_downtrend = weekly_sma20 < weekly_sma50
+weekly_extreme_bullish = weekly_rsi > 70 and weekly_sma20 > weekly_sma50
+weekly_ultra_bullish = weekly_rsi > 80
 
-// 实际使用的模式
-active_mode = trend_filter_mode == "Auto" ? auto_selected_mode : trend_filter_mode
+trend_allows_sell = protection_level == "Aggressive" ? weekly_downtrend : protection_level == "Moderate" ? not weekly_extreme_bullish : not weekly_ultra_bullish
 
-// 根据活动模式计算趋势方向
-trend_up = active_mode == "Fixed 50" ? rsi > 50 :
-           active_mode == "Adaptive P50" ? rsi > rsi_p50 :
-           active_mode == "SMA(RSI)" ? rsi > rsi_sma :
-           rsi > rsi_bb_basis  // BB(RSI)
-trend_down = not trend_up
+// 保护状态显示文本
+protection_status = not enable_trend_protection ? "OFF" : trend_allows_buy and trend_allows_sell ? "✓" : trend_allows_buy ? "BUY✓" : trend_allows_sell ? "SELL✓" : "⚠️"
 
-// 显示文本 (包含使用的模式)
-trend_mode_display = trend_filter_mode == "Auto" ? "[" + auto_selected_mode + "]" : ""
-trend_text = trend_up ? "↑ UP " + trend_mode_display : "↓ DOWN " + trend_mode_display
-trend_color = trend_up ? color_bull : color_bear
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ VOLUME CONFIRMATION / 成交量确认
+// ══════════════════════════════════════════════════════════════════════════════
+
+vol_sma20 = ta.sma(volume, 20)
+volume_ratio = vol_sma20 > 0 ? volume / vol_sma20 : 1.0
+
+// 成交量状态
+volume_surge = volume_ratio >= volume_surge_mult       // 放量
+volume_normal = volume_ratio >= 0.8 and volume_ratio < volume_surge_mult  // 正常量
+volume_low = volume_ratio < 0.8                        // 缩量
+
+// 成交量评分 (用于信号质量)
+volume_score = volume_surge ? 20 : volume_normal ? 10 : 0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ MULTI-TIMEFRAME RSI / 多时间框架RSI
@@ -515,6 +523,47 @@ if enable_divergence
         bearish_divergence := false
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ▶ CONFIRMATION & REVERSAL SIGNALS / 确认信号与反转信号
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 确认信号: RSI在极端区内形成pivot (底部/顶部形态)
+// 当处于极端超卖且RSI开始回升时，说明底部正在形成
+rsi_pivot_low_current = ta.pivotlow(rsi, 3, 1)  // 快速pivot检测 (3根K线回看, 1根确认)
+rsi_pivot_high_current = ta.pivothigh(rsi, 3, 1)
+
+// 极端区内的pivot确认 (用于评分)
+bool confirmation_buy = not na(rsi_pivot_low_current) and rsi_zscore[1] < -2    // RSI在极端超卖区形成低点
+bool confirmation_sell = not na(rsi_pivot_high_current) and rsi_zscore[1] > 2  // RSI在极端超买区形成高点
+
+// 反转信号: Z-Score从极端区回归 (动量转向)
+bool reversal_buy = ta.crossover(rsi_zscore, -2) and rsi_zscore[1] < -2     // Z从<-2回升到>-2
+bool reversal_sell = ta.crossunder(rsi_zscore, 2) and rsi_zscore[1] > 2     // Z从>2回落到<2
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ REAL-TIME DIVERGENCE / 实时背离检测 (领先指标)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 实时背离: 不等待pivot确认，作为早期预警
+// 检测逻辑: 当前价格接近近期低点/高点，但RSI没有
+
+// 计算近期价格和RSI的极值 (使用20根K线窗口)
+realtime_lookback = 20
+lowest_price_20 = ta.lowest(low, realtime_lookback)
+highest_price_20 = ta.highest(high, realtime_lookback)
+lowest_rsi_20 = ta.lowest(rsi, realtime_lookback)
+highest_rsi_20 = ta.highest(rsi, realtime_lookback)
+
+// 实时看涨背离: 价格接近近期低点(误差1%), RSI明显高于近期低点
+price_near_low = low <= lowest_price_20 * 1.01
+rsi_not_at_low = rsi > lowest_rsi_20 + 3  // RSI至少高于低点3个单位
+bool realtime_bullish_div = price_near_low and rsi_not_at_low and rsi_zscore < -1.5
+
+// 实时看跌背离: 价格接近近期高点(误差1%), RSI明显低于近期高点
+price_near_high = high >= highest_price_20 * 0.99
+rsi_not_at_high = rsi < highest_rsi_20 - 3
+bool realtime_bearish_div = price_near_high and rsi_not_at_high and rsi_zscore > 1.5
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ▶ VISUAL PLOTTING
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -577,11 +626,11 @@ raw_extreme_overbought = ta.crossover(rsi_zscore, 2)
 raw_normal_oversold = ta.crossunder(rsi_zscore, -normal_threshold) and not raw_extreme_oversold
 raw_normal_overbought = ta.crossover(rsi_zscore, normal_threshold) and not raw_extreme_overbought
 
-// 应用趋势过滤
-extreme_oversold = enable_trend_filter ? (raw_extreme_oversold and trend_down) : raw_extreme_oversold
-extreme_overbought = enable_trend_filter ? (raw_extreme_overbought and trend_up) : raw_extreme_overbought
-normal_oversold = enable_trend_filter ? (raw_normal_oversold and trend_down) : raw_normal_oversold
-normal_overbought = enable_trend_filter ? (raw_normal_overbought and trend_up) : raw_normal_overbought
+// 应用大周期趋势保护
+extreme_oversold = enable_trend_protection ? (raw_extreme_oversold and trend_allows_buy) : raw_extreme_oversold
+extreme_overbought = enable_trend_protection ? (raw_extreme_overbought and trend_allows_sell) : raw_extreme_overbought
+normal_oversold = enable_trend_protection ? (raw_normal_oversold and trend_allows_buy) : raw_normal_oversold
+normal_overbought = enable_trend_protection ? (raw_normal_overbought and trend_allows_sell) : raw_normal_overbought
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ SIGNAL COOLDOWN MECHANISM / 信号冷却机制
@@ -654,6 +703,114 @@ if sig_sell_normal
 // 背离单独显示 (背离时不在极端区域)
 bool sig_div_bull_only = enable_divergence and bullish_divergence and not was_extreme_oversold
 bool sig_div_bear_only = enable_divergence and bearish_divergence and not was_extreme_overbought
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ SIGNAL QUALITY SCORING / 信号质量评分
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 计算买入信号质量分数 (满分约130)
+f_buy_quality() =>
+    score = 0
+
+    // MTF 共振 (+25)
+    if oversold_resonance
+        score += 25
+
+    // Pivot背离确认 (+20)
+    if bullish_divergence
+        score += 20
+
+    // 成交量加分 (+20 放量, +10 正常)
+    if enable_volume_scoring
+        score += volume_score
+
+    // 大周期趋势配合 (+20)
+    if weekly_uptrend
+        score += 20
+    else if not weekly_extreme_bearish
+        score += 10  // 非极端下跌也有一定加分
+
+    // 极端程度加分 (+15 if Z < -2.5)
+    if rsi_zscore < -2.5
+        score += 15
+    else if rsi_zscore < -2
+        score += 10
+
+    // ═══ 新增评分项 (Phase 2) ═══
+
+    // 确认信号: 极端区内RSI pivot形成 (+10)
+    if confirmation_buy
+        score += 10
+
+    // 反转信号: Z-Score从极端区回归 (+10)
+    if reversal_buy
+        score += 10
+
+    // 实时背离: 早期预警信号 (+10)
+    if realtime_bullish_div
+        score += 10
+
+    score
+
+// 计算卖出信号质量分数 (满分约130)
+f_sell_quality() =>
+    score = 0
+
+    // MTF 共振 (+25)
+    if overbought_resonance
+        score += 25
+
+    // Pivot背离确认 (+20)
+    if bearish_divergence
+        score += 20
+
+    // 成交量加分 (+20 放量, +10 正常)
+    if enable_volume_scoring
+        score += volume_score
+
+    // 大周期趋势配合 (+20)
+    if weekly_downtrend
+        score += 20
+    else if not weekly_extreme_bullish
+        score += 10
+
+    // 极端程度加分 (+15 if Z > 2.5)
+    if rsi_zscore > 2.5
+        score += 15
+    else if rsi_zscore > 2
+        score += 10
+
+    // ═══ 新增评分项 (Phase 2) ═══
+
+    // 确认信号: 极端区内RSI pivot形成 (+10)
+    if confirmation_sell
+        score += 10
+
+    // 反转信号: Z-Score从极端区回归 (+10)
+    if reversal_sell
+        score += 10
+
+    // 实时背离: 早期预警信号 (+10)
+    if realtime_bearish_div
+        score += 10
+
+    score
+
+// 当前信号质量
+current_buy_quality = f_buy_quality()
+current_sell_quality = f_sell_quality()
+
+// 质量等级转换 (阈值已调整以适应新评分体系)
+// A: ≥90 (高质量信号), B: ≥70, C: ≥50, D: <50
+f_quality_grade(_score) =>
+    _score >= 90 ? "A" : _score >= 70 ? "B" : _score >= 50 ? "C" : "D"
+
+buy_quality_grade = f_quality_grade(current_buy_quality)
+sell_quality_grade = f_quality_grade(current_sell_quality)
+
+// 当前活跃信号的质量等级
+active_signal_grade = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal ? buy_quality_grade :
+                      sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal ? sell_quality_grade : ""
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ STATISTICS CALCULATION (使用实际触发的信号)
@@ -750,14 +907,14 @@ if show_dashboard
                      str.format("⚪ {0}/{1}", math.max(oversold_count, overbought_count), valid_tf_count)
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
-    // 计算行数: Mobile模式3行, Lite模式5行(含Lookback), Full模式根据启用功能计算
+    // 计算行数: Mobile模式3行, Lite模式6行(含Protection), Full模式根据启用功能计算
     mobile_rows = 3
-    lite_rows = 5
-    full_rows = 5 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
+    lite_rows = 6  // 增加了 Protection 行
+    full_rows = 6 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
     total_rows = dashboard_mode == "Mobile" ? mobile_rows : dashboard_mode == "Lite" ? lite_rows : full_rows
 
     // 创建表格 - 深蓝灰色背景更易读
-    var table dashboard = table.new(position.top_right, 2, 17, 
+    var table dashboard = table.new(position.top_right, 2, 20,  // 增加到20行 
                                      bgcolor=color.new(#1a1a2e, dashboard_transparency),
                                      border_width=1, border_color=color.new(#4a4a6a, 50))
     
@@ -774,56 +931,56 @@ if show_dashboard
             table.cell(dashboard, 1, row, str.tostring(rsi, "#.1"), text_color=color_rsi, text_size=txt_size_body, bgcolor=color.new(#2962FF, dashboard_transparency))
             row += 1
             
-            // 第2行：信号emoji (优化：无新信号时显示持续状态)
+            // 第2行：信号emoji + 质量等级 (优化：无新信号时显示持续状态)
             signal_text = "⚪"
             signal_color = color.gray
-            
-            // 优先级1: 触发的信号 (事件)
+
+            // 优先级1: 触发的信号 (事件) - 显示信号emoji + 等级
             if sig_buy_mtf
-                signal_text := "🌟"
+                signal_text := "🌟 [" + buy_quality_grade + "]"
                 signal_color := color_bull
             else if sig_buy_div
-                signal_text := "💎"
+                signal_text := "💎 [" + buy_quality_grade + "]"
                 signal_color := color_bull
             else if sig_buy_extreme
-                signal_text := "🔥"
+                signal_text := "🔥 [" + buy_quality_grade + "]"
                 signal_color := color_bull
             else if show_normal_signals and sig_buy_normal
-                signal_text := "⬆️"
+                signal_text := "⬆️ [" + buy_quality_grade + "]"
                 signal_color := color_bull
             else if sig_sell_mtf
-                signal_text := "🌟"
+                signal_text := "🌟 [" + sell_quality_grade + "]"
                 signal_color := color_bear
             else if sig_sell_div
-                signal_text := "💎"
+                signal_text := "💎 [" + sell_quality_grade + "]"
                 signal_color := color_bear
             else if sig_sell_extreme
-                signal_text := "❄️"
+                signal_text := "❄️ [" + sell_quality_grade + "]"
                 signal_color := color_bear
             else if show_normal_signals and sig_sell_normal
-                signal_text := "⬇️"
+                signal_text := "⬇️ [" + sell_quality_grade + "]"
                 signal_color := color_bear
             else if sig_div_bull_only
-                signal_text := "↗️"
+                signal_text := "↗️ [" + buy_quality_grade + "]"
                 signal_color := #00BCD4
             else if sig_div_bear_only
-                signal_text := "↘️"
+                signal_text := "↘️ [" + sell_quality_grade + "]"
                 signal_color := #FF9800
-            // 优先级2: 持续极端状态 (无新信号但仍在极端区域)
+            // 优先级2: 持续极端状态 (无新信号但仍在极端区域) - 显示持续 + 等级
             else if in_extreme_oversold
-                signal_text := "🔥持续"
+                signal_text := "🔥持续 [" + buy_quality_grade + "]"
                 signal_color := color.new(color_bull, 30)
             else if in_extreme_overbought
-                signal_text := "❄️持续"
+                signal_text := "❄️持续 [" + sell_quality_grade + "]"
                 signal_color := color.new(color_bear, 30)
-            // 优先级3: 持续普通超买/超卖状态
+            // 优先级3: 持续普通超买/超卖状态 - 不显示等级 (非信号区)
             else if rsi_zscore < -normal_threshold
                 signal_text := "⬆️区"
                 signal_color := color.new(color_bull, 50)
             else if rsi_zscore > normal_threshold
                 signal_text := "⬇️区"
                 signal_color := color.new(color_bear, 50)
-            
+
             table.cell(dashboard, 0, row, "信号", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, signal_text, text_color=signal_color, text_size=txt_size_body)
             row += 1
@@ -859,11 +1016,21 @@ if show_dashboard
             table.cell(dashboard, 1, row, percentile_display, text_color=status_color, text_size=txt_size_body)
             row += 1
             
-            // 状态 + 趋势
+            // 状态 + 信号质量
+            quality_display = active_signal_grade != "" ? str.format(" [{0}]", active_signal_grade) : ""
             table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.format("{0} {1}", status_text, trend_text), text_color=status_color, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.format("{0}{1}", status_text, quality_display), text_color=status_color, text_size=txt_size_body)
             row += 1
-            
+
+            // 周线保护 + 成交量状态
+            weekly_rsi_display = str.format("W.RSI:{0,number,#}", weekly_rsi)
+            vol_display = volume_surge ? "📊↑" : volume_low ? "📊↓" : "📊"
+            protection_color = trend_allows_buy and trend_allows_sell ? color.white :
+                              trend_allows_buy or trend_allows_sell ? color.yellow : color.red
+            table.cell(dashboard, 0, row, str.format("Protection [{0}]", protection_level), text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.format("{0} {1} {2}", protection_status, weekly_rsi_display, vol_display), text_color=protection_color, text_size=txt_size_body)
+            row += 1
+
             // Lookback 信息 (显示模式和健康度)
             lookback_mode_display = lookback_mode == "Auto" ? "[Auto]" : "[Custom]"
             health_icons = (health_sample_coverage ? "✅" : "⚠️") + (health_distribution_spread ? "✅" : "⚠️") + (health_stat_valid ? "✅" : "⚠️")
@@ -969,7 +1136,7 @@ if enable_smart_alert
     
     if should_alert_buy
         msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
-        
+
         if sig_buy_mtf
             msg := msg + "🌟MTF共振 "
         if sig_buy_div
@@ -978,10 +1145,18 @@ if enable_smart_alert
             msg := msg + "🔥极端 "
         if sig_buy_normal
             msg := msg + "⬆️超卖 "
-        
+
+        // 添加新增评分因素提示
+        if confirmation_buy
+            msg := msg + "✓确认 "
+        if reversal_buy
+            msg := msg + "↩反转 "
+        if realtime_bullish_div
+            msg := msg + "⚡实时背离 "
+
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
-        
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]", rsi, rsi_zscore, zscore_pct, buy_quality_grade)
+
         alert(msg, alert.freq_once_per_bar)
         buy_alert_level_sent := current_buy_level  // 记录已发送的最高等级
     
@@ -995,7 +1170,7 @@ if enable_smart_alert
     
     if should_alert_sell
         msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
-        
+
         if sig_sell_mtf
             msg := msg + "🌟MTF共振 "
         if sig_sell_div
@@ -1004,9 +1179,17 @@ if enable_smart_alert
             msg := msg + "❄️极端 "
         if sig_sell_normal
             msg := msg + "⬇️超买 "
-        
+
+        // 添加新增评分因素提示
+        if confirmation_sell
+            msg := msg + "✓确认 "
+        if reversal_sell
+            msg := msg + "↩反转 "
+        if realtime_bearish_div
+            msg := msg + "⚡实时背离 "
+
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#})", rsi, rsi_zscore, zscore_pct)
-        
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]", rsi, rsi_zscore, zscore_pct, sell_quality_grade)
+
         alert(msg, alert.freq_once_per_bar)
         sell_alert_level_sent := current_sell_level  // 记录已发送的最高等级

@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-17** | **v6.2**
+**Pine Script v6** | **Last Update: 2025-12-26** | **v6.4**
 
 ---
 
@@ -109,13 +109,36 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 - **Health Indicators**: Real-time validation of sample coverage, distribution spread, and statistical validity
   健康度指标：实时验证样本覆盖率、分布宽度和统计有效性
 
-### 📈 Auto-Adaptive Trend Filter / 自动自适应趋势过滤
-- **Auto Mode**: Automatically selects optimal filter based on RSI volatility percentiles
-  自动模式：根据RSI波动率百分位自动选择最优过滤器
-- **5 Filter Modes**: Fixed 50, Adaptive P50, SMA(RSI), BB(RSI), or Auto
-  5种过滤模式：固定50、自适应P50、RSI均线、布林带或自动
-- **Smart Selection**: Low volatility → Fixed 50, Medium → Adaptive P50, High → BB(RSI)
-  智能选择：低波动→固定50，中波动→自适应P50，高波动→布林带
+### 🛡️ Weekly Trend Protection / 周线趋势保护 (v6.3 NEW)
+- **Purpose**: Avoid buying in extreme weekly downtrends (catching falling knives)
+  目的：避免在周线极端下跌中抄底（接飞刀）
+- **3 Protection Levels**: Aggressive, Moderate (recommended), Loose
+  3档保护级别：激进、适中（推荐）、宽松
+- **Weekly-Based**: Uses weekly RSI and SMA20/50 for trend confirmation
+  周线判断：使用周线RSI和均线确认趋势
+
+### 📊 Volume Scoring / 成交量评分 (v6.3 NEW)
+- **Non-Blocking**: Volume is a scoring factor, not a filter (doesn't block signals)
+  非阻断式：成交量作为评分项，不强制过滤信号
+- **Surge Detection**: Identifies volume surges (>1.5x average) for higher quality signals
+  放量检测：识别放量（>1.5倍均量）提升信号质量评分
+- **Reversal Logic**: Early reversals often occur on low volume (exhaustion), so blocking would miss opportunities
+  反转逻辑：反转初期常缩量（卖盘衰竭），强制过滤会错过最佳入场点
+
+### 🏆 Signal Quality Grading / 信号质量评级 (v6.4 Enhanced)
+- **A/B/C/D Grades**: Each signal shows quality grade based on multiple factors
+  A/B/C/D等级：每个信号显示综合质量等级
+- **Base Scoring Factors (v6.3)**: MTF resonance (+25), Pivot Divergence (+20), Volume (+20), Weekly trend (+20), Extreme level (+15)
+  基础评分项：MTF共振(+25)、Pivot背离(+20)、成交量(+20)、周线趋势(+20)、极端程度(+15)
+- **NEW Scoring Factors (v6.4)**:
+  - Confirmation Signal (+10): RSI pivot forming in extreme zone / 确认信号：极端区内RSI形成pivot
+  - Reversal Signal (+10): Z-Score exiting extreme zone / 反转信号：Z-Score脱离极端区
+  - Real-time Divergence (+10): Early warning divergence (no pivot wait) / 实时背离：早期预警（无需等待pivot确认）
+- **Max Score**: ~130 points (previously ~100) / 满分约130分（原约100分）
+- **Updated Thresholds**: A ≥90 (was 80), B ≥70 (was 60), C ≥50 (was 40), D <50
+  更新阈值：A≥90（原80）、B≥70（原60）、C≥50（原40）、D<50
+- **Decision Aid**: Only trade A/B grade signals for higher win rate
+  决策辅助：只交易A/B级信号可提高胜率
 
 ### 🌍 Multi-Timeframe RSI / 多时间框架RSI
 - **3 Configurable Timeframes**: View RSI status across multiple timeframes (default: 1h/4h/D)
@@ -280,6 +303,10 @@ Interpretation / 解读：
 Shows detailed stats, MTF status, and divergence info.
 显示详细统计、MTF状态和背离信息。
 
+#### Lite Mode
+Core information without statistics section.
+核心信息，不含统计部分。
+
 #### Mobile Mode (Phone) / 手机模式
 Simplified 3-row layout optimized for small screens.
 极简3行布局，专为手机屏幕优化。
@@ -291,20 +318,21 @@ Simplified 3-row layout optimized for small screens.
 
 ```
 ┌─────────────────────────────────┐
-│   ADAPTIVE RSI PRO       35.2  │
+│   ADAPTIVE RSI PRO       35.2  │  ← Row 1: Title + RSI Value
 ├─────────────────────────────────┤
-│ Status      🟢 EXTREME OVERSOLD │
-│ Percentile  P10 ↓ DOWN          │
-│ Lookback[Auto] 456 ✅✅✅     │
-├─────────────────────────────────├ (Full Mode Only)
-│ ── MTF ──                   │
-│ 1h | 4h | D   🟢 | ⚪ | 🟢      │
-│ Resonance    🟢 3/4 OVERSOLD    │
+│ Z-Score     -2.15σ (≈P2)       │  ← Row 2: Z-Score + Approx Percentile
+│ Percentile  P5 (< -2σ)          │  ← Row 3: Percentile + Z-Score Range
+│ Status      🟢 EXTREME OVERSOLD [A] │  ← Row 4: Status + Quality Grade
+│ Protection[Mod] ✓ W.RSI:45 📊↑ │  ← Row 5: Weekly Protection + Volume
+│ Lookback[Auto] 456 ✅✅✅      │  ← Row 6: Lookback + Health Icons
+├─────────────────────────────────┤ (Full Mode Only ↓)
+│ MTF 1h|4h|D   🟢|⚪|🟢          │  ← Row 7: MTF Timeframes + Status
+│ Resonance    🟢 3/4             │  ← Row 8: Resonance Count
 ├─────────────────────────────────┤
-│ Divergence[Normal] 🟢 BULL (5/60) │
+│ Divergence[Normal] 🟢 BULL (5/60) │  ← Row 9: Divergence Status
 ├─────────────────────────────────┤
-│ ── STATS ──   (20 bars)         │
-│ 🌟 MTF Buy(12)  +4.2% | 83%    │
+│ ── STATS ──   (20 bars)         │  ← Row 10: Stats Header
+│ 🌟 MTF Buy(12)  +4.2% | 83%    │  ← Row 11-18: Signal Statistics
 │ 🌟 MTF Sell(8)  +3.8% | 75%    │
 │ 💎 Div Buy(15)  +3.5% | 80%    │
 │ 💎 Div Sell(11) +2.9% | 73%    │
@@ -312,6 +340,113 @@ Simplified 3-row layout optimized for small screens.
 │ ❄️ Ext Sell(38) +1.8% | 63%    │
 └─────────────────────────────────┘
 ```
+
+### Dashboard Field Reference / 面板字段详解
+
+| Row | Field | Description / 描述 |
+|-----|-------|-------------------|
+| 1 | `ADAPTIVE RSI 35.2` | Current RSI value / 当前RSI数值 |
+| 2 | `Z-Score -2.15σ (≈P2)` | Z-Score (std devs from mean) + approximate percentile / Z值（距均值标准差倍数）+ 近似百分位 |
+| 3 | `Percentile P5 (<-2σ)` | Percentile range + corresponding Z-Score range / 百分位区间 + 对应Z值范围 |
+| 4 | `Status 🟢 EXTREME [A]` | 5-level status + signal quality grade (A/B/C/D) / 5级状态 + 信号质量等级 |
+| 5 | `Protection[Mod] ✓ W.RSI:45 📊↑` | Protection level + status + weekly RSI + volume / 保护级别 + 状态 + 周线RSI + 成交量 |
+| 6 | `Lookback[Auto] 456 ✅✅✅` | Lookback mode + period + 3 health indicators / 回看模式 + 周期 + 3个健康度指标 |
+| 7 | `MTF 1h\|4h\|D 🟢\|⚪\|🟢` | 3 timeframe names + their RSI status / 3个周期名称 + 各自RSI状态 |
+| 8 | `Resonance 🟢 3/4` | Resonance status (aligned TFs / total valid TFs) / 共振状态（一致周期数/有效周期总数） |
+| 9 | `Divergence[Normal] 🟢 BULL` | Divergence mode + status + (lookback/range) / 背离模式 + 状态 + (回看/范围) |
+| 10-18 | `🌟 MTF Buy(12) +4.2% \| 83%` | Signal type (count) + avg return + win rate / 信号类型(次数) + 平均收益 + 胜率 |
+
+### Dashboard Symbols / 面板符号说明
+
+**Protection Status / 保护状态**:
+| Symbol | Meaning / 含义 |
+|--------|---------------|
+| `✓` | Protection passed, signals allowed / 保护通过，允许信号 |
+| `BUY✓` | Only buy signals allowed / 仅允许买入信号 |
+| `SELL✓` | Only sell signals allowed / 仅允许卖出信号 |
+| `⚠️` | Both directions blocked / 双向阻断 |
+| `OFF` | Protection disabled / 保护已禁用 |
+
+**Protection Scenarios / 保护场景示例** (Moderate Mode):
+
+```
+场景1: 周线中性 → ✓ 双向通过
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] ✓ W.RSI:52 📊                          │
+│                                                         │
+│ 周线状态: RSI=52 (中性), SMA20 ≈ SMA50                   │
+│ 判断结果: 非极端牛市，非极端熊市                          │
+│ 信号影响: 买入✓ 卖出✓ → 日线信号正常触发                  │
+└─────────────────────────────────────────────────────────┘
+
+场景2: 周线牛市极端 → BUY✓ 仅买入
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] BUY✓ W.RSI:76 📊↓                       │
+│                                                         │
+│ 周线状态: RSI=76 (>70), SMA20 > SMA50 (上升趋势)         │
+│ 判断结果: 周线处于"极端牛市"状态                          │
+│ 信号影响: 买入✓ 卖出✗ → 阻止在强势上涨中做空              │
+│ 策略意义: 牛市中逢低买入可以，但不要逆势做空              │
+└─────────────────────────────────────────────────────────┘
+
+场景3: 周线熊市极端 → SELL✓ 仅卖出
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] SELL✓ W.RSI:25 📊↑                      │
+│                                                         │
+│ 周线状态: RSI=25 (<30), SMA20 < SMA50 (下降趋势)         │
+│ 判断结果: 周线处于"极端熊市"状态                          │
+│ 信号影响: 买入✗ 卖出✓ → 阻止在极端下跌中抄底              │
+│ 策略意义: 避免"接飞刀"，等周线企稳再考虑买入              │
+└─────────────────────────────────────────────────────────┘
+
+场景4: 保护已禁用 → OFF
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] OFF W.RSI:-- 📊                         │
+│                                                         │
+│ 用户选择: Enable Trend Protection = OFF                 │
+│ 判断结果: 不进行周线保护判断                              │
+│ 信号影响: 买入✓ 卖出✓ → 所有日线信号正常触发              │
+│ 风险提示: 可能在周线极端时抄底或逆势做空                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Protection Level Comparison / 保护级别对比**:
+
+| Level | Buy Blocked When / 阻断买入条件 | Sell Blocked When / 阻断卖出条件 |
+|-------|-------------------------------|--------------------------------|
+| **Aggressive** | Weekly NOT in uptrend (SMA20<SMA50) / 周线非上升趋势 | Weekly NOT in downtrend / 周线非下降趋势 |
+| **Moderate** ⭐ | Weekly RSI<30 AND downtrend / 周线RSI<30且下跌趋势 | Weekly RSI>70 AND uptrend / 周线RSI>70且上涨趋势 |
+| **Loose** | Weekly RSI<20 (ultra bearish) / 周线RSI<20 | Weekly RSI>80 (ultra bullish) / 周线RSI>80 |
+
+> **Recommendation / 推荐**: Use **Moderate** (default) for balanced protection - blocks extreme counter-trend trades while allowing most opportunities.
+> 推荐使用 **Moderate**（默认）以获得平衡保护 - 阻止极端逆势交易，同时保留大部分机会。
+
+**Volume Status / 成交量状态**:
+| Symbol | Meaning / 含义 |
+|--------|---------------|
+| `📊↑` | Volume surge (>1.5x average) / 放量（>1.5倍均量） |
+| `📊↓` | Low volume (<0.8x average) / 缩量（<0.8倍均量） |
+| `📊` | Normal volume / 正常成交量 |
+
+**Health Indicators / 健康度指标** (3 icons):
+| Position | Check / 检查项 | ✅ Pass / ⚠️ Fail |
+|----------|---------------|-------------------|
+| 1st | Sample Coverage / 样本覆盖 | ≥80% of lookback / ≥80%回看期 |
+| 2nd | Distribution Spread / 分布宽度 | P95-P5 ≥ 15 points / ≥15点 |
+| 3rd | Statistical Validity / 统计有效性 | Actual ≥ 90% of required / 实际值≥需求的90% |
+
+**MTF Status / MTF状态**:
+| Symbol | Meaning / 含义 |
+|--------|---------------|
+| `🟢` | Oversold (RSI < P10) / 超卖 |
+| `🔴` | Overbought (RSI > P90) / 超买 |
+| `⚪` | Neutral / 中性 |
+
+**Signal Quality Grades / 信号质量等级** (v6.4 Updated):
+- **[A]** (≥90分): Excellent - 多因素共振，高胜率 / Multiple factors aligned, high win rate
+- **[B]** (70-89分): Good - 建议交易 / Recommended to trade
+- **[C]** (50-69分): Fair - 谨慎或小仓 / Trade with caution or smaller size
+- **[D]** (<50分): Weak - 建议观望 / Consider waiting
 
 **Health Indicators / 健康度指标**:
 - ✅✅✅ = All healthy (所有健康): Sample coverage ≥ 80%, Distribution spread ≥ 15, Statistical validity ≥ 90%
@@ -404,11 +539,17 @@ Simplified 3-row layout optimized for small screens.
 | Bearish Color | #FF5252 | Custom color for bearish signals / 熊市信号颜色 |
 | RSI Line Color | #FFEB3B | RSI line color / RSI主线颜色 |
 
-### Trend Filter / 趋势过滤
+### Trend Protection / 趋势保护 (v6.3 NEW)
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Enable Trend Filter | OFF | Only trigger signals in trend direction / 趋势方向过滤 |
-| Filter Mode | Auto | Auto/Fixed 50/Adaptive P50/SMA(RSI)/BB(RSI) / 过滤模式 |
+| Enable Trend Protection | **ON** | Use weekly trend to filter extreme risks / 使用周线趋势过滤极端风险 |
+| Protection Level | **Moderate** | Aggressive/Moderate/Loose - protection strictness / 保护级别严格程度 |
+
+### Volume Confirmation / 成交量确认 (v6.3 NEW)
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Enable Volume Scoring | ON | Volume as quality scoring factor (non-blocking) / 成交量作为评分项 |
+| Volume Surge Multiplier | 1.5 | Volume above this × average = surge / 高于均量X倍视为放量 |
 
 ### Alert Settings / 警报设置
 | Setting | Default | Description |
@@ -460,11 +601,17 @@ Automatically aggregates all signals into a single rich-text message.
 2. When creating alert, select **"Any alert() function call"** / 创建警报时选择 **"Any alert() function call"**
 3. Done! You'll receive real-time aggregated alerts / 完成！您会收到实时的聚合警报
 
-**Message Example / 消息示例**:
+**Message Example / 消息示例** (v6.4 Enhanced):
 ```
-AAPL: 🟢 BUY SIGNALS → 🌟MTF共振 💎背离 🔥极端 | RSI:25.3 Z:-2.1σ (≈P2)
-AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
+AAPL: 🟢 BUY SIGNALS → 🌟MTF共振 🔥极端 ✓确认 ↩反转 | RSI:25.3 Z:-2.1σ (≈P2) [A]
+AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈P98) [B]
 ```
+
+**New Alert Elements / 新增警报元素**:
+- `✓确认` - Confirmation signal (RSI pivot in extreme zone) / 确认信号
+- `↩反转` - Reversal signal (exiting extreme zone) / 反转信号
+- `⚡实时背离` - Real-time divergence detected / 实时背离
+- `[A/B/C/D]` - Quality grade for quick decision / 质量等级便于快速决策
 
 **Features / 特性**:
 - ✅ **Real-time trigger / 实时触发** - Sends when condition met within bar / K线运行中触发条件即发送
@@ -501,7 +648,48 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98)
 
 ## Changelog / 更新日志
 
-### v6.2 - Smart Alert Anti-Flicker / 智能防抖警报 (Current / 当前版本)
+### v6.4 - Enhanced Signal Timing / 增强信号时机 (Current / 当前版本)
+- 🎯 **Confirmation Signal Detection / 确认信号检测**:
+  - Detects RSI pivot forming within extreme zone / 检测极端区内RSI形成pivot
+  - Indicates bottom/top pattern formation / 表明底部/顶部形态正在形成
+  - Adds +10 to quality score / 评分加10分
+- 🔄 **Reversal Signal Detection / 反转信号检测**:
+  - Detects Z-Score exiting extreme zone (crossing back above -2σ or below +2σ) / 检测Z-Score脱离极端区
+  - Indicates momentum turning / 表明动量转向
+  - Adds +10 to quality score / 评分加10分
+- ⚡ **Real-time Divergence Detection / 实时背离检测**:
+  - Early warning divergence without waiting for pivot confirmation / 早期预警背离，无需等待pivot确认
+  - Price near recent extreme but RSI not / 价格接近近期极值但RSI未创新值
+  - Adds +10 to quality score (complements pivot-based divergence) / 评分加10分（与pivot背离互补）
+- 📊 **Updated Scoring System / 更新评分系统**:
+  - Max score increased to ~130 (was ~100) / 满分提升至约130分（原约100分）
+  - A-grade threshold raised to ≥90 (was 80) for higher quality filtering / A级阈值提升至≥90（原80）以提高过滤质量
+  - B ≥70, C ≥50, D <50 (adjusted proportionally) / 其他阈值相应调整
+- 🔔 **Enhanced Smart Alert / 增强智能警报**:
+  - Now shows quality grade [A/B/C/D] at end of message / 消息末尾显示质量等级
+  - New indicators: ✓确认, ↩反转, ⚡实时背离 / 新增指示符
+  - Quick decision support without opening chart / 无需打开图表即可快速决策
+
+### v6.3 - Win Rate Optimization / 胜率优化
+- 🛡️ **Weekly Trend Protection / 周线趋势保护**:
+  - Replaces old Trend Filter with weekly-based protection / 用周线保护替代旧的趋势过滤
+  - 3 levels: Aggressive (weekly uptrend only), **Moderate** (avoid extreme bearish), Loose / 3档：激进、适中（默认）、宽松
+  - Prevents buying during weekly extreme downtrends (RSI<30 + downtrend) / 避免周线极端下跌时抄底
+- 📊 **Volume Scoring System / 成交量评分系统**:
+  - Volume as quality scoring factor, NOT a blocking filter / 成交量作为评分项，不强制过滤
+  - Surge detection (>1.5x average) adds +20 to quality score / 放量（>1.5倍）加20分
+  - Respects reversal logic: early bottoms often form on low volume / 尊重反转逻辑：底部常缩量
+- 🏆 **Signal Quality Grading / 信号质量评级**:
+  - A/B/C/D grades shown with each signal / 每个信号显示A/B/C/D等级
+  - Factors: MTF (+25), Divergence (+20), Volume (+20), Weekly (+20), Extreme (+15) / 评分项
+  - Trade only A/B signals for higher win rate / 只交易A/B级信号提高胜率
+- 📈 **Dashboard Enhancement / 仪表盘增强**:
+  - New Protection row: shows weekly RSI and volume status / 新增保护行：周线RSI和成交量状态
+  - Quality grade displayed with status: `🟢 EXTREME OVERSOLD [A]` / 状态显示质量等级
+- 🗑️ **Removed / 移除**:
+  - Old Trend Filter (replaced by Weekly Protection) / 旧趋势过滤（被周线保护替代）
+
+### v6.2 - Smart Alert Anti-Flicker / 智能防抖警报
 - 🛡️ **Anti-flicker Mechanism / 防闪烁机制**: Fixed issue where signal flickering caused multiple duplicate alerts within same bar. Now uses `varip` to track alert status per bar. / 修复信号闪烁导致同一K线内发送多次重复警报的问题，使用 `varip` 追踪每根K线的警报状态。
 - 📈 **Signal Upgrade Detection / 信号升级检测**: Tracks signal priority level (MTF=4, Divergence=3, Extreme=2, Normal=1). Sends new alert when stronger signal appears on same bar. / 追踪信号优先级等级。同一K线内出现更强信号时会发送新警报。
 - 🔄 **Independent Buy/Sell Tracking / 买卖独立追踪**: Buy and Sell alerts are tracked independently, allowing direction changes within same bar. / 买入和卖出警报独立追踪，允许同一K线内捕捉方向变化。
