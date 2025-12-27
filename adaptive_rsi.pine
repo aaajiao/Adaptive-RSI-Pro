@@ -1251,8 +1251,7 @@ if barstate.isnew
     sell_alert_level_sent := 0
 
 if enable_smart_alert
-    // 买入信号汇总
-    has_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal
+    // 买入信号汇总 (has_buy_signal 已在统计部分定义)
     has_buy_signal_prev = sig_buy_mtf[1] or sig_buy_div[1] or sig_buy_extreme[1] or sig_buy_normal[1]
     current_buy_level = f_signal_level(sig_buy_mtf, sig_buy_div, sig_buy_extreme, sig_buy_normal)
     
@@ -1285,8 +1284,7 @@ if enable_smart_alert
         alert(msg, alert.freq_once_per_bar)
         buy_alert_level_sent := current_buy_level  // 记录已发送的最高等级
     
-    // 卖出信号汇总
-    has_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal
+    // 卖出信号汇总 (has_sell_signal 已在统计部分定义)
     has_sell_signal_prev = sig_sell_mtf[1] or sig_sell_div[1] or sig_sell_extreme[1] or sig_sell_normal[1]
     current_sell_level = f_signal_level(sig_sell_mtf, sig_sell_div, sig_sell_extreme, sig_sell_normal)
     
