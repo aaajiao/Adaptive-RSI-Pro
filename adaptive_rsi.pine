@@ -1149,37 +1149,45 @@ if show_dashboard
                     row += 1
 
                     if stats_mode == "Signal Type"
-                        // ═══ Signal Type 模式 ═══
+                        // ═══ Signal Type 模式（带贝叶斯调整）═══
                         // 🌟 MTF 共振
-                        table.cell(dashboard, 0, row, str.format("🌟 MTF Buy({0})", mtf_buy_stats.count), text_color=#FFD700, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", mtf_buy_stats.get_avg(), mtf_buy_stats.get_winrate()), text_color=color_bull, text_size=txt_size_body)
+                        mtf_buy_wr = mtf_buy_stats.count >= 5 ? str.format("{0,number,#}%", mtf_buy_stats.get_adjusted_winrate()) : "--"
+                        mtf_sell_wr = mtf_sell_stats.count >= 5 ? str.format("{0,number,#}%", mtf_sell_stats.get_adjusted_winrate()) : "--"
+                        table.cell(dashboard, 0, row, str.format("🌟MTF Buy({0}){1}", mtf_buy_stats.count, mtf_buy_stats.get_reliability()), text_color=#FFD700, text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", mtf_buy_stats.get_avg(), mtf_buy_wr), text_color=color_bull, text_size=txt_size_body)
                         row += 1
-                        table.cell(dashboard, 0, row, str.format("🌟 MTF Sell({0})", mtf_sell_stats.count), text_color=#FFD700, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", mtf_sell_stats.get_avg(), mtf_sell_stats.get_winrate()), text_color=color_bear, text_size=txt_size_body)
+                        table.cell(dashboard, 0, row, str.format("🌟MTF Sell({0}){1}", mtf_sell_stats.count, mtf_sell_stats.get_reliability()), text_color=#FFD700, text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", mtf_sell_stats.get_avg(), mtf_sell_wr), text_color=color_bear, text_size=txt_size_body)
                         row += 1
 
-                        // 💎 背离+极端
-                        table.cell(dashboard, 0, row, str.format("💎 Div Buy({0})", div_buy_stats.count), text_color=#00BCD4, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", div_buy_stats.get_avg(), div_buy_stats.get_winrate()), text_color=color_bull, text_size=txt_size_body)
+                        // 💎 背离
+                        div_buy_wr = div_buy_stats.count >= 5 ? str.format("{0,number,#}%", div_buy_stats.get_adjusted_winrate()) : "--"
+                        div_sell_wr = div_sell_stats.count >= 5 ? str.format("{0,number,#}%", div_sell_stats.get_adjusted_winrate()) : "--"
+                        table.cell(dashboard, 0, row, str.format("💎Div Buy({0}){1}", div_buy_stats.count, div_buy_stats.get_reliability()), text_color=#00BCD4, text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", div_buy_stats.get_avg(), div_buy_wr), text_color=color_bull, text_size=txt_size_body)
                         row += 1
-                        table.cell(dashboard, 0, row, str.format("💎 Div Sell({0})", div_sell_stats.count), text_color=#00BCD4, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", div_sell_stats.get_avg(), div_sell_stats.get_winrate()), text_color=color_bear, text_size=txt_size_body)
+                        table.cell(dashboard, 0, row, str.format("💎Div Sell({0}){1}", div_sell_stats.count, div_sell_stats.get_reliability()), text_color=#00BCD4, text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", div_sell_stats.get_avg(), div_sell_wr), text_color=color_bear, text_size=txt_size_body)
                         row += 1
 
                         // 🔥 极端
-                        table.cell(dashboard, 0, row, str.format("🔥 Ext Buy({0})", ext_buy_stats.count), text_color=color_bull, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", ext_buy_stats.get_avg(), ext_buy_stats.get_winrate()), text_color=color_bull, text_size=txt_size_body)
+                        ext_buy_wr = ext_buy_stats.count >= 5 ? str.format("{0,number,#}%", ext_buy_stats.get_adjusted_winrate()) : "--"
+                        ext_sell_wr = ext_sell_stats.count >= 5 ? str.format("{0,number,#}%", ext_sell_stats.get_adjusted_winrate()) : "--"
+                        table.cell(dashboard, 0, row, str.format("🔥Ext Buy({0}){1}", ext_buy_stats.count, ext_buy_stats.get_reliability()), text_color=color_bull, text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", ext_buy_stats.get_avg(), ext_buy_wr), text_color=color_bull, text_size=txt_size_body)
                         row += 1
-                        table.cell(dashboard, 0, row, str.format("❄️ Ext Sell({0})", ext_sell_stats.count), text_color=color_bear, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", ext_sell_stats.get_avg(), ext_sell_stats.get_winrate()), text_color=color_bear, text_size=txt_size_body)
+                        table.cell(dashboard, 0, row, str.format("❄️Ext Sell({0}){1}", ext_sell_stats.count, ext_sell_stats.get_reliability()), text_color=color_bear, text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", ext_sell_stats.get_avg(), ext_sell_wr), text_color=color_bear, text_size=txt_size_body)
                         row += 1
 
                         // 普通信号
-                        table.cell(dashboard, 0, row, str.format("⬆️ Norm Buy({0})", norm_buy_stats.count), text_color=color.new(color_bull, 30), text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", norm_buy_stats.get_avg(), norm_buy_stats.get_winrate()), text_color=color_bull, text_size=txt_size_body)
+                        norm_buy_wr = norm_buy_stats.count >= 5 ? str.format("{0,number,#}%", norm_buy_stats.get_adjusted_winrate()) : "--"
+                        norm_sell_wr = norm_sell_stats.count >= 5 ? str.format("{0,number,#}%", norm_sell_stats.get_adjusted_winrate()) : "--"
+                        table.cell(dashboard, 0, row, str.format("⬆️Norm Buy({0}){1}", norm_buy_stats.count, norm_buy_stats.get_reliability()), text_color=color.new(color_bull, 30), text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", norm_buy_stats.get_avg(), norm_buy_wr), text_color=color_bull, text_size=txt_size_body)
                         row += 1
-                        table.cell(dashboard, 0, row, str.format("⬇️ Norm Sell({0})", norm_sell_stats.count), text_color=color.new(color_bear, 30), text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}% | {1,number,#}%", norm_sell_stats.get_avg(), norm_sell_stats.get_winrate()), text_color=color_bear, text_size=txt_size_body)
+                        table.cell(dashboard, 0, row, str.format("⬇️Norm Sell({0}){1}", norm_sell_stats.count, norm_sell_stats.get_reliability()), text_color=color.new(color_bear, 30), text_size=txt_size_body)
+                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", norm_sell_stats.get_avg(), norm_sell_wr), text_color=color_bear, text_size=txt_size_body)
                         row += 1
 
                     else
