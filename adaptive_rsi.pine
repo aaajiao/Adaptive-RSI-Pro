@@ -708,102 +708,104 @@ bool sig_div_bear_only = enable_divergence and bearish_divergence and not was_ex
 // ▶ SIGNAL QUALITY SCORING / 信号质量评分
 // ══════════════════════════════════════════════════════════════════════════════
 
-// 计算买入信号质量分数 (满分约130)
+// 计算买入信号质量分数 (简化核心因素 + 减分机制)
+// 基础分50 + 加分(最高+70) - 减分(最高-45) = 理论范围 5~120
 f_buy_quality() =>
     score = 0
 
-    // MTF 共振 (+25)
-    if oversold_resonance
-        score += 25
+    // ═══ 基础分：进入极端区 ═══
+    if rsi_zscore < -2
+        score := 50
 
-    // Pivot背离确认 (+20)
-    if bullish_divergence
-        score += 20
+    // ═══ 加分项 ═══
 
-    // 成交量加分 (+20 放量, +10 正常)
-    if enable_volume_scoring
-        score += volume_score
-
-    // 大周期趋势配合 (+20)
-    if weekly_uptrend
-        score += 20
-    else if not weekly_extreme_bearish
-        score += 10  // 非极端下跌也有一定加分
-
-    // 极端程度加分 (+15 if Z < -2.5)
+    // 极端程度 (+20 if Z < -2.5, +10 if Z < -2)
     if rsi_zscore < -2.5
-        score += 15
+        score += 20
     else if rsi_zscore < -2
         score += 10
 
-    // ═══ 新增评分项 (Phase 2) ═══
+    // 背离或MTF共振 (+25，二选一不叠加)
+    if bullish_divergence or oversold_resonance
+        score += 25
 
-    // 确认信号: 极端区内RSI pivot形成 (+10)
-    if confirmation_buy
+    // 周线顺势 (+15)
+    if weekly_uptrend
+        score += 15
+
+    // 放量确认 (+10)
+    if volume_surge
         score += 10
 
-    // 反转信号: Z-Score从极端区回归 (+10)
-    if reversal_buy
-        score += 10
+    // ═══ 减分项 ═══
 
-    // 实时背离: 早期预警信号 (+10)
-    if realtime_bullish_div
-        score += 10
+    // 周线逆势 (-20)
+    if weekly_extreme_bearish
+        score -= 20
 
-    score
+    // 缩量 (-10)
+    if volume_low
+        score -= 10
 
-// 计算卖出信号质量分数 (满分约130)
+    // 健康度差 (-15，任一健康指标不合格)
+    if not health_sample_coverage or not health_distribution_spread or not health_stat_valid
+        score -= 15
+
+    math.max(score, 0)  // 确保分数不为负
+
+// 计算卖出信号质量分数 (简化核心因素 + 减分机制)
+// 基础分50 + 加分(最高+70) - 减分(最高-45) = 理论范围 5~120
 f_sell_quality() =>
     score = 0
 
-    // MTF 共振 (+25)
-    if overbought_resonance
-        score += 25
+    // ═══ 基础分：进入极端区 ═══
+    if rsi_zscore > 2
+        score := 50
 
-    // Pivot背离确认 (+20)
-    if bearish_divergence
-        score += 20
+    // ═══ 加分项 ═══
 
-    // 成交量加分 (+20 放量, +10 正常)
-    if enable_volume_scoring
-        score += volume_score
-
-    // 大周期趋势配合 (+20)
-    if weekly_downtrend
-        score += 20
-    else if not weekly_extreme_bullish
-        score += 10
-
-    // 极端程度加分 (+15 if Z > 2.5)
+    // 极端程度 (+20 if Z > 2.5, +10 if Z > 2)
     if rsi_zscore > 2.5
-        score += 15
+        score += 20
     else if rsi_zscore > 2
         score += 10
 
-    // ═══ 新增评分项 (Phase 2) ═══
+    // 背离或MTF共振 (+25，二选一不叠加)
+    if bearish_divergence or overbought_resonance
+        score += 25
 
-    // 确认信号: 极端区内RSI pivot形成 (+10)
-    if confirmation_sell
+    // 周线顺势 (+15)
+    if weekly_downtrend
+        score += 15
+
+    // 放量确认 (+10)
+    if volume_surge
         score += 10
 
-    // 反转信号: Z-Score从极端区回归 (+10)
-    if reversal_sell
-        score += 10
+    // ═══ 减分项 ═══
 
-    // 实时背离: 早期预警信号 (+10)
-    if realtime_bearish_div
-        score += 10
+    // 周线逆势 (-20)
+    if weekly_extreme_bullish
+        score -= 20
 
-    score
+    // 缩量 (-10)
+    if volume_low
+        score -= 10
+
+    // 健康度差 (-15，任一健康指标不合格)
+    if not health_sample_coverage or not health_distribution_spread or not health_stat_valid
+        score -= 15
+
+    math.max(score, 0)  // 确保分数不为负
 
 // 当前信号质量
 current_buy_quality = f_buy_quality()
 current_sell_quality = f_sell_quality()
 
-// 质量等级转换 (阈值已调整以适应新评分体系)
-// A: ≥90 (高质量信号), B: ≥70, C: ≥50, D: <50
+// 质量等级转换 (简化评分体系，更易达到高等级)
+// A: ≥80 (高质量信号), B: ≥60, C: ≥40, D: <40
 f_quality_grade(_score) =>
-    _score >= 90 ? "A" : _score >= 70 ? "B" : _score >= 50 ? "C" : "D"
+    _score >= 80 ? "A" : _score >= 60 ? "B" : _score >= 40 ? "C" : "D"
 
 buy_quality_grade = f_quality_grade(current_buy_quality)
 sell_quality_grade = f_quality_grade(current_sell_quality)
