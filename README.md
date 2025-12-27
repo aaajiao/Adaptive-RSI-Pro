@@ -367,6 +367,60 @@ Simplified 3-row layout optimized for small screens.
 | `⚠️` | Both directions blocked / 双向阻断 |
 | `OFF` | Protection disabled / 保护已禁用 |
 
+**Protection Scenarios / 保护场景示例** (Moderate Mode):
+
+```
+场景1: 周线中性 → ✓ 双向通过
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] ✓ W.RSI:52 📊                          │
+│                                                         │
+│ 周线状态: RSI=52 (中性), SMA20 ≈ SMA50                   │
+│ 判断结果: 非极端牛市，非极端熊市                          │
+│ 信号影响: 买入✓ 卖出✓ → 日线信号正常触发                  │
+└─────────────────────────────────────────────────────────┘
+
+场景2: 周线牛市极端 → BUY✓ 仅买入
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] BUY✓ W.RSI:76 📊↓                       │
+│                                                         │
+│ 周线状态: RSI=76 (>70), SMA20 > SMA50 (上升趋势)         │
+│ 判断结果: 周线处于"极端牛市"状态                          │
+│ 信号影响: 买入✓ 卖出✗ → 阻止在强势上涨中做空              │
+│ 策略意义: 牛市中逢低买入可以，但不要逆势做空              │
+└─────────────────────────────────────────────────────────┘
+
+场景3: 周线熊市极端 → SELL✓ 仅卖出
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] SELL✓ W.RSI:25 📊↑                      │
+│                                                         │
+│ 周线状态: RSI=25 (<30), SMA20 < SMA50 (下降趋势)         │
+│ 判断结果: 周线处于"极端熊市"状态                          │
+│ 信号影响: 买入✗ 卖出✓ → 阻止在极端下跌中抄底              │
+│ 策略意义: 避免"接飞刀"，等周线企稳再考虑买入              │
+└─────────────────────────────────────────────────────────┘
+
+场景4: 保护已禁用 → OFF
+┌─────────────────────────────────────────────────────────┐
+│ Protection[Mod] OFF W.RSI:-- 📊                         │
+│                                                         │
+│ 用户选择: Enable Trend Protection = OFF                 │
+│ 判断结果: 不进行周线保护判断                              │
+│ 信号影响: 买入✓ 卖出✓ → 所有日线信号正常触发              │
+│ 风险提示: 可能在周线极端时抄底或逆势做空                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Protection Level Comparison / 保护级别对比**:
+
+| Level | Buy Blocked When / 阻断买入条件 | Sell Blocked When / 阻断卖出条件 |
+|-------|-------------------------------|--------------------------------|
+| **Aggressive** | Weekly NOT in uptrend (SMA20<SMA50) / 周线非上升趋势 | Weekly NOT in downtrend / 周线非下降趋势 |
+| **Moderate** ⭐ | Weekly RSI<30 AND downtrend / 周线RSI<30且下跌趋势 | Weekly RSI>70 AND uptrend / 周线RSI>70且上涨趋势 |
+| **Loose** | Weekly RSI<20 (ultra bearish) / 周线RSI<20 | Weekly RSI>80 (ultra bullish) / 周线RSI>80 |
+
+> **Recommendation / 推荐**: Use **Moderate** (default) for balanced protection - blocks extreme counter-trend trades while allowing most opportunities.
+> 推荐使用 **Moderate**（默认）以获得平衡保护 - 阻止极端逆势交易，同时保留大部分机会。
+
 **Volume Status / 成交量状态**:
 | Symbol | Meaning / 含义 |
 |--------|---------------|
