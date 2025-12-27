@@ -73,7 +73,8 @@ grp_alerts = "═══ Alert Settings / 警报设置 ═══"
 show_normal_signals = input.bool(false, "Show Normal Signals / 显示普通信号", group=grp_alerts, tooltip="⬆️⬇️ 普通超买/超卖信号，默认关闭")
 normal_threshold = input.float(1.5, "Normal Signal Threshold / 普通信号阈值", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="Z-Score 阈值\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
 enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据")
-cooldown_bars = input.int(5, "Cooldown Period (Bars) / 冷却期(K线数)", minval=1, maxval=20, group=grp_alerts, tooltip="同类信号触发后的冷却时间")
+cooldown_mode = input.string("Smart", "Cooldown Mode / 冷却模式", options=["Smart", "Fixed"], group=grp_alerts, tooltip="Smart: 根据市场波动率自动调整冷却期\nFixed: 使用固定冷却期")
+cooldown_bars_fixed = input.int(5, "Fixed Cooldown (Bars) / 固定冷却期", minval=1, maxval=20, group=grp_alerts, tooltip="Fixed模式下的冷却时间（K线数）")
 enable_smart_alert = input.bool(true, "🎯 Smart Alert / 智能警报", group=grp_alerts, tooltip="V6动态警报：自动聚合所有信号到一条消息\n包含完整上下文（RSI值、Z-Score、百分位）\n实时触发，智能去重")
 
 grp_protection = "═══ Trend Protection / 趋势保护 ═══"
@@ -109,6 +110,13 @@ avg_volatility = ta.sma(atr_20 / close * 100, 252)  // 252周期平均相对波�
 // 根据长期平均波动率判断标的类型 (Auto 模式)
 // 低于1%: 低波动 (蓝筹/ETF), 1-3%: 正常, 3-6%: 高波动, 超过6%: 加密货币级别
 auto_vol_type = avg_volatility > 6 ? "Crypto" : avg_volatility > 3 ? "High Vol" : avg_volatility > 1 ? "Normal" : "Low Vol"
+
+// ═══ 智能冷却期计算 ═══
+// 高波动市场变化快，冷却期短；低波动市场变化慢，冷却期长
+smart_cooldown_bars = avg_volatility > 6 ? 2 : avg_volatility > 3 ? 3 : avg_volatility > 1 ? 5 : 8
+
+// 实际使用的冷却期
+cooldown_bars = cooldown_mode == "Smart" ? smart_cooldown_bars : cooldown_bars_fixed
 
 // 实际使用的模式
 active_div_mode = div_mode == "Auto" ? auto_vol_type : div_mode
