@@ -175,11 +175,13 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
   看涨/看跌背离：价格新低+RSI未新低 / 价格新高+RSI未新高
 
 ### 📊 Layered Signal Statistics / 分层信号统计 (v6.5 Enhanced)
-- **Dual Stats Modes / 双统计模式**:
+- **Triple Stats Modes / 三统计模式**:
   - **Signal Type Mode**: MTF (🌟) > Divergence (💎) > Extreme (🔥❄️) > Normal (⬆️⬇️)
     信号类型模式：按信号类型分层统计
   - **Grade Mode**: A/B/C/D × Buy/Sell = 8 independent statistics
     等级模式：按质量等级分组统计
+  - **Ranking Mode** (NEW): Signal Type × Grade × Direction = 32 cross-statistics, sorted by win rate
+    排行榜模式：信号类型×等级×方向 = 32种交叉组合，按胜率排序显示Top 8
 - **Bayesian Adjustment / 贝叶斯调整**: Small sample correction for more reliable win rates
   小样本校正：50%先验 + 样本权重（20个样本达到100%权重）
 - **Reliability Indicators / 可靠性指示**:
@@ -345,15 +347,15 @@ Simplified 3-row layout optimized for small screens.
 ├─────────────────────────────────┤
 │ Divergence[Normal] 🟢 BULL (5/60) │  ← Row 9: Divergence Status
 ├─────────────────────────────────┤
-│ ── STATS [Grade] ── (20 bars)   │  ← Row 10: Stats Header + Mode
-│ A Buy(12)✓ +4.2% | 78%→83%    │  ← Row 11-18: Grade Statistics
-│ A Sell(8)⚠️ +3.8% | 72%→75%   │  (count + reliability + raw→adjusted)
-│ B Buy(25)✓ +3.5% | 71%→72%    │
-│ B Sell(18)⚠️ +2.9% | 65%→66%  │
-│ C Buy(45)✓ +2.1% | 58%→58%    │
-│ C Sell(38)✓ +1.8% | 52%→52%   │
-│ D Buy(15)⚠️ +0.5% | 45%→47%   │
-│ D Sell(12)⚠️ -0.3% | 40%→45%  │
+│ ── RANKING ──   (20 bars)       │  ← Row 10: Stats Header + Mode
+│ 🌟[A]📈(12)✓   +4.5%|85%       │  ← Row 11-18: Ranking (sorted by win rate)
+│ 💎[A]📈(8)⚠️   +4.2%|82%       │  Signal×Grade×Direction combinations
+│ 🌟[B]📈(25)✓   +3.8%|78%       │  Format: emoji[grade]dir(count)reliability
+│ 🔥[A]📈(15)✓   +3.5%|75%       │         +return%|win%
+│ 💎[B]📈(18)⚠️  +2.9%|72%       │
+│ 🌟[A]📉(6)⚠️   +2.5%|70%       │
+│ 🔥[B]📈(32)✓   +2.1%|68%       │
+│ 💎[A]📉(9)⚠️   +1.8%|65%       │
 └─────────────────────────────────┘
 ```
 
@@ -370,7 +372,7 @@ Simplified 3-row layout optimized for small screens.
 | 7 | `MTF 1h\|4h\|D 🟢\|⚪\|🟢` | 3 timeframe names + their RSI status / 3个周期名称 + 各自RSI状态 |
 | 8 | `Resonance 🟢 3/4` | Resonance status (aligned TFs / total valid TFs) / 共振状态（一致周期数/有效周期总数） |
 | 9 | `Divergence[Normal] 🟢 BULL` | Divergence mode + status + (lookback/range) / 背离模式 + 状态 + (回看/范围) |
-| 10-18 | `A Buy(12)✓ +4.2% \| 78%→83%` | Grade (count) + reliability + avg return + raw→adjusted win rate / 等级(次数) + 可靠性 + 收益 + 原始→调整胜率 |
+| 10-18 | `🌟[A]📈(12)✓ +4.5%\|85%` | Ranking: signal[grade]dir(count)reliability + return + winrate / 排行：信号[等级]方向(次数)可靠性 + 收益 + 胜率 |
 
 ### Dashboard Symbols / 面板符号说明
 
@@ -595,7 +597,7 @@ Simplified 3-row layout optimized for small screens.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Enable | ON | Track performance / 跟踪表现 |
-| **Stats Mode** | **Grade** | **Signal Type**: By signal tier / **Grade**: By A/B/C/D quality / 按信号类型或质量等级分组 |
+| **Stats Mode** | **Ranking** | **Signal Type**: By signal tier / **Grade**: By A/B/C/D / **Ranking**: Cross-stats sorted by win rate / 排行榜模式 |
 | Forward Bars | 20 | Bars for return calculation / 收益计算K线数 |
 
 ### Divergence Detection / 背离检测
@@ -685,8 +687,9 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈
   - Dynamic base: Crypto(2), High(3), Normal(5), Low(8) bars / 动态基础值
   - Market activity adjustment: reduces cooldown by 1 when active / 市场活跃时减少1根
 - 📊 **Enhanced Statistics / 增强统计**:
-  - Dual modes: Signal Type / Grade / 双模式：信号类型/质量等级
-  - Grade mode: A/B/C/D × Buy/Sell = 8 independent stats / 等级模式：8组独立统计
+  - Triple modes: Signal Type / Grade / **Ranking** (NEW) / 三模式：信号类型/质量等级/排行榜
+  - **Ranking mode**: Cross-statistics (Signal Type × Grade × Direction = 32 combinations) / 交叉统计
+  - Shows Top 8 by adjusted win rate, quickly find best trading strategies / 按胜率排序显示前8，快速找到最佳策略
   - Bayesian adjustment for small samples (prior=50%, 20 samples for full confidence) / 贝叶斯调整
   - Reliability indicators: ✓ (≥20), ⚠️ (5-19), ❌ (<5) / 可靠性指示
 - 📱 **Mobile Mode Enhancement / 手机模式增强**:
