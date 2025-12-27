@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-26** | **v6.4**
+**Pine Script v6** | **Last Update: 2025-12-27** | **v6.5**
 
 ---
 
@@ -125,18 +125,23 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 - **Reversal Logic**: Early reversals often occur on low volume (exhaustion), so blocking would miss opportunities
   反转逻辑：反转初期常缩量（卖盘衰竭），强制过滤会错过最佳入场点
 
-### 🏆 Signal Quality Grading / 信号质量评级 (v6.4 Enhanced)
+### 🏆 Signal Quality Grading / 信号质量评级 (v6.5 Refactored)
 - **A/B/C/D Grades**: Each signal shows quality grade based on multiple factors
   A/B/C/D等级：每个信号显示综合质量等级
-- **Base Scoring Factors (v6.3)**: MTF resonance (+25), Pivot Divergence (+20), Volume (+20), Weekly trend (+20), Extreme level (+15)
-  基础评分项：MTF共振(+25)、Pivot背离(+20)、成交量(+20)、周线趋势(+20)、极端程度(+15)
-- **NEW Scoring Factors (v6.4)**:
-  - Confirmation Signal (+10): RSI pivot forming in extreme zone / 确认信号：极端区内RSI形成pivot
-  - Reversal Signal (+10): Z-Score exiting extreme zone / 反转信号：Z-Score脱离极端区
-  - Real-time Divergence (+10): Early warning divergence (no pivot wait) / 实时背离：早期预警（无需等待pivot确认）
-- **Max Score**: ~130 points (previously ~100) / 满分约130分（原约100分）
-- **Updated Thresholds**: A ≥90 (was 80), B ≥70 (was 60), C ≥50 (was 40), D <50
-  更新阈值：A≥90（原80）、B≥70（原60）、C≥50（原40）、D<50
+- **Refactored Scoring System (v6.5)**: Base + Bonuses - Penalties / 重构评分：基础分+加分项-减分项
+  - **Base Score / 基础分**: 50 points for entering extreme zone / 进入极端区得50分
+  - **Bonuses / 加分项**:
+    - +20: Extreme depth (Z < -2.5 or Z > +2.5) / 极端深度
+    - +25: Divergence or MTF resonance / 背离或MTF共振
+    - +15: Weekly trend alignment / 周线趋势一致
+    - +10: Volume surge / 放量
+  - **Penalties / 减分项**:
+    - -20: Counter-trend (weekly extreme opposite) / 逆势（周线极端反向）
+    - -10: Low volume / 缩量
+    - -15: Poor health indicators / 健康度不足
+- **Updated Thresholds (v6.5)**: A ≥80, B ≥60, C ≥40, D <40 / 更新阈值
+- **Persistent Zone Display**: Grade shown during persistent extreme zones (not just on crossover)
+  持续显示：极端区持续期间也显示等级（不仅限于穿越时刻）
 - **Decision Aid**: Only trade A/B grade signals for higher win rate
   决策辅助：只交易A/B级信号可提高胜率
 
@@ -169,13 +174,22 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 - **Bullish/Bearish Divergence**: Price lower low + RSI higher low / Price higher high + RSI lower high
   看涨/看跌背离：价格新低+RSI未新低 / 价格新高+RSI未新高
 
-### 📊 Layered Signal Statistics / 分层信号统计
-- **4-Tier Classification**: MTF Resonance (🌟) > Divergence+Extreme (💎) > Extreme Only (🔥❄️) > Normal (⬆️⬇️)
-  四层分级：多周期共振 > 背离+极端 > 仅极端 > 普通信号
-- **Independent Tracking**: Each signal tier has separate count, average return, and win rate
-  独立跟踪：每层信号独立统计次数、平均收益、胜率
-- **Signal Cooldown**: Optional cooldown period (default 5 bars) to prevent duplicate counting
-  信号冷却：可选冷却期（默认5根K线）防止重复计数
+### 📊 Layered Signal Statistics / 分层信号统计 (v6.5 Enhanced)
+- **Dual Stats Modes / 双统计模式**:
+  - **Signal Type Mode**: MTF (🌟) > Divergence (💎) > Extreme (🔥❄️) > Normal (⬆️⬇️)
+    信号类型模式：按信号类型分层统计
+  - **Grade Mode**: A/B/C/D × Buy/Sell = 8 independent statistics
+    等级模式：按质量等级分组统计
+- **Bayesian Adjustment / 贝叶斯调整**: Small sample correction for more reliable win rates
+  小样本校正：50%先验 + 样本权重（20个样本达到100%权重）
+- **Reliability Indicators / 可靠性指示**:
+  - ✓ (≥20 samples): Reliable statistics / 可靠统计
+  - ⚠️ (5-19 samples): Limited reliability / 有限可靠性
+  - ❌ (<5 samples): Insufficient data / 数据不足
+- **Smart Cooldown / 智能冷却期** (v6.5 NEW):
+  - **Dual Volatility Detection**: Combines price ATR + RSI volatility / 双重波动率：价格ATR + RSI波动率
+  - **Dynamic Base Cooldown**: Crypto (2), High Vol (3), Normal (5), Low Vol (8) bars / 动态基础值
+  - **Market Activity Adjustment**: Reduces cooldown by 1 bar when market is active / 市场活跃时减少1根
 - **Real Forward Testing**: Calculates actual returns N bars after signal (configurable 5-100 bars)
   真实前瞻测试：计算信号后N根K线的实际收益（可配置5-100）
 
@@ -311,7 +325,7 @@ Core information without statistics section.
 Simplified 3-row layout optimized for small screens.
 极简3行布局，专为手机屏幕优化。
 - Row 1: RSI Value / 第1行：RSI数值
-- Row 2: Signal Status (Emoji) / 第2行：信号状态 (Emoji)
+- Row 2: Signal Status (Emoji) + Quality Grade [A/B/C/D] / 第2行：信号状态 (Emoji) + 质量等级
 - Row 3: Trend/Filter Status / 第3行：趋势/过滤状态
 
 ### 📈 Dashboard Example / 面板示例
@@ -331,13 +345,15 @@ Simplified 3-row layout optimized for small screens.
 ├─────────────────────────────────┤
 │ Divergence[Normal] 🟢 BULL (5/60) │  ← Row 9: Divergence Status
 ├─────────────────────────────────┤
-│ ── STATS ──   (20 bars)         │  ← Row 10: Stats Header
-│ 🌟 MTF Buy(12)  +4.2% | 83%    │  ← Row 11-18: Signal Statistics
-│ 🌟 MTF Sell(8)  +3.8% | 75%    │
-│ 💎 Div Buy(15)  +3.5% | 80%    │
-│ 💎 Div Sell(11) +2.9% | 73%    │
-│ 🔥 Ext Buy(45)  +2.1% | 67%    │
-│ ❄️ Ext Sell(38) +1.8% | 63%    │
+│ ── STATS [Grade] ── (20 bars)   │  ← Row 10: Stats Header + Mode
+│ A Buy(12)✓ +4.2% | 78%→83%    │  ← Row 11-18: Grade Statistics
+│ A Sell(8)⚠️ +3.8% | 72%→75%   │  (count + reliability + raw→adjusted)
+│ B Buy(25)✓ +3.5% | 71%→72%    │
+│ B Sell(18)⚠️ +2.9% | 65%→66%  │
+│ C Buy(45)✓ +2.1% | 58%→58%    │
+│ C Sell(38)✓ +1.8% | 52%→52%   │
+│ D Buy(15)⚠️ +0.5% | 45%→47%   │
+│ D Sell(12)⚠️ -0.3% | 40%→45%  │
 └─────────────────────────────────┘
 ```
 
@@ -354,7 +370,7 @@ Simplified 3-row layout optimized for small screens.
 | 7 | `MTF 1h\|4h\|D 🟢\|⚪\|🟢` | 3 timeframe names + their RSI status / 3个周期名称 + 各自RSI状态 |
 | 8 | `Resonance 🟢 3/4` | Resonance status (aligned TFs / total valid TFs) / 共振状态（一致周期数/有效周期总数） |
 | 9 | `Divergence[Normal] 🟢 BULL` | Divergence mode + status + (lookback/range) / 背离模式 + 状态 + (回看/范围) |
-| 10-18 | `🌟 MTF Buy(12) +4.2% \| 83%` | Signal type (count) + avg return + win rate / 信号类型(次数) + 平均收益 + 胜率 |
+| 10-18 | `A Buy(12)✓ +4.2% \| 78%→83%` | Grade (count) + reliability + avg return + raw→adjusted win rate / 等级(次数) + 可靠性 + 收益 + 原始→调整胜率 |
 
 ### Dashboard Symbols / 面板符号说明
 
@@ -442,15 +458,22 @@ Simplified 3-row layout optimized for small screens.
 | `🔴` | Overbought (RSI > P90) / 超买 |
 | `⚪` | Neutral / 中性 |
 
-**Signal Quality Grades / 信号质量等级** (v6.4 Updated):
-- **[A]** (≥90分): Excellent - 多因素共振，高胜率 / Multiple factors aligned, high win rate
-- **[B]** (70-89分): Good - 建议交易 / Recommended to trade
-- **[C]** (50-69分): Fair - 谨慎或小仓 / Trade with caution or smaller size
-- **[D]** (<50分): Weak - 建议观望 / Consider waiting
+**Signal Quality Grades / 信号质量等级** (v6.5 Updated):
+- **[A]** (≥80分): Excellent - 多因素共振，高胜率 / Multiple factors aligned, high win rate
+- **[B]** (60-79分): Good - 建议交易 / Recommended to trade
+- **[C]** (40-59分): Fair - 谨慎或小仓 / Trade with caution or smaller size
+- **[D]** (<40分): Weak - 建议观望 / Consider waiting
 
 **Health Indicators / 健康度指标**:
 - ✅✅✅ = All healthy (所有健康): Sample coverage ≥ 80%, Distribution spread ≥ 15, Statistical validity ≥ 90%
 - ⚠️ present = Warning (警告): One or more health checks failed, consider using Custom mode with larger lookback
+
+**Statistics Reliability / 统计可靠性** (v6.5):
+| Symbol | Sample Count | Meaning / 含义 |
+|--------|-------------|----------------|
+| `✓` | ≥20 | Reliable - full confidence in Bayesian adjustment / 可靠，贝叶斯调整达到100%权重 |
+| `⚠️` | 5-19 | Limited - partial Bayesian adjustment / 有限，贝叶斯部分调整 |
+| `❌` | <5 | Insufficient - shows na / 数据不足，显示na |
 
 ---
 
@@ -558,7 +581,8 @@ Simplified 3-row layout optimized for small screens.
 | Show Normal Signals | OFF | Display ⬆️⬇️ on chart / 图表显示普通信号 |
 | Normal Signal Threshold | 1.5σ | Z-Score threshold (1.0-2.0σ) / 普通信号阈值 |
 | Enable Signal Cooldown | ON | Prevent duplicate signal counting / 防止重复信号 |
-| Cooldown Period | 5 bars | Bars between same signal type / 冷却K线数 |
+| **Cooldown Mode** | **Smart** | **Smart** (v6.5): Dual volatility adaptive / **Fixed**: User-defined / 智能(双重波动率自适应)/固定 |
+| Cooldown Period (Fixed) | 5 bars | Bars between same signal type (Fixed mode only) / 冷却K线数（仅固定模式） |
 
 ### Multi-Timeframe / 多时间框架
 | Setting | Default | Description |
@@ -567,10 +591,11 @@ Simplified 3-row layout optimized for small screens.
 | MTF Mode | **Auto** | **Auto** (Fractal Breakdown) / **Manual** (Fixed) / 自动/手动模式 |
 | TF1/TF2/TF3 | 60/240/D | Timeframes (Manual mode only) / 时间框架（仅手动模式）|
 
-### Signal Statistics / 信号统计
+### Signal Statistics / 信号统计 (v6.5 Enhanced)
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Enable | ON | Track performance / 跟踪表现 |
+| **Stats Mode** | **Grade** | **Signal Type**: By signal tier / **Grade**: By A/B/C/D quality / 按信号类型或质量等级分组 |
 | Forward Bars | 20 | Bars for return calculation / 收益计算K线数 |
 
 ### Divergence Detection / 背离检测
@@ -648,7 +673,28 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈
 
 ## Changelog / 更新日志
 
-### v6.4 - Enhanced Signal Timing / 增强信号时机 (Current / 当前版本)
+### v6.5 - Win Rate Optimization Phase 2 / 胜率优化第二阶段 (Current / 当前版本)
+- 🏆 **Refactored Scoring System / 重构评分系统**:
+  - Base + Bonuses - Penalties approach for clearer signal quality / 基础分+加分项-减分项模式
+  - Base: 50 points for entering extreme zone / 基础分：进入极端区得50分
+  - Bonuses: +20 extreme depth, +25 divergence/MTF, +15 weekly trend, +10 volume / 加分项
+  - Penalties: -20 counter-trend, -10 low volume, -15 poor health / 减分项
+  - New thresholds: A≥80, B≥60, C≥40, D<40 / 新阈值
+- ⏱️ **Smart Cooldown / 智能冷却期**:
+  - Dual volatility detection: price ATR + RSI volatility / 双重波动率检测
+  - Dynamic base: Crypto(2), High(3), Normal(5), Low(8) bars / 动态基础值
+  - Market activity adjustment: reduces cooldown by 1 when active / 市场活跃时减少1根
+- 📊 **Enhanced Statistics / 增强统计**:
+  - Dual modes: Signal Type / Grade / 双模式：信号类型/质量等级
+  - Grade mode: A/B/C/D × Buy/Sell = 8 independent stats / 等级模式：8组独立统计
+  - Bayesian adjustment for small samples (prior=50%, 20 samples for full confidence) / 贝叶斯调整
+  - Reliability indicators: ✓ (≥20), ⚠️ (5-19), ❌ (<5) / 可靠性指示
+- 📱 **Mobile Mode Enhancement / 手机模式增强**:
+  - Quality grade [A/B/C/D] now displayed with signals / 信号显示质量等级
+- 🔄 **Persistent Zone Display / 持续区域显示**:
+  - Quality grade shown during persistent extreme zones (not just on crossover) / 极端区持续期间也显示等级
+
+### v6.4 - Enhanced Signal Timing / 增强信号时机
 - 🎯 **Confirmation Signal Detection / 确认信号检测**:
   - Detects RSI pivot forming within extreme zone / 检测极端区内RSI形成pivot
   - Indicates bottom/top pattern formation / 表明底部/顶部形态正在形成
