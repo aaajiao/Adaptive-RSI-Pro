@@ -111,12 +111,12 @@ avg_volatility = ta.sma(atr_20 / close * 100, 252)  // 252周期平均相对波�
 // 低于1%: 低波动 (蓝筹/ETF), 1-3%: 正常, 3-6%: 高波动, 超过6%: 加密货币级别
 auto_vol_type = avg_volatility > 6 ? "Crypto" : avg_volatility > 3 ? "High Vol" : avg_volatility > 1 ? "Normal" : "Low Vol"
 
-// ═══ 智能冷却期计算 ═══
+// ═══ 智能冷却期 - 基础值（根据标的类型）═══
 // 高波动市场变化快，冷却期短；低波动市场变化慢，冷却期长
-smart_cooldown_bars = avg_volatility > 6 ? 2 : avg_volatility > 3 ? 3 : avg_volatility > 1 ? 5 : 8
+base_cooldown = avg_volatility > 6 ? 2 : avg_volatility > 3 ? 3 : avg_volatility > 1 ? 5 : 8
 
-// 实际使用的冷却期
-cooldown_bars = cooldown_mode == "Smart" ? smart_cooldown_bars : cooldown_bars_fixed
+// 短期价格波动率（用于动态调整）
+vol_short_term = ta.sma(atr_20 / close * 100, 20)
 
 // 实际使用的模式
 active_div_mode = div_mode == "Auto" ? auto_vol_type : div_mode
@@ -162,6 +162,20 @@ vol_base = vol_long * 0.7 + vol_short * 0.3
 // 近期波动显著高于长期时（>1.2倍），动态切换到近期主导
 recent_high = vol_short > vol_long * 1.2
 vol_dynamic = recent_high ? (vol_short * 0.6 + vol_long * 0.4) : vol_base
+
+// ═══ 智能冷却期 - 动态调整（基于市场活跃度）═══
+// 综合价格波动率和RSI波动率判断市场活跃度
+price_vol_active = vol_short_term > avg_volatility * 1.2  // 短期价格波动 > 长期均值1.2倍
+rsi_vol_active = vol_short > vol_long * 1.2               // 近期RSI波动 > 长期1.2倍（复用 recent_high）
+
+// 市场活跃 = 价格或RSI任一活跃
+market_active = price_vol_active or rsi_vol_active
+
+// 动态冷却期：活跃时缩短1根K线，但不低于1
+smart_cooldown_bars = market_active ? math.max(base_cooldown - 1, 1) : base_cooldown
+
+// 实际使用的冷却期
+cooldown_bars = cooldown_mode == "Smart" ? smart_cooldown_bars : cooldown_bars_fixed
 
 // 确保不低于长期波动（保守）
 rsi_vol_bootstrap = math.max(vol_dynamic, vol_long * 0.8)
