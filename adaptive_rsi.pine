@@ -808,9 +808,11 @@ f_quality_grade(_score) =>
 buy_quality_grade = f_quality_grade(current_buy_quality)
 sell_quality_grade = f_quality_grade(current_sell_quality)
 
-// 当前活跃信号的质量等级
+// 当前活跃信号的质量等级 (包含持续极端区状态，创造更多交易空间)
 active_signal_grade = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal ? buy_quality_grade :
-                      sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal ? sell_quality_grade : ""
+                      sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal ? sell_quality_grade :
+                      in_extreme_oversold ? buy_quality_grade :
+                      in_extreme_overbought ? sell_quality_grade : ""
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ STATISTICS CALCULATION (使用实际触发的信号)
