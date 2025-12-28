@@ -156,14 +156,14 @@ stat_lookback = math.max(50, math.pow(1.96 * rsi_vol_bootstrap / 5, 2))
 stat_error = lookback_precision == "High" ? 2.0 : lookback_precision == "Normal" ? 2.5 : 3.5
 stat_required = math.pow(1.96 * rsi_vol_bootstrap / stat_error, 2)
 
-// Smart Lookback: 基于双重波动率的动态范围
+// Smart Lookback: 基于波动率和统计需求的动态范围
 // 价格波动率决定基础范围
 price_based_min = avg_volatility > 6 ? 50 : avg_volatility > 3 ? 80 : avg_volatility > 1 ? 150 : 200
 price_based_max = avg_volatility > 6 ? 400 : avg_volatility > 3 ? 600 : avg_volatility > 1 ? 800 : 1000
-// RSI波动率决定最小值下限（低RSI波动 = 需要更少样本）
-rsi_based_min = rsi_vol_bootstrap > 20 ? 50 : rsi_vol_bootstrap > 15 ? 80 : rsi_vol_bootstrap > 10 ? 100 : 120
-// 取两者较低值作为最终最小值
-lookback_min = math.min(price_based_min, rsi_based_min)
+// 统计需求决定最小值下限（确保 lookback ≈ stat_required）
+stat_based_min = math.max(50, int(stat_required * 0.8))
+// 取价格波动和统计需求中较低值作为最终最小值
+lookback_min = math.min(price_based_min, stat_based_min)
 lookback_max = price_based_max
 
 // 分布宽度反馈（使用前一个bar的spread，形成反馈环）
