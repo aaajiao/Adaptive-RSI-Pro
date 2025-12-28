@@ -109,7 +109,9 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
   - Low Vol (<1%): 200-1000 bars - stable / 稳定
 - **Spread Feedback / 分布反馈** (v6.7 NEW): Adjusts based on RSI distribution width
   - Narrow spread (<20): +30% lookback (need more data diversity) / 需要更多数据
-  - Wide spread (>40): No reduction (maintains statistical validity) / 不减少（保持统计有效性）
+  - Wide spread: No change (maintains statistical validity) / 不减少（保持统计有效性）
+- **Stat-based Minimum / 基于统计的最小值**: `min = max(50, stat_required × 0.8)`
+  确保 lookback 不低于统计需求，避免样本不足
 - **Precision Control**: Choose High/Normal/Low precision (adjusts acceptable error margin)
   精度控制：高/普通/低精度可选（调整统计误差容忍度）
 - **Health Indicators**: Real-time validation of sample coverage, distribution spread, and statistical validity
@@ -547,6 +549,13 @@ Simplified 3-row layout optimized for small screens.
 - **绿色渐变**（下方）：超卖区域，颜色越深表示越极端
   - P10-P5（深绿）> P25-P10（中绿）> P50-P25（浅绿）
 
+### 🌈 双层背景 / Dual-Layer Background (v6.7 NEW)
+
+价格图表上的背景颜色，与信号阈值完全匹配：
+- **浅色背景**：普通区域（Z < -1.5 或 Z > 1.5），对应⬆️⬇️普通信号
+- **深色背景**：极端区域（Z < -2 或 Z > 2），对应🔥❄️极端信号
+- 进入普通区域 → 浅色背景；进入极端区域 → 背景加深
+
 ### 💡 关键要点 / Key Points
 
 **线条样式区分 / Line Style Distinction:**
@@ -710,8 +719,12 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈
   - Solves one-size-fits-all problem / 解决"一刀切"问题
 - 📊 **Spread Feedback Loop / 分布宽度反馈环**:
   - Narrow spread (<20): +30% lookback (need more data) / 分布窄则加长
-  - Wide spread (>40): -30% lookback (sufficient data) / 分布宽则缩短
-  - Creates adaptive closed-loop system / 形成自适应闭环系统
+  - Wide spread: No reduction (maintains stat validity) / 不减少（保持统计有效性）
+  - Stat-based minimum: `max(50, stat_required × 0.8)` / 基于统计需求的最小值
+- 🎨 **Dual-Layer Background / 双层背景**:
+  - Normal zone (Z < ±1.5): Light background / 浅色背景
+  - Extreme zone (Z < ±2): Deeper background / 深色背景
+  - Matches signal thresholds exactly / 与信号阈值完全匹配
 - 📈 **Dashboard Enhancement / 仪表盘增强**:
   - Shows: `256↑(150-800)` format - lookback + spread indicator + range / 显示当前值+趋势+范围
   - ↑ = spread narrow (extending), ↓ = spread wide (shortening) / ↑加长中，↓缩短中
