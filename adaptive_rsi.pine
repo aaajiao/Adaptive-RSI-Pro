@@ -877,7 +877,9 @@ plotshape(show_normal_signals and sig_sell_normal, title="⬇️ 普通超买", 
 plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️")
 plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️")
 
-bgcolor(rsi < rsi_p5 ? color.new(color_bull, 90) : rsi > rsi_p95 ? color.new(color_bear, 90) : na, title="Extreme Zone")
+// 双层背景：普通区域(浅) + 极端区域(深)
+bgcolor(rsi_zscore < -normal_threshold ? color.new(color_bull, 93) : rsi_zscore > normal_threshold ? color.new(color_bear, 93) : na, title="Normal Zone")
+bgcolor(rsi_zscore < -2 ? color.new(color_bull, 85) : rsi_zscore > 2 ? color.new(color_bear, 85) : na, title="Extreme Zone")
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ DASHBOARD
