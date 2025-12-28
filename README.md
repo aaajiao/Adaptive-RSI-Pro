@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-27** | **v6.5**
+**Pine Script v6** | **Last Update: 2025-12-28** | **v6.7**
 
 ---
 
@@ -99,11 +99,19 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 - **Dual Display Modes**: Show Z-Score lines, Percentile lines, or both
   双重显示模式：可选择显示Z值线、百分位线或两者
 
-### 🔬 Auto-Adaptive Lookback / 自动自适应回看期
+### 🔬 Smart Lookback / 智能回看期 (v6.7 Enhanced)
 - **Statistical Formula**: Uses `n = (Z × σ / E)²` for optimal sample size calculation
   统计公式：使用样本量公式自动计算最优回看期
-- **Dual Volatility System**: Combines short-term (4× RSI length) and long-term volatility (configurable: 6M/1Y/2Y)
-  双重波动率系统：结合短期和长期波动率动态调整
+- **Dynamic Range / 动态范围** (v6.7 NEW): Asset-appropriate lookback limits based on volatility
+  - Crypto (>6%): 50-400 bars - fast response / 快速响应
+  - High Vol (3-6%): 80-600 bars
+  - Normal (1-3%): 150-800 bars
+  - Low Vol (<1%): 200-1000 bars - stable / 稳定
+- **Spread Feedback / 分布反馈** (v6.7 NEW): Adjusts based on RSI distribution width
+  - Narrow spread (<20): +30% lookback (need more data diversity) / 需要更多数据
+  - Wide spread: No change (maintains statistical validity) / 不减少（保持统计有效性）
+- **Stat-based Minimum / 基于统计的最小值**: `min = max(50, stat_required × 0.8)`
+  确保 lookback 不低于统计需求，避免样本不足
 - **Precision Control**: Choose High/Normal/Low precision (adjusts acceptable error margin)
   精度控制：高/普通/低精度可选（调整统计误差容忍度）
 - **Health Indicators**: Real-time validation of sample coverage, distribution spread, and statistical validity
@@ -124,6 +132,20 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
   放量检测：识别放量（>1.5倍均量）提升信号质量评分
 - **Reversal Logic**: Early reversals often occur on low volume (exhaustion), so blocking would miss opportunities
   反转逻辑：反转初期常缩量（卖盘衰竭），强制过滤会错过最佳入场点
+
+### 📈 Smart Normal Signal / 智能普通信号 (v6.6 NEW)
+- **Three Modes / 三种模式**: Off / On / Smart (default)
+  - **Off**: Disable normal signals completely / 完全关闭普通信号
+  - **On**: Always show with manual threshold / 总是显示，使用手动阈值
+  - **Smart**: Auto threshold + auto show/hide / 自动阈值 + 自动显示/隐藏
+- **Auto Threshold / 自动阈值** (based on volatility / 基于波动率):
+  - Crypto/Extreme: 1.0σ (≈P16) - more sensitive / 更敏感
+  - High Vol: 1.28σ (≈P10) - slightly sensitive / 稍敏感
+  - Normal: 1.5σ (≈P7) - balanced / 平衡
+  - Low Vol: 1.8σ (≈P4) - stricter, less noise / 更严格，减少噪音
+- **Auto Show/Hide / 自动显示隐藏**: Show when weekly trend is neutral, hide during extreme weekly trends
+  周线趋势中性时显示，周线极端趋势时隐藏
+- **Dashboard Display / 仪表盘显示**: `Normal [Smart] ⬆️1.28σ ✓` or `1.5σ ✗`
 
 ### 🏆 Signal Quality Grading / 信号质量评级 (v6.5 Refactored)
 - **A/B/C/D Grades**: Each signal shows quality grade based on multiple factors
@@ -453,6 +475,14 @@ Simplified 3-row layout optimized for small screens.
 | 2nd | Distribution Spread / 分布宽度 | P95-P5 ≥ 15 points / ≥15点 |
 | 3rd | Statistical Validity / 统计有效性 | Actual ≥ 90% of required / 实际值≥需求的90% |
 
+**Health Warning Troubleshooting / 健康度警告排查**:
+
+| Pattern | Issue / 问题 | Cause / 原因 | Solution / 解决方案 |
+|---------|-------------|--------------|-------------------|
+| ⚠️✅✅ | Sample Coverage / 样本不足 | Insufficient history data / 历史数据不足 | Wait for more data or reduce lookback / 等待更多数据或缩短回看期 |
+| ✅⚠️✅ | Distribution Spread / 分布太窄 | Low volatility period / 低波动期（长期横盘） | Market condition issue, signals less reliable / 市场状态问题，信号可靠性降低 |
+| ✅✅⚠️ | Statistical Validity / 统计有效性不足 | Lookback at max but need more / 已达范围上限但需求更高 | Lower Precision (Normal→Low) or use Custom mode / 降低精度或使用自定义模式 |
+
 **MTF Status / MTF状态**:
 | Symbol | Meaning / 含义 |
 |--------|---------------|
@@ -519,6 +549,13 @@ Simplified 3-row layout optimized for small screens.
 - **绿色渐变**（下方）：超卖区域，颜色越深表示越极端
   - P10-P5（深绿）> P25-P10（中绿）> P50-P25（浅绿）
 
+### 🌈 双层背景 / Dual-Layer Background (v6.7 NEW)
+
+价格图表上的背景颜色，与信号阈值完全匹配：
+- **浅色背景**：普通区域（Z < -1.5 或 Z > 1.5），对应⬆️⬇️普通信号
+- **深色背景**：极端区域（Z < -2 或 Z > 2），对应🔥❄️极端信号
+- 进入普通区域 → 浅色背景；进入极端区域 → 背景加深
+
 ### 💡 关键要点 / Key Points
 
 **线条样式区分 / Line Style Distinction:**
@@ -580,8 +617,8 @@ Simplified 3-row layout optimized for small screens.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **🎯 Smart Alert** | **ON** | **V6 Unified Alert System** / V6统一警报系统 |
-| Show Normal Signals | OFF | Display ⬆️⬇️ on chart / 图表显示普通信号 |
-| Normal Signal Threshold | 1.5σ | Z-Score threshold (1.0-2.0σ) / 普通信号阈值 |
+| **Normal Signal Mode** | **Smart** | **Off**: Disable / **On**: Always show (manual threshold) / **Smart**: Auto threshold + auto show | 普通信号模式 |
+| Manual Threshold (On) | 1.5σ | Z-Score threshold for On mode (1.0-2.0σ) / On模式下的手动阈值 |
 | Enable Signal Cooldown | ON | Prevent duplicate signal counting / 防止重复信号 |
 | **Cooldown Mode** | **Smart** | **Smart** (v6.5): Dual volatility adaptive / **Fixed**: User-defined / 智能(双重波动率自适应)/固定 |
 | Cooldown Period (Fixed) | 5 bars | Bars between same signal type (Fixed mode only) / 冷却K线数（仅固定模式） |
@@ -675,7 +712,36 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈
 
 ## Changelog / 更新日志
 
-### v6.5 - Win Rate Optimization Phase 2 / 胜率优化第二阶段 (Current / 当前版本)
+### v6.7 - Smart Lookback / 智能回看期 (Current / 当前版本)
+- 🔬 **Dynamic Lookback Range / 动态回看范围**:
+  - Asset-appropriate ranges based on volatility / 基于波动率的资产适配范围
+  - Crypto: 50-400, High Vol: 80-600, Normal: 150-800, Low Vol: 200-1000
+  - Solves one-size-fits-all problem / 解决"一刀切"问题
+- 📊 **Spread Feedback Loop / 分布宽度反馈环**:
+  - Narrow spread (<20): +30% lookback (need more data) / 分布窄则加长
+  - Wide spread: No reduction (maintains stat validity) / 不减少（保持统计有效性）
+  - Stat-based minimum: `max(50, stat_required × 0.8)` / 基于统计需求的最小值
+- 🎨 **Dual-Layer Background / 双层背景**:
+  - Normal zone (Z < ±1.5): Light background / 浅色背景
+  - Extreme zone (Z < ±2): Deeper background / 深色背景
+  - Matches signal thresholds exactly / 与信号阈值完全匹配
+- 📈 **Dashboard Enhancement / 仪表盘增强**:
+  - Shows: `256↑(150-800)` format - lookback + spread indicator + range / 显示当前值+趋势+范围
+  - ↑ = spread narrow (extending), ↓ = spread wide (shortening) / ↑加长中，↓缩短中
+
+### v6.6 - Smart Normal Signal / 智能普通信号
+- 📈 **Smart Normal Signal Mode / 智能普通信号模式**:
+  - Three modes: Off / On / Smart (default) / 三种模式
+  - **Auto Threshold / 自动阈值**: Based on volatility classification / 基于波动率分类
+    - Crypto: 1.0σ, High Vol: 1.28σ, Normal: 1.5σ, Low Vol: 1.8σ
+  - **Auto Show/Hide / 自动显示隐藏**: Show when weekly neutral, hide during extreme trends / 周线中性时显示
+  - Dashboard displays current mode and threshold status / 仪表盘显示当前模式和阈值状态
+  - Smart Alert respects the mode setting / 智能警报尊重模式设置
+- 🧹 **Code Cleanup / 代码清理**:
+  - Removed ~300 lines of redundant comments / 移除约300行冗余注释
+  - Improved code readability / 提升代码可读性
+
+### v6.5 - Win Rate Optimization Phase 2 / 胜率优化第二阶段
 - 🏆 **Refactored Scoring System / 重构评分系统**:
   - Base + Bonuses - Penalties approach for clearer signal quality / 基础分+加分项-减分项模式
   - Base: 50 points for entering extreme zone / 基础分：进入极端区得50分
