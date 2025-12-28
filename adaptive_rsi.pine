@@ -70,8 +70,8 @@ color_bear = input.color(color.new(#FF5252, 60), "Bearish Color / 熊市颜色",
 color_rsi = input.color(#FFEB3B, "RSI Line Color / RSI线颜色", group=grp_visual)
 
 grp_alerts = "═══ Alert Settings / 警报设置 ═══"
-show_normal_signals = input.bool(false, "Show Normal Signals / 显示普通信号", group=grp_alerts, tooltip="⬆️⬇️ 普通超买/超卖信号，默认关闭")
-normal_threshold = input.float(1.5, "Normal Signal Threshold / 普通信号阈值", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="Z-Score 阈值\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
+normal_signal_mode = input.string("Smart", "Normal Signal Mode / 普通信号模式", options=["Off", "On", "Smart"], group=grp_alerts, tooltip="Off: 关闭普通信号\nOn: 总是显示，使用手动阈值\nSmart: 自动判断显示+自动阈值")
+normal_threshold_manual = input.float(1.5, "Manual Threshold / 手动阈值 (On模式)", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="仅On模式使用\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
 enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据")
 cooldown_mode = input.string("Smart", "Cooldown Mode / 冷却模式", options=["Smart", "Fixed"], group=grp_alerts, tooltip="Smart: 根据市场波动率自动调整冷却期\nFixed: 使用固定冷却期")
 cooldown_bars_fixed = input.int(5, "Fixed Cooldown (Bars) / 固定冷却期", minval=1, maxval=20, group=grp_alerts, tooltip="Fixed模式下的冷却时间（K线数）")
@@ -111,6 +111,10 @@ auto_vol_type = avg_volatility > 6 ? "Crypto" : avg_volatility > 3 ? "High Vol" 
 // 智能冷却期基础值
 base_cooldown = avg_volatility > 6 ? 2 : avg_volatility > 3 ? 3 : avg_volatility > 1 ? 5 : 8
 vol_short_term = ta.sma(atr_20 / close * 100, 20)
+
+// 智能普通信号阈值（基于波动率）
+auto_normal_threshold = avg_volatility > 6 ? 1.0 : avg_volatility > 3 ? 1.28 : avg_volatility > 1 ? 1.5 : 1.8
+normal_threshold = normal_signal_mode == "On" ? normal_threshold_manual : auto_normal_threshold
 
 // 背离模式参数
 active_div_mode = div_mode == "Auto" ? auto_vol_type : div_mode
@@ -232,6 +236,11 @@ weekly_ultra_bullish = weekly_rsi > 80
 trend_allows_sell = protection_level == "Aggressive" ? weekly_downtrend : protection_level == "Moderate" ? not weekly_extreme_bullish : not weekly_ultra_bullish
 
 protection_status = not enable_trend_protection ? "OFF" : trend_allows_buy and trend_allows_sell ? "✓" : trend_allows_buy ? "BUY✓" : trend_allows_sell ? "SELL✓" : "⚠️"
+
+// 智能普通信号显示逻辑
+weekly_neutral = not weekly_extreme_bearish and not weekly_extreme_bullish
+auto_show_normal = weekly_neutral
+show_normal_signals = normal_signal_mode == "Off" ? false : normal_signal_mode == "On" ? true : auto_show_normal
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ VOLUME CONFIRMATION
@@ -896,8 +905,8 @@ if show_dashboard
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     mobile_rows = 3
-    lite_rows = 6
-    full_rows = 6 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
+    lite_rows = 7
+    full_rows = 7 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
     total_rows = dashboard_mode == "Mobile" ? mobile_rows : dashboard_mode == "Lite" ? lite_rows : full_rows
 
     var table dashboard = table.new(position.top_right, 2, 20,
@@ -1003,6 +1012,14 @@ if show_dashboard
             lookback_color = health_sample_coverage and health_distribution_spread and health_stat_valid ? color.white : color.yellow
             table.cell(dashboard, 0, row, str.format("Lookback {0}", lookback_mode_display), text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, str.format("{0} {1}", lookback, health_icons), text_color=lookback_color, text_size=txt_size_body)
+            row += 1
+
+            // Normal Signal 行
+            normal_mode_display = normal_signal_mode == "Smart" ? "[Smart]" : normal_signal_mode == "On" ? "[On]" : "[Off]"
+            normal_status = normal_signal_mode == "Off" ? "—" : show_normal_signals ? str.format("⬆️{0,number,#.2}σ ✓", normal_threshold) : str.format("{0,number,#.2}σ ✗", normal_threshold)
+            normal_color = normal_signal_mode == "Off" ? color.gray : show_normal_signals ? color.white : color.new(color.gray, 50)
+            table.cell(dashboard, 0, row, str.format("Normal {0}", normal_mode_display), text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, normal_status, text_color=normal_color, text_size=txt_size_body)
             row += 1
 
             if dashboard_mode == "Full"
@@ -1392,10 +1409,16 @@ if barstate.isnew
     sell_alert_level_sent := 0
 
 if enable_smart_alert
-    has_buy_signal_prev = sig_buy_mtf[1] or sig_buy_div[1] or sig_buy_extreme[1] or sig_buy_normal[1]
-    current_buy_level = f_signal_level(sig_buy_mtf, sig_buy_div, sig_buy_extreme, sig_buy_normal)
-    should_alert_buy = has_buy_signal and not has_buy_signal_prev and current_buy_level > buy_alert_level_sent
-    
+    // 普通信号只在show_normal_signals为true时计入警报
+    alert_sig_buy_normal = show_normal_signals and sig_buy_normal
+    alert_sig_sell_normal = show_normal_signals and sig_sell_normal
+    alert_has_buy = sig_buy_mtf or sig_buy_div or sig_buy_extreme or alert_sig_buy_normal
+    alert_has_sell = sig_sell_mtf or sig_sell_div or sig_sell_extreme or alert_sig_sell_normal
+
+    has_buy_signal_prev = sig_buy_mtf[1] or sig_buy_div[1] or sig_buy_extreme[1] or (show_normal_signals[1] and sig_buy_normal[1])
+    current_buy_level = f_signal_level(sig_buy_mtf, sig_buy_div, sig_buy_extreme, alert_sig_buy_normal)
+    should_alert_buy = alert_has_buy and not has_buy_signal_prev and current_buy_level > buy_alert_level_sent
+
     if should_alert_buy
         msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
 
@@ -1405,7 +1428,7 @@ if enable_smart_alert
             msg := msg + "💎背离 "
         if sig_buy_extreme
             msg := msg + "🔥极端 "
-        if sig_buy_normal
+        if alert_sig_buy_normal
             msg := msg + "⬆️超卖 "
 
         if confirmation_buy
@@ -1421,9 +1444,9 @@ if enable_smart_alert
         alert(msg, alert.freq_once_per_bar)
         buy_alert_level_sent := current_buy_level
 
-    has_sell_signal_prev = sig_sell_mtf[1] or sig_sell_div[1] or sig_sell_extreme[1] or sig_sell_normal[1]
-    current_sell_level = f_signal_level(sig_sell_mtf, sig_sell_div, sig_sell_extreme, sig_sell_normal)
-    should_alert_sell = has_sell_signal and not has_sell_signal_prev and current_sell_level > sell_alert_level_sent
+    has_sell_signal_prev = sig_sell_mtf[1] or sig_sell_div[1] or sig_sell_extreme[1] or (show_normal_signals[1] and sig_sell_normal[1])
+    current_sell_level = f_signal_level(sig_sell_mtf, sig_sell_div, sig_sell_extreme, alert_sig_sell_normal)
+    should_alert_sell = alert_has_sell and not has_sell_signal_prev and current_sell_level > sell_alert_level_sent
 
     if should_alert_sell
         msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
@@ -1434,7 +1457,7 @@ if enable_smart_alert
             msg := msg + "💎背离 "
         if sig_sell_extreme
             msg := msg + "❄️极端 "
-        if sig_sell_normal
+        if alert_sig_sell_normal
             msg := msg + "⬇️超买 "
 
         if confirmation_sell
