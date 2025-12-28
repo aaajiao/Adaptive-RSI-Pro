@@ -109,7 +109,7 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
   - Low Vol (<1%): 200-1000 bars - stable / 稳定
 - **Spread Feedback / 分布反馈** (v6.7 NEW): Adjusts based on RSI distribution width
   - Narrow spread (<20): +30% lookback (need more data diversity) / 需要更多数据
-  - Wide spread (>40): -30% lookback (sufficient variation captured) / 已捕获足够变化
+  - Wide spread (>40): No reduction (maintains statistical validity) / 不减少（保持统计有效性）
 - **Precision Control**: Choose High/Normal/Low precision (adjusts acceptable error margin)
   精度控制：高/普通/低精度可选（调整统计误差容忍度）
 - **Health Indicators**: Real-time validation of sample coverage, distribution spread, and statistical validity
