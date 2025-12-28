@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-27** | **v6.5**
+**Pine Script v6** | **Last Update: 2025-12-28** | **v6.6**
 
 ---
 
@@ -124,6 +124,20 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
   放量检测：识别放量（>1.5倍均量）提升信号质量评分
 - **Reversal Logic**: Early reversals often occur on low volume (exhaustion), so blocking would miss opportunities
   反转逻辑：反转初期常缩量（卖盘衰竭），强制过滤会错过最佳入场点
+
+### 📈 Smart Normal Signal / 智能普通信号 (v6.6 NEW)
+- **Three Modes / 三种模式**: Off / On / Smart (default)
+  - **Off**: Disable normal signals completely / 完全关闭普通信号
+  - **On**: Always show with manual threshold / 总是显示，使用手动阈值
+  - **Smart**: Auto threshold + auto show/hide / 自动阈值 + 自动显示/隐藏
+- **Auto Threshold / 自动阈值** (based on volatility / 基于波动率):
+  - Crypto/Extreme: 1.0σ (≈P16) - more sensitive / 更敏感
+  - High Vol: 1.28σ (≈P10) - slightly sensitive / 稍敏感
+  - Normal: 1.5σ (≈P7) - balanced / 平衡
+  - Low Vol: 1.8σ (≈P4) - stricter, less noise / 更严格，减少噪音
+- **Auto Show/Hide / 自动显示隐藏**: Show when weekly trend is neutral, hide during extreme weekly trends
+  周线趋势中性时显示，周线极端趋势时隐藏
+- **Dashboard Display / 仪表盘显示**: `Normal [Smart] ⬆️1.28σ ✓` or `1.5σ ✗`
 
 ### 🏆 Signal Quality Grading / 信号质量评级 (v6.5 Refactored)
 - **A/B/C/D Grades**: Each signal shows quality grade based on multiple factors
@@ -580,8 +594,8 @@ Simplified 3-row layout optimized for small screens.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **🎯 Smart Alert** | **ON** | **V6 Unified Alert System** / V6统一警报系统 |
-| Show Normal Signals | OFF | Display ⬆️⬇️ on chart / 图表显示普通信号 |
-| Normal Signal Threshold | 1.5σ | Z-Score threshold (1.0-2.0σ) / 普通信号阈值 |
+| **Normal Signal Mode** | **Smart** | **Off**: Disable / **On**: Always show (manual threshold) / **Smart**: Auto threshold + auto show | 普通信号模式 |
+| Manual Threshold (On) | 1.5σ | Z-Score threshold for On mode (1.0-2.0σ) / On模式下的手动阈值 |
 | Enable Signal Cooldown | ON | Prevent duplicate signal counting / 防止重复信号 |
 | **Cooldown Mode** | **Smart** | **Smart** (v6.5): Dual volatility adaptive / **Fixed**: User-defined / 智能(双重波动率自适应)/固定 |
 | Cooldown Period (Fixed) | 5 bars | Bars between same signal type (Fixed mode only) / 冷却K线数（仅固定模式） |
@@ -675,7 +689,19 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈
 
 ## Changelog / 更新日志
 
-### v6.5 - Win Rate Optimization Phase 2 / 胜率优化第二阶段 (Current / 当前版本)
+### v6.6 - Smart Normal Signal / 智能普通信号 (Current / 当前版本)
+- 📈 **Smart Normal Signal Mode / 智能普通信号模式**:
+  - Three modes: Off / On / Smart (default) / 三种模式
+  - **Auto Threshold / 自动阈值**: Based on volatility classification / 基于波动率分类
+    - Crypto: 1.0σ, High Vol: 1.28σ, Normal: 1.5σ, Low Vol: 1.8σ
+  - **Auto Show/Hide / 自动显示隐藏**: Show when weekly neutral, hide during extreme trends / 周线中性时显示
+  - Dashboard displays current mode and threshold status / 仪表盘显示当前模式和阈值状态
+  - Smart Alert respects the mode setting / 智能警报尊重模式设置
+- 🧹 **Code Cleanup / 代码清理**:
+  - Removed ~300 lines of redundant comments / 移除约300行冗余注释
+  - Improved code readability / 提升代码可读性
+
+### v6.5 - Win Rate Optimization Phase 2 / 胜率优化第二阶段
 - 🏆 **Refactored Scoring System / 重构评分系统**:
   - Base + Bonuses - Penalties approach for clearer signal quality / 基础分+加分项-减分项模式
   - Base: 50 points for entering extreme zone / 基础分：进入极端区得50分
