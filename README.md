@@ -473,6 +473,14 @@ Simplified 3-row layout optimized for small screens.
 | 2nd | Distribution Spread / 分布宽度 | P95-P5 ≥ 15 points / ≥15点 |
 | 3rd | Statistical Validity / 统计有效性 | Actual ≥ 90% of required / 实际值≥需求的90% |
 
+**Health Warning Troubleshooting / 健康度警告排查**:
+
+| Pattern | Issue / 问题 | Cause / 原因 | Solution / 解决方案 |
+|---------|-------------|--------------|-------------------|
+| ⚠️✅✅ | Sample Coverage / 样本不足 | Insufficient history data / 历史数据不足 | Wait for more data or reduce lookback / 等待更多数据或缩短回看期 |
+| ✅⚠️✅ | Distribution Spread / 分布太窄 | Low volatility period / 低波动期（长期横盘） | Market condition issue, signals less reliable / 市场状态问题，信号可靠性降低 |
+| ✅✅⚠️ | Statistical Validity / 统计有效性不足 | Lookback at max but need more / 已达范围上限但需求更高 | Lower Precision (Normal→Low) or use Custom mode / 降低精度或使用自定义模式 |
+
 **MTF Status / MTF状态**:
 | Symbol | Meaning / 含义 |
 |--------|---------------|
