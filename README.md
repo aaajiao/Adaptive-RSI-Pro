@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-28** | **v6.6**
+**Pine Script v6** | **Last Update: 2025-12-28** | **v6.7**
 
 ---
 
@@ -99,11 +99,17 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 - **Dual Display Modes**: Show Z-Score lines, Percentile lines, or both
   双重显示模式：可选择显示Z值线、百分位线或两者
 
-### 🔬 Auto-Adaptive Lookback / 自动自适应回看期
+### 🔬 Smart Lookback / 智能回看期 (v6.7 Enhanced)
 - **Statistical Formula**: Uses `n = (Z × σ / E)²` for optimal sample size calculation
   统计公式：使用样本量公式自动计算最优回看期
-- **Dual Volatility System**: Combines short-term (4× RSI length) and long-term volatility (configurable: 6M/1Y/2Y)
-  双重波动率系统：结合短期和长期波动率动态调整
+- **Dynamic Range / 动态范围** (v6.7 NEW): Asset-appropriate lookback limits based on volatility
+  - Crypto (>6%): 50-400 bars - fast response / 快速响应
+  - High Vol (3-6%): 80-600 bars
+  - Normal (1-3%): 150-800 bars
+  - Low Vol (<1%): 200-1000 bars - stable / 稳定
+- **Spread Feedback / 分布反馈** (v6.7 NEW): Adjusts based on RSI distribution width
+  - Narrow spread (<20): +30% lookback (need more data diversity) / 需要更多数据
+  - Wide spread (>40): -30% lookback (sufficient variation captured) / 已捕获足够变化
 - **Precision Control**: Choose High/Normal/Low precision (adjusts acceptable error margin)
   精度控制：高/普通/低精度可选（调整统计误差容忍度）
 - **Health Indicators**: Real-time validation of sample coverage, distribution spread, and statistical validity
@@ -689,7 +695,20 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈
 
 ## Changelog / 更新日志
 
-### v6.6 - Smart Normal Signal / 智能普通信号 (Current / 当前版本)
+### v6.7 - Smart Lookback / 智能回看期 (Current / 当前版本)
+- 🔬 **Dynamic Lookback Range / 动态回看范围**:
+  - Asset-appropriate ranges based on volatility / 基于波动率的资产适配范围
+  - Crypto: 50-400, High Vol: 80-600, Normal: 150-800, Low Vol: 200-1000
+  - Solves one-size-fits-all problem / 解决"一刀切"问题
+- 📊 **Spread Feedback Loop / 分布宽度反馈环**:
+  - Narrow spread (<20): +30% lookback (need more data) / 分布窄则加长
+  - Wide spread (>40): -30% lookback (sufficient data) / 分布宽则缩短
+  - Creates adaptive closed-loop system / 形成自适应闭环系统
+- 📈 **Dashboard Enhancement / 仪表盘增强**:
+  - Shows: `256↑(150-800)` format - lookback + spread indicator + range / 显示当前值+趋势+范围
+  - ↑ = spread narrow (extending), ↓ = spread wide (shortening) / ↑加长中，↓缩短中
+
+### v6.6 - Smart Normal Signal / 智能普通信号
 - 📈 **Smart Normal Signal Mode / 智能普通信号模式**:
   - Three modes: Off / On / Smart (default) / 三种模式
   - **Auto Threshold / 自动阈值**: Based on volatility classification / 基于波动率分类
