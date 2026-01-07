@@ -8,7 +8,7 @@ Dynamic overbought/oversold thresholds + Multi-Timeframe analysis + Divergence d
 
 根据每个标的实际历史分布动态计算超买/超卖阈值，结合多时间框架分析、背离检测和信号统计。
  
-**Pine Script v6** | **Last Update: 2025-12-28** | **v6.7**
+**Pine Script v6** | **Last Update: 2026-01-07** | **v6.8**
 
 ---
 
@@ -712,7 +712,37 @@ AAPL: 🔴 SELL SIGNALS → ❄️极端 ⚡实时背离 | RSI:78.5 Z:2.3σ (≈
 
 ## Changelog / 更新日志
 
-### v6.7 - Smart Lookback / 智能回看期 (Current / 当前版本)
+### v6.8 - Win Rate Filter & Divergence Refactor / 胜率过滤与背离重构 (Current / 当前版本)
+- 📊 **Statistics-Driven Filter / 统计驱动过滤器**:
+  - New inputs: `Enable Stats Filter`, `Min Samples` (default 20), `Min Win Rate` (default 55%)
+  - **Filter Modes / 过滤模式**:
+    - `Alert Only` (default): Signals still plot, but alerts gated / 信号仍绘制，但警报被过滤
+    - `Soft`: Signals plot with reduced transparency + ⚠️ marker / 信号半透明显示+⚠️标记
+    - `Hard`: Signals completely hidden / 信号完全隐藏
+  - Dashboard shows filter status: ✓ (passed) / ⚠️ (filtered) / 仪表盘显示过滤状态
+- 💎 **Divergence Detection Refactor / 背离检测重构**:
+  - Changed from requiring both price AND RSI pivot to single anchor point (price pivot only)
+  - RSI value sampled at price pivot bar for comparison / RSI值在价格pivot处采样比较
+  - Added offset plotting: divergence signals (💎, ↗️, ↘️) now plot at structural pivot point
+  - 改为单锚点检测（仅需价格pivot），背离信号绘制在结构转折点
+- 🌍 **MTF Weighted Resonance / MTF加权共振**:
+  - TF3 (highest timeframe) now weighted 2x / 最高周期TF3权重加倍
+  - Trigger threshold changed from `count >= 3` to `weighted_score >= 4`
+  - Reduces false positives when only lower timeframes agree / 减少仅低周期共振的假信号
+- 💰 **ATR Risk Hints / ATR风险提示** (Optional):
+  - New inputs: `Include Risk in Alerts`, `Alert R:R Ratio` (default 2.0)
+  - Calculates SL/TP based on ATR × quality grade multiplier / 基于ATR和等级计算止损止盈
+  - Alert format: `SL:$X.XX TP:$Y.YY` appended when enabled / 警报末尾附加止损止盈
+- 📈 **Sell Stats Mode Toggle / 卖出统计模式切换**:
+  - New input: `Sell Stats Mode` with "Long Exit" (default) vs "Short Entry"
+  - Dashboard shows mode indicator in stats header / 仪表盘显示统计模式
+  - "Long Exit": Calculates how sell signals perform for closing longs / 计算卖出信号作为多头出场的表现
+  - "Short Entry": Calculates how sell signals perform for opening shorts / 计算卖出信号作为空头入场的表现
+- 🐛 **Bug Fixes / 缺陷修复**:
+  - Fixed `enable_volume_scoring` toggle not being respected in quality functions / 修复成交量评分开关失效
+  - Fixed weekly/monthly `bars_per_day` calculation (was treating as daily) / 修复周/月线每日K线数计算偏差
+
+### v6.7 - Smart Lookback / 智能回看期
 - 🔬 **Dynamic Lookback Range / 动态回看范围**:
   - Asset-appropriate ranges based on volatility / 基于波动率的资产适配范围
   - Crypto: 50-400, High Vol: 80-600, Normal: 150-800, Low Vol: 200-1000
