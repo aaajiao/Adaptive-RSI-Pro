@@ -1,5 +1,27 @@
 // MIT License - Feel free to use, modify, and share.
 // © Adaptive RSI Pro - Dynamic Thresholds + MTF + Divergence + Statistics
+// v6.8 - Win Rate Optimization: Stats Filter + Divergence Refactor + MTF Weighting
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ v6.8 NEW FEATURES / 新功能
+// ══════════════════════════════════════════════════════════════════════════════
+// 1. Statistics-Driven Filter / 统计驱动过滤器
+//    - Filter signals based on historical win rate / 基于历史胜率过滤信号
+//    - Min samples (20) + Min win rate (55%) / 最小样本数+最小胜率
+//    - Three modes: Alert Only, Soft, Hard / 三种模式
+// 2. Divergence Refactor / 背离检测重构
+//    - Single anchor point (price pivot only) / 单锚点（仅价格pivot）
+//    - Offset plotting to pivot point / 信号绘制到pivot点
+// 3. MTF Weighted Resonance / MTF加权共振
+//    - Highest TF weight 2, others weight 1 / 最高周期权重2
+//    - Trigger threshold: weighted_score >= 4 / 触发阈值4
+// 4. ATR Risk Hints / ATR风险提示
+//    - SL/TP suggestions in alerts (optional) / 警报含止损止盈建议
+// 5. Sell Stats Mode / 卖出统计模式
+//    - Long Exit (default) vs Short Entry / 多头退出 vs 做空入场
+// 6. Bug Fixes / Bug修复
+//    - enable_volume_scoring now works / 成交量评分开关生效
+//    - Weekly/Monthly bars calculation fixed / 周月线K线换算修复
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ EMOJI LEGEND / 信号图例
@@ -76,6 +98,8 @@ enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号
 cooldown_mode = input.string("Smart", "Cooldown Mode / 冷却模式", options=["Smart", "Fixed"], group=grp_alerts, tooltip="Smart: 根据市场波动率自动调整冷却期\nFixed: 使用固定冷却期")
 cooldown_bars_fixed = input.int(5, "Fixed Cooldown (Bars) / 固定冷却期", minval=1, maxval=20, group=grp_alerts, tooltip="Fixed模式下的冷却时间（K线数）")
 enable_smart_alert = input.bool(true, "🎯 Smart Alert / 智能警报", group=grp_alerts, tooltip="V6动态警报：自动聚合所有信号到一条消息\n包含完整上下文（RSI值、Z-Score、百分位）\n实时触发，智能去重")
+include_risk_in_alerts = input.bool(false, "Include Risk Hints in Alerts / 警报含风险提示", group=grp_alerts, tooltip="在警报消息中包含ATR止损/止盈建议\n默认关闭，避免消息过长")
+alert_rr_ratio = input.float(2.0, "Risk-Reward Ratio / 风险回报比", minval=1.5, maxval=3.0, step=0.5, group=grp_alerts, tooltip="止盈/止损比例\n2.0 = 1:2 风险回报比")
 
 grp_protection = "═══ Trend Protection / 趋势保护 ═══"
 enable_trend_protection = input.bool(true, "Enable Trend Protection / 启用趋势保护", group=grp_protection, tooltip="使用周线趋势过滤极端风险：避免在周线极端下跌中抄底")
@@ -96,6 +120,11 @@ grp_stats = "═══ Signal Statistics / 信号统计 ═══"
 enable_stats = input.bool(true, "Enable Statistics / 启用统计", group=grp_stats)
 stats_mode = input.string("Ranking", "Stats Mode / 统计模式", options=["Signal Type", "Grade", "Ranking"], group=grp_stats, tooltip="Signal Type: 按信号类型统计\nGrade: 按质量等级统计\nRanking: 交叉排行榜（信号×等级）")
 stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, maxval=100, group=grp_stats, tooltip="信号触发后多少根K线计算收益")
+enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤", group=grp_stats, tooltip="基于历史统计数据过滤低质量信号\n根据样本数和胜率自动过滤")
+stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="信号组合需要的最小样本数\n≥20为统计可靠")
+stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值")
+stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
+sell_stats_mode = input.string("Long Exit", "Sell Stats Mode / 卖出统计模式", options=["Long Exit", "Short Entry"], group=grp_stats, tooltip="Long Exit: 卖出后价格下跌概率（多头退出视角）\nShort Entry: 做空收益（空头入场视角）")
 
 grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
 enable_divergence = input.bool(true, "Enable Divergence Detection / 启用背离检测", group=grp_divergence)
@@ -134,8 +163,9 @@ rsi = ta.rsi(rsi_source, rsi_length)
 vol_short_period = rsi_length * 4
 vol_history_days = vol_history_mode == "6 Months" ? 126 : vol_history_mode == "1 Year" ? 252 : 504
 tf_minutes = timeframe.in_seconds(timeframe.period) / 60
-bars_per_day = timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly ? 1 : math.ceil(1440 / tf_minutes)
-vol_long_period = math.min(4500, vol_history_days * bars_per_day)
+// 正确计算每日对应的K线数：周线=1/5天，月线=1/21天
+bars_per_day = timeframe.ismonthly ? 1.0 / 21 : timeframe.isweekly ? 1.0 / 5 : timeframe.isdaily ? 1 : math.ceil(1440 / tf_minutes)
+vol_long_period = math.min(4500, int(vol_history_days * bars_per_day))
 
 vol_short = nz(ta.stdev(rsi, vol_short_period), 10)
 vol_long = nz(ta.stdev(rsi, vol_long_period), 10)
@@ -370,6 +400,7 @@ tf3_is_current = mtf_tf3_display == current_tf_display
 
 valid_tf_count = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 1)
 
+// 简单计数（用于显示）
 oversold_count = (status_current == 1 ? 1 : 0) +
                  (not tf1_is_current and status_tf1 == 1 ? 1 : 0) +
                  (not tf2_is_current and status_tf2 == 1 ? 1 : 0) +
@@ -379,8 +410,23 @@ overbought_count = (status_current == -1 ? 1 : 0) +
                    (not tf2_is_current and status_tf2 == -1 ? 1 : 0) +
                    (not tf3_is_current and status_tf3 == -1 ? 1 : 0)
 
-oversold_resonance = oversold_count >= 3 or (valid_tf_count <= 3 and oversold_count == valid_tf_count)
-overbought_resonance = overbought_count >= 3 or (valid_tf_count <= 3 and overbought_count == valid_tf_count)
+// v6.8: 加权共振 - 最高周期(TF3)权重2，其他权重1
+// 权重分配: TF3=2, TF2=1, TF1=1, Current=1 (满分5)
+oversold_weighted = (status_current == 1 ? 1 : 0) +
+                    (not tf1_is_current and status_tf1 == 1 ? 1 : 0) +
+                    (not tf2_is_current and status_tf2 == 1 ? 1 : 0) +
+                    (not tf3_is_current and status_tf3 == 1 ? 2 : 0)  // TF3 权重 2
+overbought_weighted = (status_current == -1 ? 1 : 0) +
+                      (not tf1_is_current and status_tf1 == -1 ? 1 : 0) +
+                      (not tf2_is_current and status_tf2 == -1 ? 1 : 0) +
+                      (not tf3_is_current and status_tf3 == -1 ? 2 : 0)  // TF3 权重 2
+
+// 最大加权分数
+max_weighted = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 2)
+
+// 共振触发：加权分数 >= 4（满分5），或当周期数少时全部一致
+oversold_resonance = oversold_weighted >= 4 or (valid_tf_count <= 3 and oversold_count == valid_tf_count)
+overbought_resonance = overbought_weighted >= 4 or (valid_tf_count <= 3 and overbought_count == valid_tf_count)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ▶ SIGNAL STATISTICS
@@ -472,53 +518,59 @@ var norm_d_sell = SignalStats.new()
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ▶ DIVERGENCE DETECTION
+// ▶ DIVERGENCE DETECTION (v6.8 重构: 单锚点 + offset绘制)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// 只用 price pivot 作为锚点，取该 bar 的 RSI 值进行比较
+// 这样可以捕获更多有效背离，避免要求 RSI 和 price 同时 pivot
 price_pivot_low = ta.pivotlow(low, div_lookback, div_lookback)
 price_pivot_high = ta.pivothigh(high, div_lookback, div_lookback)
-rsi_pivot_low = ta.pivotlow(rsi, div_lookback, div_lookback)
-rsi_pivot_high = ta.pivothigh(rsi, div_lookback, div_lookback)
 
 var float prev_price_low = na
-var float prev_rsi_low = na
+var float prev_rsi_at_low = na  // 改名：在 price pivot 点的 RSI 值
 var int prev_low_bar = na
 var float prev_price_high = na
-var float prev_rsi_high = na
+var float prev_rsi_at_high = na  // 改名：在 price pivot 点的 RSI 值
 var int prev_high_bar = na
 
 var bool bullish_divergence = false
 var bool bearish_divergence = false
 
 if enable_divergence
-    if not na(price_pivot_low) and not na(rsi_pivot_low)
+    // 看涨背离：价格创新低，但 RSI 未创新低（只需 price pivot）
+    if not na(price_pivot_low)
         current_bar = bar_index - div_lookback
-        if not na(prev_price_low) and not na(prev_rsi_low)
+        current_rsi_at_pivot = rsi[div_lookback]  // 取 price pivot 点的 RSI
+        if not na(prev_price_low) and not na(prev_rsi_at_low)
             bars_since = current_bar - prev_low_bar
-            if bars_since <= div_range and low[div_lookback] < prev_price_low and rsi[div_lookback] > prev_rsi_low
+            // 价格更低，但 RSI 更高 = 看涨背离
+            if bars_since <= div_range and low[div_lookback] < prev_price_low and current_rsi_at_pivot > prev_rsi_at_low
                 bullish_divergence := true
             else
                 bullish_divergence := false
         else
             bullish_divergence := false
         prev_price_low := low[div_lookback]
-        prev_rsi_low := rsi[div_lookback]
+        prev_rsi_at_low := current_rsi_at_pivot
         prev_low_bar := current_bar
     else
         bullish_divergence := false
 
-    if not na(price_pivot_high) and not na(rsi_pivot_high)
+    // 看跌背离：价格创新高，但 RSI 未创新高（只需 price pivot）
+    if not na(price_pivot_high)
         current_bar = bar_index - div_lookback
-        if not na(prev_price_high) and not na(prev_rsi_high)
+        current_rsi_at_pivot = rsi[div_lookback]  // 取 price pivot 点的 RSI
+        if not na(prev_price_high) and not na(prev_rsi_at_high)
             bars_since = current_bar - prev_high_bar
-            if bars_since <= div_range and high[div_lookback] > prev_price_high and rsi[div_lookback] < prev_rsi_high
+            // 价格更高，但 RSI 更低 = 看跌背离
+            if bars_since <= div_range and high[div_lookback] > prev_price_high and current_rsi_at_pivot < prev_rsi_at_high
                 bearish_divergence := true
             else
                 bearish_divergence := false
         else
             bearish_divergence := false
         prev_price_high := high[div_lookback]
-        prev_rsi_high := rsi[div_lookback]
+        prev_rsi_at_high := current_rsi_at_pivot
         prev_high_bar := current_bar
     else
         bearish_divergence := false
@@ -688,11 +740,11 @@ f_buy_quality() =>
         score += 25
     if weekly_uptrend
         score += 15
-    if volume_surge
+    if enable_volume_scoring and volume_surge
         score += 10
     if weekly_extreme_bearish
         score -= 20
-    if volume_low
+    if enable_volume_scoring and volume_low
         score -= 10
     if not health_sample_coverage or not health_distribution_spread or not health_stat_valid
         score -= 15
@@ -710,11 +762,11 @@ f_sell_quality() =>
         score += 25
     if weekly_downtrend
         score += 15
-    if volume_surge
+    if enable_volume_scoring and volume_surge
         score += 10
     if weekly_extreme_bullish
         score -= 20
-    if volume_low
+    if enable_volume_scoring and volume_low
         score -= 10
     if not health_sample_coverage or not health_distribution_spread or not health_stat_valid
         score -= 15
@@ -735,6 +787,35 @@ f_dir_color(_dir, _bull, _bear) =>
 buy_quality_grade = f_quality_grade(current_buy_quality)
 sell_quality_grade = f_quality_grade(current_sell_quality)
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ▶ ATR RISK CALCULATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+atr_14 = ta.atr(14)
+atr_pct = atr_14 / close * 100
+
+// 止损倍数根据信号质量等级调整
+f_sl_multiplier(_grade) =>
+    _grade == "A" ? 2.5 : _grade == "B" ? 2.0 : _grade == "C" ? 1.5 : 1.2
+
+// 计算止损/止盈（多头）
+buy_sl_mult = f_sl_multiplier(buy_quality_grade)
+buy_sl_distance = atr_14 * buy_sl_mult
+buy_sl_price = close - buy_sl_distance
+buy_sl_pct = buy_sl_distance / close * 100
+buy_tp_distance = buy_sl_distance * alert_rr_ratio
+buy_tp_price = close + buy_tp_distance
+buy_tp_pct = buy_tp_distance / close * 100
+
+// 计算止损/止盈（空头/退出多头）
+sell_sl_mult = f_sl_multiplier(sell_quality_grade)
+sell_sl_distance = atr_14 * sell_sl_mult
+sell_sl_price = close + sell_sl_distance  // 空头止损在上方
+sell_sl_pct = sell_sl_distance / close * 100
+sell_tp_distance = sell_sl_distance * alert_rr_ratio
+sell_tp_price = close - sell_tp_distance
+sell_tp_pct = sell_tp_distance / close * 100
+
 active_signal_grade = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal ? buy_quality_grade :
                       sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal ? sell_quality_grade :
                       in_extreme_oversold ? buy_quality_grade :
@@ -749,6 +830,9 @@ has_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_n
 
 if enable_stats and bar_index > stats_forward_bars
     forward_return_long = (close - close[stats_forward_bars]) / close[stats_forward_bars] * 100
+    // Sell统计口径：Long Exit = 价格下跌为正（卖出正确），Short Entry = 做空收益
+    // Long Exit: 信号后价格下跌 = 卖出决策正确，用同样的公式但从多头退出角度解读
+    // Short Entry: 原有逻辑，做空收益
     forward_return_short = (close[stats_forward_bars] - close) / close[stats_forward_bars] * 100
 
     mtf_buy_stats.update(sig_buy_mtf[stats_forward_bars], forward_return_long)
@@ -861,21 +945,135 @@ if enable_stats and bar_index > stats_forward_bars
             norm_d_sell.update(true, forward_return_short)
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ▶ STATISTICS-DRIVEN FILTER
+// ══════════════════════════════════════════════════════════════════════════════
+
+// 获取当前信号对应的统计数据
+f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    SignalStats result = SignalStats.new()
+    if _is_mtf
+        result := _is_buy ? (_grade == "A" ? mtf_a_buy : _grade == "B" ? mtf_b_buy : _grade == "C" ? mtf_c_buy : mtf_d_buy) :
+                           (_grade == "A" ? mtf_a_sell : _grade == "B" ? mtf_b_sell : _grade == "C" ? mtf_c_sell : mtf_d_sell)
+    else if _is_div
+        result := _is_buy ? (_grade == "A" ? div_a_buy : _grade == "B" ? div_b_buy : _grade == "C" ? div_c_buy : div_d_buy) :
+                           (_grade == "A" ? div_a_sell : _grade == "B" ? div_b_sell : _grade == "C" ? div_c_sell : div_d_sell)
+    else if _is_ext
+        result := _is_buy ? (_grade == "A" ? ext_a_buy : _grade == "B" ? ext_b_buy : _grade == "C" ? ext_c_buy : ext_d_buy) :
+                           (_grade == "A" ? ext_a_sell : _grade == "B" ? ext_b_sell : _grade == "C" ? ext_c_sell : ext_d_sell)
+    else
+        result := _is_buy ? (_grade == "A" ? norm_a_buy : _grade == "B" ? norm_b_buy : _grade == "C" ? norm_c_buy : norm_d_buy) :
+                           (_grade == "A" ? norm_a_sell : _grade == "B" ? norm_b_sell : _grade == "C" ? norm_c_sell : norm_d_sell)
+    result
+
+// 检查信号是否通过统计过滤
+f_passes_stats_filter(_stats) =>
+    if not enable_stats_filter or not enable_stats
+        true
+    else
+        _count = _stats.count
+        _adj_wr = _stats.get_adjusted_winrate()
+        _has_enough_samples = _count >= stats_min_samples
+        _has_good_winrate = not na(_adj_wr) and _adj_wr >= stats_min_winrate
+        _has_enough_samples and _has_good_winrate
+
+// 计算各信号的过滤状态
+buy_mtf_stats = f_get_signal_stats(true, true, false, false, buy_quality_grade)
+buy_div_stats = f_get_signal_stats(true, false, true, false, buy_quality_grade)
+buy_ext_stats = f_get_signal_stats(true, false, false, true, buy_quality_grade)
+buy_norm_stats = f_get_signal_stats(true, false, false, false, buy_quality_grade)
+
+sell_mtf_stats = f_get_signal_stats(false, true, false, false, sell_quality_grade)
+sell_div_stats = f_get_signal_stats(false, false, true, false, sell_quality_grade)
+sell_ext_stats = f_get_signal_stats(false, false, false, true, sell_quality_grade)
+sell_norm_stats = f_get_signal_stats(false, false, false, false, sell_quality_grade)
+
+// 过滤结果
+filter_buy_mtf = f_passes_stats_filter(buy_mtf_stats)
+filter_buy_div = f_passes_stats_filter(buy_div_stats)
+filter_buy_ext = f_passes_stats_filter(buy_ext_stats)
+filter_buy_norm = f_passes_stats_filter(buy_norm_stats)
+
+filter_sell_mtf = f_passes_stats_filter(sell_mtf_stats)
+filter_sell_div = f_passes_stats_filter(sell_div_stats)
+filter_sell_ext = f_passes_stats_filter(sell_ext_stats)
+filter_sell_norm = f_passes_stats_filter(sell_norm_stats)
+
+// 根据过滤模式决定显示的信号
+// Hard: 只显示通过的信号
+// Soft: 所有信号都显示，但通过的正常显示，未通过的降级显示
+// Alert Only: 所有信号正常显示，仅Alert过滤
+show_buy_mtf = stats_filter_mode == "Hard" ? (sig_buy_mtf and filter_buy_mtf) : sig_buy_mtf
+show_buy_div = stats_filter_mode == "Hard" ? (sig_buy_div and filter_buy_div) : sig_buy_div
+show_buy_ext = stats_filter_mode == "Hard" ? (sig_buy_extreme and filter_buy_ext) : sig_buy_extreme
+show_buy_norm = stats_filter_mode == "Hard" ? (sig_buy_normal and filter_buy_norm) : sig_buy_normal
+
+show_sell_mtf = stats_filter_mode == "Hard" ? (sig_sell_mtf and filter_sell_mtf) : sig_sell_mtf
+show_sell_div = stats_filter_mode == "Hard" ? (sig_sell_div and filter_sell_div) : sig_sell_div
+show_sell_ext = stats_filter_mode == "Hard" ? (sig_sell_extreme and filter_sell_ext) : sig_sell_extreme
+show_sell_norm = stats_filter_mode == "Hard" ? (sig_sell_normal and filter_sell_norm) : sig_sell_normal
+
+// Soft模式：降级显示（未通过过滤的信号）
+soft_degraded_buy_mtf = stats_filter_mode == "Soft" and sig_buy_mtf and not filter_buy_mtf
+soft_degraded_buy_div = stats_filter_mode == "Soft" and sig_buy_div and not filter_buy_div
+soft_degraded_buy_ext = stats_filter_mode == "Soft" and sig_buy_extreme and not filter_buy_ext
+soft_degraded_buy_norm = stats_filter_mode == "Soft" and sig_buy_normal and not filter_buy_norm
+
+soft_degraded_sell_mtf = stats_filter_mode == "Soft" and sig_sell_mtf and not filter_sell_mtf
+soft_degraded_sell_div = stats_filter_mode == "Soft" and sig_sell_div and not filter_sell_div
+soft_degraded_sell_ext = stats_filter_mode == "Soft" and sig_sell_extreme and not filter_sell_ext
+soft_degraded_sell_norm = stats_filter_mode == "Soft" and sig_sell_normal and not filter_sell_norm
+
+// Alert过滤：所有模式都应用
+alert_buy_mtf = sig_buy_mtf and filter_buy_mtf
+alert_buy_div = sig_buy_div and filter_buy_div
+alert_buy_ext = sig_buy_extreme and filter_buy_ext
+alert_buy_norm = sig_buy_normal and filter_buy_norm
+
+alert_sell_mtf = sig_sell_mtf and filter_sell_mtf
+alert_sell_div = sig_sell_div and filter_sell_div
+alert_sell_ext = sig_sell_extreme and filter_sell_ext
+alert_sell_norm = sig_sell_normal and filter_sell_norm
+
+// 当前信号的过滤状态（用于Dashboard显示）
+current_signal_passes_filter = sig_buy_mtf ? filter_buy_mtf :
+                               sig_buy_div ? filter_buy_div :
+                               sig_buy_extreme ? filter_buy_ext :
+                               sig_buy_normal ? filter_buy_norm :
+                               sig_sell_mtf ? filter_sell_mtf :
+                               sig_sell_div ? filter_sell_div :
+                               sig_sell_extreme ? filter_sell_ext :
+                               sig_sell_normal ? filter_sell_norm : true
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ▶ SIGNAL DISPLAY
 // ══════════════════════════════════════════════════════════════════════════════
-plotshape(sig_buy_mtf, title="🌟 MTF+极端超卖", style=shape.labelup, location=location.bottom, color=#00E676, size=size.normal, text="🌟", textcolor=color.white)
-plotshape(sig_buy_div, title="💎 背离+极端超卖", style=shape.labelup, location=location.bottom, color=#00BCD4, size=size.normal, text="💎", textcolor=color.white)
-plotshape(sig_buy_extreme, title="🔥 极端超卖", style=shape.triangleup, location=location.bottom, color=color_bull, size=size.small, text="🔥")
-plotshape(show_normal_signals and sig_buy_normal, title="⬆️ 普通超卖", style=shape.circle, location=location.bottom, color=color.new(color_bull, 30), size=size.tiny, text="⬆️")
+
+// 正常显示的信号（通过过滤或非Hard模式且通过）
+plotshape(show_buy_mtf and not soft_degraded_buy_mtf, title="🌟 MTF+极端超卖", style=shape.labelup, location=location.bottom, color=#00E676, size=size.normal, text="🌟", textcolor=color.white)
+plotshape(show_buy_div and not soft_degraded_buy_div, title="💎 背离+极端超卖", style=shape.labelup, location=location.bottom, color=#00BCD4, size=size.normal, text="💎", textcolor=color.white, offset=-div_lookback)
+plotshape(show_buy_ext and not soft_degraded_buy_ext, title="🔥 极端超卖", style=shape.triangleup, location=location.bottom, color=color_bull, size=size.small, text="🔥")
+plotshape(show_normal_signals and show_buy_norm and not soft_degraded_buy_norm, title="⬆️ 普通超卖", style=shape.circle, location=location.bottom, color=color.new(color_bull, 30), size=size.tiny, text="⬆️")
 
 // 卖出信号 (顶部)
-plotshape(sig_sell_mtf, title="🌟 MTF+极端超买", style=shape.labeldown, location=location.top, color=#FF5252, size=size.normal, text="🌟", textcolor=color.white)
-plotshape(sig_sell_div, title="💎 背离+极端超买", style=shape.labeldown, location=location.top, color=#FF9800, size=size.normal, text="💎", textcolor=color.white)
-plotshape(sig_sell_extreme, title="❄️ 极端超买", style=shape.triangledown, location=location.top, color=color_bear, size=size.small, text="❄️")
-plotshape(show_normal_signals and sig_sell_normal, title="⬇️ 普通超买", style=shape.circle, location=location.top, color=color.new(color_bear, 30), size=size.tiny, text="⬇️")
+plotshape(show_sell_mtf and not soft_degraded_sell_mtf, title="🌟 MTF+极端超买", style=shape.labeldown, location=location.top, color=#FF5252, size=size.normal, text="🌟", textcolor=color.white)
+plotshape(show_sell_div and not soft_degraded_sell_div, title="💎 背离+极端超买", style=shape.labeldown, location=location.top, color=#FF9800, size=size.normal, text="💎", textcolor=color.white, offset=-div_lookback)
+plotshape(show_sell_ext and not soft_degraded_sell_ext, title="❄️ 极端超买", style=shape.triangledown, location=location.top, color=color_bear, size=size.small, text="❄️")
+plotshape(show_normal_signals and show_sell_norm and not soft_degraded_sell_norm, title="⬇️ 普通超买", style=shape.circle, location=location.top, color=color.new(color_bear, 30), size=size.tiny, text="⬇️")
 
-plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️")
-plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️")
+// Soft模式降级显示（半透明、更小）
+plotshape(soft_degraded_buy_mtf, title="🌟 MTF+极端超卖(降级)", style=shape.labelup, location=location.bottom, color=color.new(#00E676, 70), size=size.tiny, text="🌟", textcolor=color.new(color.white, 50))
+plotshape(soft_degraded_buy_div, title="💎 背离+极端超卖(降级)", style=shape.labelup, location=location.bottom, color=color.new(#00BCD4, 70), size=size.tiny, text="💎", textcolor=color.new(color.white, 50), offset=-div_lookback)
+plotshape(soft_degraded_buy_ext, title="🔥 极端超卖(降级)", style=shape.triangleup, location=location.bottom, color=color.new(color_bull, 70), size=size.tiny, text="🔥")
+plotshape(show_normal_signals and soft_degraded_buy_norm, title="⬆️ 普通超卖(降级)", style=shape.circle, location=location.bottom, color=color.new(color_bull, 80), size=size.tiny, text="⬆️")
+
+plotshape(soft_degraded_sell_mtf, title="🌟 MTF+极端超买(降级)", style=shape.labeldown, location=location.top, color=color.new(#FF5252, 70), size=size.tiny, text="🌟", textcolor=color.new(color.white, 50))
+plotshape(soft_degraded_sell_div, title="💎 背离+极端超买(降级)", style=shape.labeldown, location=location.top, color=color.new(#FF9800, 70), size=size.tiny, text="💎", textcolor=color.new(color.white, 50), offset=-div_lookback)
+plotshape(soft_degraded_sell_ext, title="❄️ 极端超买(降级)", style=shape.triangledown, location=location.top, color=color.new(color_bear, 70), size=size.tiny, text="❄️")
+plotshape(show_normal_signals and soft_degraded_sell_norm, title="⬇️ 普通超买(降级)", style=shape.circle, location=location.top, color=color.new(color_bear, 80), size=size.tiny, text="⬇️")
+
+// 纯背离信号（带 offset 绘制到 pivot 点）
+plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️", offset=-div_lookback)
+plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️", offset=-div_lookback)
 
 // 双层背景：普通区域(浅) + 极端区域(深)
 bgcolor(rsi_zscore < -normal_threshold ? color.new(color_bull, 93) : rsi_zscore > normal_threshold ? color.new(color_bear, 93) : na, title="Normal Zone")
@@ -944,30 +1142,31 @@ if show_dashboard
 
             signal_text = "⚪"
             signal_color = color.gray
+            mobile_filter_mark = enable_stats_filter and current_signal_passes_filter ? "✓" : enable_stats_filter ? "⚠️" : ""
 
             if sig_buy_mtf
-                signal_text := "🌟 [" + buy_quality_grade + "]"
+                signal_text := "🌟 [" + buy_quality_grade + "]" + (filter_buy_mtf ? "✓" : "⚠️")
                 signal_color := color_bull
             else if sig_buy_div
-                signal_text := "💎 [" + buy_quality_grade + "]"
+                signal_text := "💎 [" + buy_quality_grade + "]" + (filter_buy_div ? "✓" : "⚠️")
                 signal_color := color_bull
             else if sig_buy_extreme
-                signal_text := "🔥 [" + buy_quality_grade + "]"
+                signal_text := "🔥 [" + buy_quality_grade + "]" + (filter_buy_ext ? "✓" : "⚠️")
                 signal_color := color_bull
             else if show_normal_signals and sig_buy_normal
-                signal_text := "⬆️ [" + buy_quality_grade + "]"
+                signal_text := "⬆️ [" + buy_quality_grade + "]" + (filter_buy_norm ? "✓" : "⚠️")
                 signal_color := color_bull
             else if sig_sell_mtf
-                signal_text := "🌟 [" + sell_quality_grade + "]"
+                signal_text := "🌟 [" + sell_quality_grade + "]" + (filter_sell_mtf ? "✓" : "⚠️")
                 signal_color := color_bear
             else if sig_sell_div
-                signal_text := "💎 [" + sell_quality_grade + "]"
+                signal_text := "💎 [" + sell_quality_grade + "]" + (filter_sell_div ? "✓" : "⚠️")
                 signal_color := color_bear
             else if sig_sell_extreme
-                signal_text := "❄️ [" + sell_quality_grade + "]"
+                signal_text := "❄️ [" + sell_quality_grade + "]" + (filter_sell_ext ? "✓" : "⚠️")
                 signal_color := color_bear
             else if show_normal_signals and sig_sell_normal
-                signal_text := "⬇️ [" + sell_quality_grade + "]"
+                signal_text := "⬇️ [" + sell_quality_grade + "]" + (filter_sell_norm ? "✓" : "⚠️")
                 signal_color := color_bear
             else if sig_div_bull_only
                 signal_text := "↗️ [" + buy_quality_grade + "]"
@@ -1015,7 +1214,11 @@ if show_dashboard
             table.cell(dashboard, 1, row, percentile_display, text_color=status_color, text_size=txt_size_body)
             row += 1
 
-            quality_display = active_signal_grade != "" ? str.format(" [{0}]", active_signal_grade) : ""
+            // 过滤状态标记
+            filter_mark = ""
+            if enable_stats_filter and active_signal_grade != ""
+                filter_mark := current_signal_passes_filter ? "✓" : "⚠️"
+            quality_display = active_signal_grade != "" ? str.format(" [{0}]{1}", active_signal_grade, filter_mark) : ""
             table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, str.format("{0}{1}", status_text, quality_display), text_color=status_color, text_size=txt_size_body)
             row += 1
@@ -1062,8 +1265,9 @@ if show_dashboard
 
                 if enable_stats
                     stats_title = stats_mode == "Ranking" ? "── RANKING ──" : stats_mode == "Grade" ? "── GRADE STATS ──" : "── SIGNAL STATS ──"
+                    sell_mode_hint = sell_stats_mode == "Long Exit" ? "Exit" : "Short"
                     table.cell(dashboard, 0, row, stats_title, text_color=color.gray, text_size=txt_size_body)
-                    table.cell(dashboard, 1, row, "(" + str.tostring(stats_forward_bars) + " bars)", text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.format("({0}b|{1})", stats_forward_bars, sell_mode_hint), text_color=color.gray, text_size=txt_size_body)
                     row += 1
 
                     if stats_mode == "Signal Type"
@@ -1431,26 +1635,26 @@ if barstate.isnew
     sell_alert_level_sent := 0
 
 if enable_smart_alert
-    // 普通信号只在show_normal_signals为true时计入警报
-    alert_sig_buy_normal = show_normal_signals and sig_buy_normal
-    alert_sig_sell_normal = show_normal_signals and sig_sell_normal
-    alert_has_buy = sig_buy_mtf or sig_buy_div or sig_buy_extreme or alert_sig_buy_normal
-    alert_has_sell = sig_sell_mtf or sig_sell_div or sig_sell_extreme or alert_sig_sell_normal
+    // 使用统计过滤后的信号（所有模式都过滤Alert）
+    filtered_buy_normal = show_normal_signals and alert_buy_norm
+    filtered_sell_normal = show_normal_signals and alert_sell_norm
+    alert_has_buy = alert_buy_mtf or alert_buy_div or alert_buy_ext or filtered_buy_normal
+    alert_has_sell = alert_sell_mtf or alert_sell_div or alert_sell_ext or filtered_sell_normal
 
-    has_buy_signal_prev = sig_buy_mtf[1] or sig_buy_div[1] or sig_buy_extreme[1] or (show_normal_signals[1] and sig_buy_normal[1])
-    current_buy_level = f_signal_level(sig_buy_mtf, sig_buy_div, sig_buy_extreme, alert_sig_buy_normal)
+    has_buy_signal_prev = alert_buy_mtf[1] or alert_buy_div[1] or alert_buy_ext[1] or (show_normal_signals[1] and alert_buy_norm[1])
+    current_buy_level = f_signal_level(alert_buy_mtf, alert_buy_div, alert_buy_ext, filtered_buy_normal)
     should_alert_buy = alert_has_buy and not has_buy_signal_prev and current_buy_level > buy_alert_level_sent
 
     if should_alert_buy
         msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
 
-        if sig_buy_mtf
+        if alert_buy_mtf
             msg := msg + "🌟MTF共振 "
-        if sig_buy_div
+        if alert_buy_div
             msg := msg + "💎背离 "
-        if sig_buy_extreme
+        if alert_buy_ext
             msg := msg + "🔥极端 "
-        if alert_sig_buy_normal
+        if filtered_buy_normal
             msg := msg + "⬆️超卖 "
 
         if confirmation_buy
@@ -1460,26 +1664,32 @@ if enable_smart_alert
         if realtime_bullish_div
             msg := msg + "⚡实时背离 "
 
+        // 添加过滤状态标记
+        filter_status = current_signal_passes_filter ? "✓" : "⚠️"
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]", rsi, rsi_zscore, zscore_pct, buy_quality_grade)
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]{4}", rsi, rsi_zscore, zscore_pct, buy_quality_grade, filter_status)
+
+        // 可选：添加风险提示
+        if include_risk_in_alerts
+            msg := msg + str.format(" | SL:-{0,number,#.1}% TP:+{1,number,#.1}%", buy_sl_pct, buy_tp_pct)
 
         alert(msg, alert.freq_once_per_bar)
         buy_alert_level_sent := current_buy_level
 
-    has_sell_signal_prev = sig_sell_mtf[1] or sig_sell_div[1] or sig_sell_extreme[1] or (show_normal_signals[1] and sig_sell_normal[1])
-    current_sell_level = f_signal_level(sig_sell_mtf, sig_sell_div, sig_sell_extreme, alert_sig_sell_normal)
+    has_sell_signal_prev = alert_sell_mtf[1] or alert_sell_div[1] or alert_sell_ext[1] or (show_normal_signals[1] and alert_sell_norm[1])
+    current_sell_level = f_signal_level(alert_sell_mtf, alert_sell_div, alert_sell_ext, filtered_sell_normal)
     should_alert_sell = alert_has_sell and not has_sell_signal_prev and current_sell_level > sell_alert_level_sent
 
     if should_alert_sell
         msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
 
-        if sig_sell_mtf
+        if alert_sell_mtf
             msg := msg + "🌟MTF共振 "
-        if sig_sell_div
+        if alert_sell_div
             msg := msg + "💎背离 "
-        if sig_sell_extreme
+        if alert_sell_ext
             msg := msg + "❄️极端 "
-        if alert_sig_sell_normal
+        if filtered_sell_normal
             msg := msg + "⬇️超买 "
 
         if confirmation_sell
@@ -1489,8 +1699,14 @@ if enable_smart_alert
         if realtime_bearish_div
             msg := msg + "⚡实时背离 "
 
+        // 添加过滤状态标记
+        filter_status = current_signal_passes_filter ? "✓" : "⚠️"
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]", rsi, rsi_zscore, zscore_pct, sell_quality_grade)
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]{4}", rsi, rsi_zscore, zscore_pct, sell_quality_grade, filter_status)
+
+        // 可选：添加风险提示
+        if include_risk_in_alerts
+            msg := msg + str.format(" | SL:+{0,number,#.1}% TP:-{1,number,#.1}%", sell_sl_pct, sell_tp_pct)
 
         alert(msg, alert.freq_once_per_bar)
         sell_alert_level_sent := current_sell_level
