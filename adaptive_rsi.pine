@@ -346,24 +346,12 @@ tf3_is_current = mtf_tf3_display == current_tf_display
 valid_tf_count = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 1)
 
 // 简单计数（用于显示）
-oversold_count = (status_current == 1 ? 1 : 0) +
-                 (not tf1_is_current and status_tf1 == 1 ? 1 : 0) +
-                 (not tf2_is_current and status_tf2 == 1 ? 1 : 0) +
-                 (not tf3_is_current and status_tf3 == 1 ? 1 : 0)
-overbought_count = (status_current == -1 ? 1 : 0) +
-                   (not tf1_is_current and status_tf1 == -1 ? 1 : 0) +
-                   (not tf2_is_current and status_tf2 == -1 ? 1 : 0) +
-                   (not tf3_is_current and status_tf3 == -1 ? 1 : 0)
+oversold_count = (status_current == 1 ? 1 : 0) + (not tf1_is_current and status_tf1 == 1 ? 1 : 0) + (not tf2_is_current and status_tf2 == 1 ? 1 : 0) + (not tf3_is_current and status_tf3 == 1 ? 1 : 0)
+overbought_count = (status_current == -1 ? 1 : 0) + (not tf1_is_current and status_tf1 == -1 ? 1 : 0) + (not tf2_is_current and status_tf2 == -1 ? 1 : 0) + (not tf3_is_current and status_tf3 == -1 ? 1 : 0)
 
 // v6.8: 加权共振 - TF3权重2, 其他权重1, 满分5
-oversold_weighted = (status_current == 1 ? 1 : 0) +
-                    (not tf1_is_current and status_tf1 == 1 ? 1 : 0) +
-                    (not tf2_is_current and status_tf2 == 1 ? 1 : 0) +
-                    (not tf3_is_current and status_tf3 == 1 ? 2 : 0)
-overbought_weighted = (status_current == -1 ? 1 : 0) +
-                      (not tf1_is_current and status_tf1 == -1 ? 1 : 0) +
-                      (not tf2_is_current and status_tf2 == -1 ? 1 : 0) +
-                      (not tf3_is_current and status_tf3 == -1 ? 2 : 0)
+oversold_weighted = (status_current == 1 ? 1 : 0) + (not tf1_is_current and status_tf1 == 1 ? 1 : 0) + (not tf2_is_current and status_tf2 == 1 ? 1 : 0) + (not tf3_is_current and status_tf3 == 1 ? 2 : 0)
+overbought_weighted = (status_current == -1 ? 1 : 0) + (not tf1_is_current and status_tf1 == -1 ? 1 : 0) + (not tf2_is_current and status_tf2 == -1 ? 1 : 0) + (not tf3_is_current and status_tf3 == -1 ? 2 : 0)
 
 // 最大加权分数
 max_weighted = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 2)
