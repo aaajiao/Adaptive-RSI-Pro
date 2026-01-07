@@ -1,4 +1,4 @@
-// Adaptive RSI Pro v6.8 - Dynamic Thresholds + MTF + Divergence + Statistics
+// Adaptive RSI Pro v6.9 - Dynamic Thresholds + MTF + Divergence + Statistics
 // MIT License - https://github.com/user/adaptive-rsi-pro
 //
 // 信号图例 / Signal Legend:
@@ -81,6 +81,12 @@ div_range_custom = input.int(60, "Custom Range / 自定义范围", minval=20, ma
 atr_20 = ta.atr(20)
 avg_volatility = ta.sma(atr_20 / close * 100, 252)
 auto_vol_type = avg_volatility > 6 ? "Crypto" : avg_volatility > 3 ? "High Vol" : avg_volatility > 1 ? "Normal" : "Low Vol"
+
+// ADX 趋势强度检测 (v6.9)
+[adx_di_plus, adx_di_minus, adx_value] = ta.dmi(14, 14)
+adx_is_trending = adx_value > 25
+adx_trend_up = adx_di_plus > adx_di_minus
+adx_trend_down = adx_di_minus > adx_di_plus
 
 // 智能冷却期基础值
 base_cooldown = avg_volatility > 6 ? 2 : avg_volatility > 3 ? 3 : avg_volatility > 1 ? 5 : 8
@@ -670,6 +676,9 @@ f_buy_quality() =>
         score += 10
     if bullish_divergence or oversold_resonance
         score += 25
+    // v6.9: RSI 拐点确认 - 极端区形成底部拐点
+    if confirmation_buy
+        score += 10
     if weekly_uptrend
         score += 15
     if enable_volume_scoring and volume_surge
@@ -680,6 +689,9 @@ f_buy_quality() =>
         score -= 10
     if not health_sample_coverage or not health_distribution_spread or not health_stat_valid
         score -= 15
+    // v6.9: ADX 趋势惩罚 - 强下跌趋势中抄底减分
+    if adx_is_trending and adx_trend_down
+        score -= 10
     math.max(score, 0)
 
 f_sell_quality() =>
@@ -692,6 +704,9 @@ f_sell_quality() =>
         score += 10
     if bearish_divergence or overbought_resonance
         score += 25
+    // v6.9: RSI 拐点确认 - 极端区形成顶部拐点
+    if confirmation_sell
+        score += 10
     if weekly_downtrend
         score += 15
     if enable_volume_scoring and volume_surge
@@ -702,6 +717,9 @@ f_sell_quality() =>
         score -= 10
     if not health_sample_coverage or not health_distribution_spread or not health_stat_valid
         score -= 15
+    // v6.9: ADX 趋势惩罚 - 强上涨趋势中做空减分
+    if adx_is_trending and adx_trend_up
+        score -= 10
     math.max(score, 0)
 
 current_buy_quality = f_buy_quality()
