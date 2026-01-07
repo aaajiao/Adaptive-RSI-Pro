@@ -982,30 +982,30 @@ current_signal_passes_filter = sig_buy_mtf ? filter_buy_mtf :
 
 // 正常显示的信号（通过过滤或非Hard模式且通过）
 plotshape(show_buy_mtf and not soft_degraded_buy_mtf, title="🌟 MTF+极端超卖", style=shape.labelup, location=location.bottom, color=#00E676, size=size.normal, text="🌟", textcolor=color.white)
-plotshape(show_buy_div and not soft_degraded_buy_div, title="💎 背离+极端超卖", style=shape.labelup, location=location.bottom, color=#00BCD4, size=size.normal, text="💎", textcolor=color.white, offset=-div_lookback)
+plotshape(show_buy_div and not soft_degraded_buy_div, title="💎 背离+极端超卖", style=shape.labelup, location=location.bottom, color=#00BCD4, size=size.normal, text="💎", textcolor=color.white)
 plotshape(show_buy_ext and not soft_degraded_buy_ext, title="🔥 极端超卖", style=shape.triangleup, location=location.bottom, color=color_bull, size=size.small, text="🔥")
 plotshape(show_normal_signals and show_buy_norm and not soft_degraded_buy_norm, title="⬆️ 普通超卖", style=shape.circle, location=location.bottom, color=color.new(color_bull, 30), size=size.tiny, text="⬆️")
 
 // 卖出信号 (顶部)
 plotshape(show_sell_mtf and not soft_degraded_sell_mtf, title="🌟 MTF+极端超买", style=shape.labeldown, location=location.top, color=#FF5252, size=size.normal, text="🌟", textcolor=color.white)
-plotshape(show_sell_div and not soft_degraded_sell_div, title="💎 背离+极端超买", style=shape.labeldown, location=location.top, color=#FF9800, size=size.normal, text="💎", textcolor=color.white, offset=-div_lookback)
+plotshape(show_sell_div and not soft_degraded_sell_div, title="💎 背离+极端超买", style=shape.labeldown, location=location.top, color=#FF9800, size=size.normal, text="💎", textcolor=color.white)
 plotshape(show_sell_ext and not soft_degraded_sell_ext, title="❄️ 极端超买", style=shape.triangledown, location=location.top, color=color_bear, size=size.small, text="❄️")
 plotshape(show_normal_signals and show_sell_norm and not soft_degraded_sell_norm, title="⬇️ 普通超买", style=shape.circle, location=location.top, color=color.new(color_bear, 30), size=size.tiny, text="⬇️")
 
 // Soft模式降级显示（半透明、更小）
 plotshape(soft_degraded_buy_mtf, title="🌟 MTF+极端超卖(降级)", style=shape.labelup, location=location.bottom, color=color.new(#00E676, 70), size=size.tiny, text="🌟", textcolor=color.new(color.white, 50))
-plotshape(soft_degraded_buy_div, title="💎 背离+极端超卖(降级)", style=shape.labelup, location=location.bottom, color=color.new(#00BCD4, 70), size=size.tiny, text="💎", textcolor=color.new(color.white, 50), offset=-div_lookback)
+plotshape(soft_degraded_buy_div, title="💎 背离+极端超卖(降级)", style=shape.labelup, location=location.bottom, color=color.new(#00BCD4, 70), size=size.tiny, text="💎", textcolor=color.new(color.white, 50))
 plotshape(soft_degraded_buy_ext, title="🔥 极端超卖(降级)", style=shape.triangleup, location=location.bottom, color=color.new(color_bull, 70), size=size.tiny, text="🔥")
 plotshape(show_normal_signals and soft_degraded_buy_norm, title="⬆️ 普通超卖(降级)", style=shape.circle, location=location.bottom, color=color.new(color_bull, 80), size=size.tiny, text="⬆️")
 
 plotshape(soft_degraded_sell_mtf, title="🌟 MTF+极端超买(降级)", style=shape.labeldown, location=location.top, color=color.new(#FF5252, 70), size=size.tiny, text="🌟", textcolor=color.new(color.white, 50))
-plotshape(soft_degraded_sell_div, title="💎 背离+极端超买(降级)", style=shape.labeldown, location=location.top, color=color.new(#FF9800, 70), size=size.tiny, text="💎", textcolor=color.new(color.white, 50), offset=-div_lookback)
+plotshape(soft_degraded_sell_div, title="💎 背离+极端超买(降级)", style=shape.labeldown, location=location.top, color=color.new(#FF9800, 70), size=size.tiny, text="💎", textcolor=color.new(color.white, 50))
 plotshape(soft_degraded_sell_ext, title="❄️ 极端超买(降级)", style=shape.triangledown, location=location.top, color=color.new(color_bear, 70), size=size.tiny, text="❄️")
 plotshape(show_normal_signals and soft_degraded_sell_norm, title="⬇️ 普通超买(降级)", style=shape.circle, location=location.top, color=color.new(color_bear, 80), size=size.tiny, text="⬇️")
 
-// 纯背离信号（带 offset 绘制到 pivot 点）
-plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️", offset=-div_lookback)
-plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️", offset=-div_lookback)
+// 纯背离信号
+plotshape(sig_div_bull_only, title="↗️ 看涨背离", style=shape.circle, location=location.bottom, color=#00BCD4, size=size.tiny, text="↗️")
+plotshape(sig_div_bear_only, title="↘️ 看跌背离", style=shape.circle, location=location.top, color=#FF9800, size=size.tiny, text="↘️")
 
 // 双层背景：普通区域(浅) + 极端区域(深)
 bgcolor(rsi_zscore < -normal_threshold ? color.new(color_bull, 93) : rsi_zscore > normal_threshold ? color.new(color_bear, 93) : na, title="Normal Zone")
