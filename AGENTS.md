@@ -17,11 +17,23 @@
 
 ```
 RSI_stock/
-├── adaptive_rsi.pine    # ALL code here (single-file requirement)
-├── README.md            # User docs + changelog (bilingual EN/CN)
-├── AGENTS.md            # This file - AI agent guidelines
-├── LICENSE              # MIT
-└── images/              # Documentation screenshots
+├── adaptive_rsi.pine           # ALL Pine Script code here (single-file requirement)
+├── README.md                   # User docs + changelog (bilingual EN/CN)
+├── AGENTS.md                   # This file - AI agent guidelines
+├── LICENSE                     # MIT
+├── .pine-lint.yml              # Linter configuration
+├── .github/
+│   └── workflows/
+│       └── pine-lint.yml       # GitHub Actions CI workflow
+├── tools/
+│   └── pine_linter/            # Custom Pine Script static analyzer
+│       ├── __init__.py
+│       ├── cli.py              # Command-line interface
+│       ├── linter.py           # Core linting engine
+│       ├── rules.py            # Lint rule definitions
+│       ├── config.py           # Configuration loader
+│       └── reporter.py         # Output formatters
+└── images/                     # Documentation screenshots
 ```
 
 ## Where to Look

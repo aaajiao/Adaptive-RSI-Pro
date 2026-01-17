@@ -227,6 +227,42 @@ AAPL: 🟢 BUY → 🔥极端 | RSI:25.3 Z:-2.1σ (≈P2) [A]✓ | SL:-1.5% TP:+
 
 ---
 
+## 代码质量 / Code Quality
+
+本项目使用自定义的 **Pine Script 静态分析器** 进行代码质量检查。
+
+This project uses a custom **Pine Script Static Analyzer** for code quality checks.
+
+### GitHub CI
+
+每次推送 `.pine` 文件时，GitHub Actions 会自动运行 lint 检查。
+
+Lint checks run automatically via GitHub Actions on every push to `.pine` files.
+
+[![Pine Script Lint](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml/badge.svg)](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml)
+
+### 本地检查 / Local Check
+
+```bash
+python tools/pine_linter/cli.py adaptive_rsi.pine
+python tools/pine_linter/cli.py --format markdown adaptive_rsi.pine
+```
+
+### 检查规则 / Lint Rules
+
+| 规则 Rule | 严重性 Severity | 描述 Description |
+|-----------|----------------|------------------|
+| SEC001 | error | `request.security()` 需要 `lookahead=barmerge.lookahead_off` |
+| SEC002 | warning | `request.security()` 在条件语句内可能导致重绘 |
+| SYN001 | warning | 多行三元表达式 (v6 语法陷阱) |
+| NAM001-003 | info | 命名规范检查 (常量/函数/类型) |
+| QUA001 | info | Tooltip 应包含双语文本 |
+| QUA002 | warning | `request.security()` 结果应检查 na |
+
+配置文件: `.pine-lint.yml`
+
+---
+
 ## License
 
 MIT License - Feel free to use, modify, and share.
