@@ -2,14 +2,14 @@
 
 > Guidelines for AI agents working on this TradingView Pine Script v6 indicator.
 
-**Generated**: 2026-01-17 | **Commit**: 9a26389 | **Branch**: main
+**Generated**: 2026-01-17 | **Version**: v7.1 | **Branch**: main
 
 ## Quick Reference
 
 | Item | Value |
 |------|-------|
 | **Language** | Pine Script v6 |
-| **Main File** | `adaptive_rsi.pine` (~1700 lines) |
+| **Main File** | `adaptive_rsi.pine` (~1714 lines) |
 | **Platform** | TradingView (tradingview.com) |
 | **Build/Test** | Manual via TradingView Pine Editor |
 
@@ -28,14 +28,14 @@ RSI_stock/
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Signal logic | Lines 586-670 | `sig_buy_*`, `sig_sell_*` variables |
-| Quality scoring | Lines 674-748 | `f_buy_quality()`, `f_sell_quality()` |
-| Dashboard UI | Lines 787-1650 | Table rendering, Mobile/Full modes |
-| MTF analysis | Lines 257-368 | `request.security()` calls |
-| Divergence | Lines 458-514 | Single-anchor detection |
-| Statistics | Lines 369-456 | `SignalStats` type + methods |
-| Alerts | Lines 1651-1702 | Smart alert message generation |
-| Input groups | Lines 14-103 | 9 groups, 50+ parameters |
+| Signal logic | Lines 592-685 | `sig_buy_*`, `sig_sell_*`, `pct_allows_*` variables |
+| Quality scoring | Lines 687-760 | `f_buy_quality()`, `f_sell_quality()` |
+| Dashboard UI | Lines 1141-1630 | Table rendering, Mobile/Full modes |
+| MTF analysis | Lines 259-370 | `request.security()` calls |
+| Divergence | Lines 460-520 | Single-anchor detection |
+| Statistics | Lines 371-458 | `SignalStats` type + methods |
+| Alerts | Lines 1631-1714 | Smart alert message generation |
+| Input groups | Lines 15-105 | 9 groups, 50+ parameters |
 
 ## Build & Validation
 
@@ -160,9 +160,10 @@ INPUT GROUPS → RSI CALC → Z-SCORE → SIGNAL DETECTION → QUALITY SCORING �
 3. **Percentile Mapping**: Z-Score → approximate percentile
 4. **MTF Analysis**: `request.security()` for higher timeframes
 5. **Signal Detection**: Crossover/crossunder of Z-Score thresholds
-6. **Quality Grading**: A/B/C/D based on multi-factor scoring
-7. **Statistics Tracking**: Win rate, returns per signal type
-8. **Dashboard Rendering**: Table-based UI
+6. **Percentile Confirm** (v7.1, optional): Dual confirmation with P5/P95
+7. **Quality Grading**: A/B/C/D based on multi-factor scoring
+8. **Statistics Tracking**: Win rate, returns per signal type
+9. **Dashboard Rendering**: Table-based UI
 
 ### Signal Priority (highest wins)
 | Priority | Signal | Condition |

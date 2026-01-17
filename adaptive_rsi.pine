@@ -1,4 +1,4 @@
-// Adaptive RSI Pro v7.0 - Dynamic Thresholds + MTF + Divergence + Statistics
+// Adaptive RSI Pro v7.1 - Dynamic Thresholds + MTF + Divergence + Statistics + Percentile Confirm
 // MIT License - https://github.com/user/adaptive-rsi-pro
 //
 // 信号图例 / Signal Legend:
@@ -49,6 +49,7 @@ alert_rr_ratio = input.float(2.0, "Risk-Reward Ratio / 风险回报比", minval=
 grp_protection = "═══ Trend Protection / 趋势保护 ═══"
 enable_trend_protection = input.bool(true, "Enable Trend Protection / 启用趋势保护", group=grp_protection, tooltip="使用周线趋势过滤极端风险：避免在周线极端下跌中抄底")
 protection_level = input.string("Moderate", "Protection Level / 保护级别", options=["Aggressive", "Moderate", "Loose"], group=grp_protection, tooltip="Aggressive: 周线必须上升趋势\nModerate(推荐): 排除周线极端下跌\nLoose: 仅排除周线RSI<20的极端情况")
+enable_percentile_confirm = input.bool(false, "🎯 Percentile Confirm / 百分位确认", group=grp_protection, tooltip="极端信号需同时满足 Z-Score(-2σ) 和 Percentile(P5/P95)\n可减少波动率变化时的假信号，提升胜率\n适用于波动率变化较大的市场\n---\nExtreme signals require both Z-Score AND Percentile\nReduces false signals when volatility changes")
 
 grp_volume = "═══ Volume Confirmation / 成交量确认 ═══"
 enable_volume_scoring = input.bool(true, "Enable Volume Scoring / 启用成交量评分", group=grp_volume, tooltip="成交量作为信号质量评分项，不强制过滤")
@@ -520,11 +521,15 @@ if enable_divergence
 rsi_pivot_low_current = ta.pivotlow(rsi, 3, 1)
 rsi_pivot_high_current = ta.pivothigh(rsi, 3, 1)
 
-bool confirmation_buy = not na(rsi_pivot_low_current) and rsi_zscore[1] < -2
-bool confirmation_sell = not na(rsi_pivot_high_current) and rsi_zscore[1] > 2
+// Percentile confirm for [1] indexed checks (inline to avoid ordering issues)
+bool pct_ok_buy_1 = not enable_percentile_confirm or na(rsi_p5[1]) or (rsi[1] <= rsi_p5[1])
+bool pct_ok_sell_1 = not enable_percentile_confirm or na(rsi_p95[1]) or (rsi[1] >= rsi_p95[1])
 
-bool reversal_buy = ta.crossover(rsi_zscore, -2) and rsi_zscore[1] < -2
-bool reversal_sell = ta.crossunder(rsi_zscore, 2) and rsi_zscore[1] > 2
+bool confirmation_buy = not na(rsi_pivot_low_current) and rsi_zscore[1] < -2 and pct_ok_buy_1
+bool confirmation_sell = not na(rsi_pivot_high_current) and rsi_zscore[1] > 2 and pct_ok_sell_1
+
+bool reversal_buy = ta.crossover(rsi_zscore, -2) and rsi_zscore[1] < -2 and pct_ok_buy_1
+bool reversal_sell = ta.crossunder(rsi_zscore, 2) and rsi_zscore[1] > 2 and pct_ok_sell_1
 
 // ────────────────────────────────────────
 // REAL-TIME DIVERGENCE
@@ -587,13 +592,20 @@ hline(50, "50", color=color.new(color.gray, 90), linestyle=hline.style_dotted)
 // SIGNAL DETECTION
 // ────────────────────────────────────────
 
+// Percentile confirmation conditions (NA-safe: fallback to Z-only when na)
+pct_allows_buy = not enable_percentile_confirm or na(rsi_p5) or (rsi <= rsi_p5)
+pct_allows_sell = not enable_percentile_confirm or na(rsi_p95) or (rsi >= rsi_p95)
+// [div_lookback] indexed variants for divergence
+pct_allows_buy_div = not enable_percentile_confirm or na(rsi_p5[div_lookback]) or (rsi[div_lookback] <= rsi_p5[div_lookback])
+pct_allows_sell_div = not enable_percentile_confirm or na(rsi_p95[div_lookback]) or (rsi[div_lookback] >= rsi_p95[div_lookback])
+
 raw_extreme_oversold = ta.crossunder(rsi_zscore, -2)
 raw_extreme_overbought = ta.crossover(rsi_zscore, 2)
 raw_normal_oversold = ta.crossunder(rsi_zscore, -normal_threshold) and not raw_extreme_oversold
 raw_normal_overbought = ta.crossover(rsi_zscore, normal_threshold) and not raw_extreme_overbought
 
-extreme_oversold = enable_trend_protection ? (raw_extreme_oversold and trend_allows_buy) : raw_extreme_oversold
-extreme_overbought = enable_trend_protection ? (raw_extreme_overbought and trend_allows_sell) : raw_extreme_overbought
+extreme_oversold = raw_extreme_oversold and (not enable_trend_protection or trend_allows_buy) and pct_allows_buy
+extreme_overbought = raw_extreme_overbought and (not enable_trend_protection or trend_allows_sell) and pct_allows_sell
 normal_oversold = enable_trend_protection ? (raw_normal_oversold and trend_allows_buy) : raw_normal_oversold
 normal_overbought = enable_trend_protection ? (raw_normal_overbought and trend_allows_sell) : raw_normal_overbought
 
@@ -618,8 +630,8 @@ bool in_extreme_oversold = rsi_zscore < -2
 bool in_extreme_overbought = rsi_zscore > 2
 
 float zscore_at_div = rsi_stdev[div_lookback] != 0 ? (rsi[div_lookback] - rsi_mean[div_lookback]) / rsi_stdev[div_lookback] : 0
-bool was_extreme_oversold = zscore_at_div < -2
-bool was_extreme_overbought = zscore_at_div > 2
+bool was_extreme_oversold = (zscore_at_div < -2) and pct_allows_buy_div
+bool was_extreme_overbought = (zscore_at_div > 2) and pct_allows_sell_div
 
 bool raw_sig_buy_mtf = enable_mtf and oversold_resonance and extreme_oversold
 bool raw_sig_buy_div = enable_divergence and bullish_divergence and was_extreme_oversold and not raw_sig_buy_mtf
