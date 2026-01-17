@@ -1,0 +1,60 @@
+name: Pine Script Lint
+
+on:
+  push:
+    paths:
+      - '**.pine'
+      - '.pine-lint.yml'
+      - 'tools/pine_linter/**'
+  pull_request:
+    paths:
+      - '**.pine'
+      - '.pine-lint.yml'
+
+jobs:
+  lint:
+    name: Lint Pine Script
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install pyyaml
+      
+      - name: Run Pine Linter
+        id: lint
+        run: |
+          python tools/pine_linter/cli.py \
+            --config .pine-lint.yml \
+            --format github \
+            adaptive_rsi.pine
+        continue-on-error: true
+      
+      - name: Generate Markdown Report
+        if: always()
+        run: |
+          python tools/pine_linter/cli.py \
+            --config .pine-lint.yml \
+            --format markdown \
+            --output lint-report.md \
+            adaptive_rsi.pine || true
+      
+      - name: Upload Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: lint-report.md
+      
+      - name: Check for errors
+        if: steps.lint.outcome == 'failure'
+        run: |
+          echo "::error::Pine Script lint found errors."
+          exit 1
