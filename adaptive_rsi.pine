@@ -1228,7 +1228,7 @@ if show_dashboard
             table.cell(dashboard, 1, row, status_text_full, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
-            weekly_rsi_display = str.format("W.RSI:{0,number,#}", weekly_rsi)
+            weekly_rsi_display = na(weekly_rsi) ? "W.RSI:--" : str.format("W.RSI:{0,number,#}", weekly_rsi)
             vol_display = volume_surge ? "📊↑" : volume_low ? "📊↓" : "📊"
             protection_color = trend_allows_buy and trend_allows_sell ? color.white :
                               trend_allows_buy or trend_allows_sell ? color.yellow : color.red
