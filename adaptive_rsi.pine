@@ -1710,3 +1710,4 @@ if enable_smart_alert
 
         alert(msg, alert.freq_once_per_bar)
         sell_alert_level_sent := current_sell_level
+
