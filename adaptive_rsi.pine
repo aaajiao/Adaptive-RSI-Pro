@@ -70,7 +70,6 @@ enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤
 stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="信号组合需要的最小样本数\n≥20为统计可靠")
 stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值")
 stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
-sell_stats_mode = input.string("Long Exit", "Sell Stats Mode / 卖出统计模式", options=["Long Exit", "Short Entry"], group=grp_stats, tooltip="Long Exit: 卖出后价格下跌概率（多头退出视角）\nShort Entry: 做空收益（空头入场视角）")
 
 grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
 enable_divergence = input.bool(true, "Enable Divergence Detection / 启用背离检测", group=grp_divergence)
@@ -1271,9 +1270,8 @@ if show_dashboard
 
                 if enable_stats
                     stats_title = stats_mode == "Ranking" ? "── RANKING ──" : stats_mode == "Grade" ? "── GRADE STATS ──" : "── SIGNAL STATS ──"
-                    sell_mode_hint = sell_stats_mode == "Long Exit" ? "Exit" : "Short"
                     table.cell(dashboard, 0, row, stats_title, text_color=color.gray, text_size=txt_size_body)
-                    table.cell(dashboard, 1, row, str.format("({0}b|{1})", stats_forward_bars, sell_mode_hint), text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.format("({0}b)", stats_forward_bars), text_color=color.gray, text_size=txt_size_body)
                     row += 1
 
                     if stats_mode == "Signal Type"
