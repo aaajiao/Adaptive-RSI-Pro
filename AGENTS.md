@@ -2,6 +2,8 @@
 
 > Guidelines for AI agents working on this TradingView Pine Script v6 indicator.
 
+**Generated**: 2026-01-17 | **Commit**: 9a26389 | **Branch**: main
+
 ## Quick Reference
 
 | Item | Value |
@@ -10,6 +12,30 @@
 | **Main File** | `adaptive_rsi.pine` (~1700 lines) |
 | **Platform** | TradingView (tradingview.com) |
 | **Build/Test** | Manual via TradingView Pine Editor |
+
+## Project Structure
+
+```
+RSI_stock/
+├── adaptive_rsi.pine    # ALL code here (single-file requirement)
+├── README.md            # User docs + changelog (bilingual EN/CN)
+├── AGENTS.md            # This file - AI agent guidelines
+├── LICENSE              # MIT
+└── images/              # Documentation screenshots
+```
+
+## Where to Look
+
+| Task | Location | Notes |
+|------|----------|-------|
+| Signal logic | Lines 586-670 | `sig_buy_*`, `sig_sell_*` variables |
+| Quality scoring | Lines 674-748 | `f_buy_quality()`, `f_sell_quality()` |
+| Dashboard UI | Lines 787-1650 | Table rendering, Mobile/Full modes |
+| MTF analysis | Lines 257-368 | `request.security()` calls |
+| Divergence | Lines 458-514 | Single-anchor detection |
+| Statistics | Lines 369-456 | `SignalStats` type + methods |
+| Alerts | Lines 1651-1702 | Smart alert message generation |
+| Input groups | Lines 14-103 | 9 groups, 50+ parameters |
 
 ## Build & Validation
 
