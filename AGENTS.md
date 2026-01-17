@@ -7,7 +7,7 @@
 | Item | Value |
 |------|-------|
 | **Language** | Pine Script v6 |
-| **Main File** | `adaptive_rsi.pine` (~1660 lines) |
+| **Main File** | `adaptive_rsi.pine` (~1700 lines) |
 | **Platform** | TradingView (tradingview.com) |
 | **Build/Test** | Manual via TradingView Pine Editor |
 
@@ -24,7 +24,7 @@
 - [ ] Compiles without errors
 - [ ] Works on multiple timeframes (1m, 1H, 4H, D, W, M)
 - [ ] Works on different assets (stocks, crypto, forex, ETFs)
-- [ ] All 3 dashboard modes render (Mobile/Lite/Full)
+- [ ] Both dashboard modes render correctly (Mobile/Full)
 - [ ] Alerts fire with correct message format
 - [ ] No performance lag
 
@@ -161,12 +161,96 @@ INPUT GROUPS → RSI CALC → Z-SCORE → SIGNAL DETECTION → QUALITY SCORING �
 | String in switch | Pine v6 requires exact string matches |
 | na propagation | Always check `not na()` before using values |
 
+## Common Syntax Errors (Pine Script v6)
+
+### 1. Multi-line Expressions: "end of line without line continuation"
+
+**Problem**: Pine Script v6 is sensitive to multi-line ternary expressions and boolean chains.
+
+```pinescript
+// ❌ WRONG - may cause syntax error
+status_text = rsi_zscore < -2 ? "EXTREME" :
+              rsi_zscore < -1.5 ? "OVERSOLD" :
+              "NEUTRAL"
+
+// ❌ WRONG - multi-line boolean
+current_is_hidden = (signal_direction == 1 and (normal_buy_hidden or 
+                                                extreme_buy_hidden)) or
+                    (signal_direction == -1 and normal_sell_hidden)
+```
+
+**Solutions**:
+
+```pinescript
+// ✅ Option 1: Single line (for short expressions)
+status_text = rsi_zscore < -2 ? "EXTREME" : rsi_zscore < -1.5 ? "OVERSOLD" : "NEUTRAL"
+
+// ✅ Option 2: Use switch statement (for complex conditions)
+string status_text = switch
+    rsi_zscore < -2 => "EXTREME"
+    rsi_zscore < -1.5 => "OVERSOLD"
+    => "NEUTRAL"
+
+// ✅ Option 3: Break into helper variables (for boolean chains)
+bool buy_hidden = normal_buy_hidden or extreme_buy_hidden
+bool sell_hidden = normal_sell_hidden or extreme_sell_hidden
+current_is_hidden = (signal_direction == 1 and buy_hidden) or (signal_direction == -1 and sell_hidden)
+```
+
+### 2. table.clear() Requires Parameters
+
+**Problem**: `table.clear()` in Pine v6 requires range parameters.
+
+```pinescript
+// ❌ WRONG - missing parameters
+table.clear(dashboard)
+
+// ✅ CORRECT - specify range (start_column, start_row, end_column, end_row)
+table.clear(dashboard, 0, 0, 1, 19)  // Clear 2 columns × 20 rows
+```
+
+### 3. Type Inference Issues
+
+**Problem**: Sometimes Pine Script cannot infer variable types, especially with `switch` or complex expressions.
+
+```pinescript
+// ❌ May cause "Cannot determine type" error
+signal_icon = switch
+    is_mtf => "🌟"
+    is_div => "💎"
+    => ""
+
+// ✅ CORRECT - explicit type annotation
+string signal_icon = switch
+    is_mtf => "🌟"
+    is_div => "💎"
+    => ""
+```
+
+### 4. Switch Statement Syntax
+
+**Problem**: Switch requires proper formatting.
+
+```pinescript
+// ❌ WRONG - missing default case or wrong syntax
+string result = switch
+    condition1 => "A"
+    condition2 => "B"
+
+// ✅ CORRECT - always include default case
+string result = switch
+    condition1 => "A"
+    condition2 => "B"
+    => "default"
+```
+
 ## Making Changes
 
-1. **Read entire file** - Single ~1660 line file; understand signal flow
+1. **Read entire file** - Single ~1700 line file; understand signal flow
 2. **Preserve bilingual** - All user-facing text needs EN/CN
-3. **Test all modes** - Mobile/Lite/Full dashboard, all timeframes
+3. **Test both modes** - Mobile/Full dashboard, all timeframes
 4. **Check signal cascade** - Changes to scoring affect multiple signals
+5. **Avoid multi-line expressions** - Use switch or helper variables instead
 
 ### Changelog Format (in README.md)
 ```markdown

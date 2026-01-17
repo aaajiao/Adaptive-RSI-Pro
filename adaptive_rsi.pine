@@ -1,4 +1,4 @@
-// Adaptive RSI Pro v6.9 - Dynamic Thresholds + MTF + Divergence + Statistics
+// Adaptive RSI Pro v7.0 - Dynamic Thresholds + MTF + Divergence + Statistics
 // MIT License - https://github.com/user/adaptive-rsi-pro
 //
 // 信号图例 / Signal Legend:
@@ -29,7 +29,7 @@ grp_visual = "═══ Visual Settings / 视觉设置 ═══"
 visual_line_mode = input.string("Unified", "Threshold Line Mode / 阈值线模式", options=["Unified", "Z-Score", "Percentile", "Both"], group=grp_visual, tooltip="Unified(推荐): Z-Score线+百分位标注，兼顾严谨性和直观性\nZ-Score: 仅统计学阈值线(±2σ, ±1.5σ)\nPercentile: 仅百分位线(P5-P95)\nBoth: 同时显示两种")
 show_fill = input.bool(true, "Show Gradient Fill / 显示渐变填充", group=grp_visual)
 show_dashboard = input.bool(true, "Show Dashboard / 显示仪表盘", group=grp_visual)
-dashboard_mode = input.string("Full", "Dashboard Mode / 面板模式", options=["Mobile", "Lite", "Full"], group=grp_visual, tooltip="Mobile: 极简模式(3行)，仅RSI+信号+状态，适合手机\\nLite: 核心信息(5行) | Full: 完整信息")
+dashboard_mode = input.string("Full", "Dashboard Mode / 面板模式", options=["Mobile", "Full"], group=grp_visual, tooltip="Mobile: 极简模式(3行)，适合手机\nFull: 完整信息")
 dashboard_size = input.string("Normal", "Dashboard Size / 面板大小", options=["Tiny", "Small", "Normal", "Large"], group=grp_visual)
 dashboard_transparency = input.int(30, "Dashboard Transparency / 面板透明度", minval=0, maxval=100, step=10, group=grp_visual)
 color_bull = input.color(color.new(#00E676, 60), "Bullish Color / 牛市颜色", group=grp_visual)
@@ -662,6 +662,15 @@ if sig_sell_normal
 bool sig_div_bull_only = enable_divergence and bullish_divergence and not was_extreme_oversold
 bool sig_div_bear_only = enable_divergence and bearish_divergence and not was_extreme_overbought
 
+// 普通信号被 Smart 模式隐藏的状态
+bool normal_buy_hidden = sig_buy_normal and not show_normal_signals
+bool normal_sell_hidden = sig_sell_normal and not show_normal_signals
+string hide_reason = weekly_extreme_bearish ? "周线极端↓" : weekly_extreme_bullish ? "周线极端↑" : ""
+
+// 普通超卖/超买区域持续状态（非信号触发时刻）
+bool in_normal_oversold = rsi_zscore < -normal_threshold and rsi_zscore >= -2
+bool in_normal_overbought = rsi_zscore > normal_threshold and rsi_zscore <= 2
+
 // ────────────────────────────────────────
 // SIGNAL QUALITY SCORING
 // ────────────────────────────────────────
@@ -768,8 +777,12 @@ sell_tp_pct = sell_tp_distance / close * 100
 
 active_signal_grade = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal ? buy_quality_grade :
                       sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal ? sell_quality_grade :
+                      normal_buy_hidden ? buy_quality_grade :
+                      normal_sell_hidden ? sell_quality_grade :
                       in_extreme_oversold ? buy_quality_grade :
-                      in_extreme_overbought ? sell_quality_grade : ""
+                      in_extreme_overbought ? sell_quality_grade :
+                      in_normal_oversold ? buy_quality_grade :
+                      in_normal_overbought ? sell_quality_grade : ""
 
 // ────────────────────────────────────────
 // STATISTICS CALCULATION
@@ -995,6 +1008,40 @@ current_signal_passes_filter = sig_buy_mtf ? filter_buy_mtf :
                                sig_sell_normal ? filter_sell_norm : true
 
 // ────────────────────────────────────────
+// 信号隐藏状态检测（用于统一显示）
+// ────────────────────────────────────────
+
+// 极端信号被趋势保护隐藏
+bool extreme_buy_hidden = enable_trend_protection and raw_extreme_oversold and not trend_allows_buy
+bool extreme_sell_hidden = enable_trend_protection and raw_extreme_overbought and not trend_allows_sell
+
+// Hard 模式被统计过滤隐藏
+bool hard_hidden_buy = stats_filter_mode == "Hard" and (
+    (sig_buy_mtf and not filter_buy_mtf) or
+    (sig_buy_div and not filter_buy_div) or
+    (sig_buy_extreme and not filter_buy_ext) or
+    (sig_buy_normal and not filter_buy_norm))
+bool hard_hidden_sell = stats_filter_mode == "Hard" and (
+    (sig_sell_mtf and not filter_sell_mtf) or
+    (sig_sell_div and not filter_sell_div) or
+    (sig_sell_extreme and not filter_sell_ext) or
+    (sig_sell_normal and not filter_sell_norm))
+
+// 普通区域被 Smart 隐藏
+bool normal_zone_hidden = (in_normal_oversold or in_normal_overbought) and not show_normal_signals
+
+// 是否为信号触发时刻（包括被隐藏的）
+bool is_signal_trigger = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal or
+                         sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal or
+                         extreme_buy_hidden or extreme_sell_hidden
+
+// 是否被隐藏（任何原因）
+bool is_any_hidden = normal_buy_hidden or normal_sell_hidden or 
+                     extreme_buy_hidden or extreme_sell_hidden or
+                     hard_hidden_buy or hard_hidden_sell or 
+                     normal_zone_hidden
+
+// ────────────────────────────────────────
 // SIGNAL DISPLAY
 // ────────────────────────────────────────
 
@@ -1030,6 +1077,55 @@ bgcolor(rsi_zscore < -normal_threshold ? color.new(color_bull, 93) : rsi_zscore 
 bgcolor(rsi_zscore < -2 ? color.new(color_bull, 85) : rsi_zscore > 2 ? color.new(color_bear, 85) : na, title="Extreme Zone")
 
 // ────────────────────────────────────────
+// 通用信号显示逻辑（Mobile/Full 共用）
+// ────────────────────────────────────────
+
+// 信号方向：1=买入, -1=卖出, 0=无
+bool is_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal or normal_buy_hidden or extreme_buy_hidden or hard_hidden_buy or sig_div_bull_only or in_extreme_oversold or in_normal_oversold
+bool is_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal or normal_sell_hidden or extreme_sell_hidden or hard_hidden_sell or sig_div_bear_only or in_extreme_overbought or in_normal_overbought
+signal_direction = is_buy_signal ? 1 : is_sell_signal ? -1 : 0
+
+// 信号类型文本（按优先级）
+string signal_type_text = switch
+    sig_buy_mtf or sig_sell_mtf => "🌟"
+    sig_buy_div or sig_sell_div => "💎"
+    sig_buy_extreme or extreme_buy_hidden => "🔥"
+    sig_sell_extreme or extreme_sell_hidden => "❄️"
+    sig_buy_normal or normal_buy_hidden => "⬆️"
+    sig_sell_normal or normal_sell_hidden => "⬇️"
+    sig_div_bull_only => "↗️"
+    sig_div_bear_only => "↘️"
+    in_extreme_oversold => "🔥持续"
+    in_extreme_overbought => "❄️持续"
+    in_normal_oversold => "超卖区"
+    in_normal_overbought => "超买区"
+    => "⚪"
+
+// 信号评级
+signal_grade_text = signal_direction == 1 ? buy_quality_grade : signal_direction == -1 ? sell_quality_grade : ""
+
+// 当前信号是否被隐藏
+bool buy_is_hidden = normal_buy_hidden or extreme_buy_hidden or hard_hidden_buy or (in_normal_oversold and not show_normal_signals)
+bool sell_is_hidden = normal_sell_hidden or extreme_sell_hidden or hard_hidden_sell or (in_normal_overbought and not show_normal_signals)
+current_is_hidden = (signal_direction == 1 and buy_is_hidden) or (signal_direction == -1 and sell_is_hidden)
+
+// 信号标记（✓/⚠️/🚫/空）
+signal_mark_text = current_is_hidden ? "🚫" : is_signal_trigger and enable_stats_filter ? (current_signal_passes_filter ? "✓" : "⚠️") : ""
+
+// 完整信号显示文本
+signal_full_display = signal_type_text + (signal_grade_text != "" ? "[" + signal_grade_text + "]" : "") + signal_mark_text
+
+// 信号颜色
+signal_full_color = current_is_hidden ? color.new(color.gray, 40) : signal_direction == 1 ? color_bull : signal_direction == -1 ? color_bear : color.gray
+
+// 状态文本（统一使用 normal_threshold）
+status_text_full = rsi_zscore < -2 ? "🟢 EXTREME OVERSOLD" : rsi_zscore < -normal_threshold ? "🟡 OVERSOLD" : rsi_zscore > 2 ? "🔴 EXTREME OVERBOUGHT" : rsi_zscore > normal_threshold ? "🟠 OVERBOUGHT" : "⚪ NEUTRAL"
+
+status_text_mobile = rsi_zscore < -2 ? "🟢极卖" : rsi_zscore < -normal_threshold ? "🟡超卖" : rsi_zscore > 2 ? "🔴极买" : rsi_zscore > normal_threshold ? "🟠超买" : "⚪中性"
+
+status_display_color = rsi_zscore < -normal_threshold ? color_bull : rsi_zscore > normal_threshold ? color_bear : color.gray
+
+// ────────────────────────────────────────
 // DASHBOARD
 // ────────────────────────────────────────
 
@@ -1055,13 +1151,6 @@ if show_dashboard
     else
         rsi_percentile := 99.0
 
-    status_text = rsi_zscore < -2 ? "🟢 EXTREME OVERSOLD" :
-                  rsi_zscore < -1.5 ? "🟡 OVERSOLD" :
-                  rsi_zscore > 2 ? "🔴 EXTREME OVERBOUGHT" :
-                  rsi_zscore > 1.5 ? "🟠 OVERBOUGHT" : "⚪ NEUTRAL"
-
-    status_color = rsi_zscore < -1.5 ? color_bull : rsi_zscore > 1.5 ? color_bear : color.gray
-
     txt_size_title = dashboard_size == "Tiny" ? size.tiny : dashboard_size == "Small" ? size.small : dashboard_size == "Normal" ? size.normal : size.large
     txt_size_body = dashboard_size == "Tiny" ? size.tiny : dashboard_size == "Small" ? size.tiny : dashboard_size == "Normal" ? size.small : size.normal
 
@@ -1074,77 +1163,31 @@ if show_dashboard
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     mobile_rows = 3
-    lite_rows = 7
-    full_rows = 7 + (enable_mtf and dashboard_mode == "Full" ? 2 : 0) + (enable_divergence and dashboard_mode == "Full" ? 1 : 0) + (enable_stats and dashboard_mode == "Full" ? 9 : 0)
-    total_rows = dashboard_mode == "Mobile" ? mobile_rows : dashboard_mode == "Lite" ? lite_rows : full_rows
+    full_rows = 8 + (enable_mtf ? 2 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0)
+    total_rows = dashboard_mode == "Mobile" ? mobile_rows : full_rows
 
     var table dashboard = table.new(position.top_right, 2, 20,
                                      bgcolor=color.new(#1a1a2e, dashboard_transparency),
                                      border_width=1, border_color=color.new(#4a4a6a, 50))
     
     if barstate.islast
+        table.clear(dashboard, 0, 0, 1, 19)
         row = 0
 
         if dashboard_mode == "Mobile"
+            // Row 1: RSI
             table.cell(dashboard, 0, row, "RSI", text_color=color.gray, text_size=txt_size_body, bgcolor=color.new(#2962FF, dashboard_transparency))
             table.cell(dashboard, 1, row, str.tostring(rsi, "#.1"), text_color=color_rsi, text_size=txt_size_body, bgcolor=color.new(#2962FF, dashboard_transparency))
             row += 1
 
-            signal_text = "⚪"
-            signal_color = color.gray
-            mobile_filter_mark = enable_stats_filter and current_signal_passes_filter ? "✓" : enable_stats_filter ? "⚠️" : ""
-
-            if sig_buy_mtf
-                signal_text := "🌟 [" + buy_quality_grade + "]" + (filter_buy_mtf ? "✓" : "⚠️")
-                signal_color := color_bull
-            else if sig_buy_div
-                signal_text := "💎 [" + buy_quality_grade + "]" + (filter_buy_div ? "✓" : "⚠️")
-                signal_color := color_bull
-            else if sig_buy_extreme
-                signal_text := "🔥 [" + buy_quality_grade + "]" + (filter_buy_ext ? "✓" : "⚠️")
-                signal_color := color_bull
-            else if show_normal_signals and sig_buy_normal
-                signal_text := "⬆️ [" + buy_quality_grade + "]" + (filter_buy_norm ? "✓" : "⚠️")
-                signal_color := color_bull
-            else if sig_sell_mtf
-                signal_text := "🌟 [" + sell_quality_grade + "]" + (filter_sell_mtf ? "✓" : "⚠️")
-                signal_color := color_bear
-            else if sig_sell_div
-                signal_text := "💎 [" + sell_quality_grade + "]" + (filter_sell_div ? "✓" : "⚠️")
-                signal_color := color_bear
-            else if sig_sell_extreme
-                signal_text := "❄️ [" + sell_quality_grade + "]" + (filter_sell_ext ? "✓" : "⚠️")
-                signal_color := color_bear
-            else if show_normal_signals and sig_sell_normal
-                signal_text := "⬇️ [" + sell_quality_grade + "]" + (filter_sell_norm ? "✓" : "⚠️")
-                signal_color := color_bear
-            else if sig_div_bull_only
-                signal_text := "↗️ [" + buy_quality_grade + "]"
-                signal_color := #00BCD4
-            else if sig_div_bear_only
-                signal_text := "↘️ [" + sell_quality_grade + "]"
-                signal_color := #FF9800
-            else if in_extreme_oversold
-                signal_text := "🔥持续 [" + buy_quality_grade + "]"
-                signal_color := color.new(color_bull, 30)
-            else if in_extreme_overbought
-                signal_text := "❄️持续 [" + sell_quality_grade + "]"
-                signal_color := color.new(color_bear, 30)
-            else if rsi_zscore < -normal_threshold
-                signal_text := "⬆️区"
-                signal_color := color.new(color_bull, 50)
-            else if rsi_zscore > normal_threshold
-                signal_text := "⬇️区"
-                signal_color := color.new(color_bear, 50)
-
-            table.cell(dashboard, 0, row, "信号", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, signal_text, text_color=signal_color, text_size=txt_size_body)
+            // Row 2: Signal（使用通用变量）
+            table.cell(dashboard, 0, row, "Signal", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, signal_full_display, text_color=signal_full_color, text_size=txt_size_body)
             row += 1
 
-            status_mobile = rsi_zscore < -2 ? "🟢极卖" : rsi_zscore < -1.5 ? "🟡超卖" : rsi_zscore > 2 ? "🔴极买" : rsi_zscore > 1.5 ? "🟠超买" : "⚪中性"
-
-            table.cell(dashboard, 0, row, "状态", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, status_mobile, text_color=status_color, text_size=txt_size_body)
+            // Row 3: Status（纯状态，无评级）
+            table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, status_text_mobile, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
         else
@@ -1155,22 +1198,23 @@ if show_dashboard
             zscore_approx_pct = f_zscore_to_percentile(rsi_zscore)
             zscore_display = str.format("{0,number,#.2}σ (≈P{1,number,#})", rsi_zscore, zscore_approx_pct)
             table.cell(dashboard, 0, row, "Z-Score", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, zscore_display, text_color=status_color, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, zscore_display, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
             pct_zscore_range = f_percentile_zscore_range(rsi_percentile)
             percentile_display = str.format("P{0,number,#}{1}", rsi_percentile, pct_zscore_range)
             table.cell(dashboard, 0, row, "Percentile", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, percentile_display, text_color=status_color, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, percentile_display, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
-            // 过滤状态标记
-            filter_mark = ""
-            if enable_stats_filter and active_signal_grade != ""
-                filter_mark := current_signal_passes_filter ? "✓" : "⚠️"
-            quality_display = active_signal_grade != "" ? str.format(" [{0}]{1}", active_signal_grade, filter_mark) : ""
+            // Signal 行（使用通用变量，与 Mobile 一致）
+            table.cell(dashboard, 0, row, "Signal", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, signal_full_display, text_color=signal_full_color, text_size=txt_size_body)
+            row += 1
+
+            // Status 行（纯状态，无评级）
             table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
-            table.cell(dashboard, 1, row, str.format("{0}{1}", status_text, quality_display), text_color=status_color, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, status_text_full, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
             weekly_rsi_display = str.format("W.RSI:{0,number,#}", weekly_rsi)
@@ -1292,6 +1336,7 @@ if show_dashboard
                         row += 1
                         table.cell(dashboard, 0, row, str.format("[D]📉({0}){1}", grade_d_sell_stats.count, grade_d_sell_stats.get_reliability()), text_color=#9E9E9E, text_size=txt_size_body)
                         table.cell(dashboard, 1, row, d_sell_display, text_color=color_bear, text_size=txt_size_body)
+                        row += 1
 
                     else if stats_mode == "Ranking"
                         var ranking_wr = array.new_float(32, 0.0)
@@ -1591,21 +1636,29 @@ if enable_smart_alert
     alert_has_buy = alert_buy_mtf or alert_buy_div or alert_buy_ext or filtered_buy_normal
     alert_has_sell = alert_sell_mtf or alert_sell_div or alert_sell_ext or filtered_sell_normal
 
+    // Alert-specific icon 选择（基于 alert_* 布尔值，与 Dashboard 独立）
+    string alert_buy_icon = switch
+        alert_buy_mtf => "🌟MTF共振"
+        alert_buy_div => "💎背离"
+        alert_buy_ext => "🔥极端"
+        filtered_buy_normal => "⬆️超卖"
+        => ""
+    string alert_sell_icon = switch
+        alert_sell_mtf => "🌟MTF共振"
+        alert_sell_div => "💎背离"
+        alert_sell_ext => "❄️极端"
+        filtered_sell_normal => "⬇️超买"
+        => ""
+
+    // 过滤状态标记（仅在启用统计过滤时显示）
+    string alert_filter_status = (enable_stats_filter and enable_stats) ? (current_signal_passes_filter ? "✓" : "⚠️") : ""
+
     has_buy_signal_prev = alert_buy_mtf[1] or alert_buy_div[1] or alert_buy_ext[1] or (show_normal_signals[1] and alert_buy_norm[1])
     current_buy_level = f_signal_level(alert_buy_mtf, alert_buy_div, alert_buy_ext, filtered_buy_normal)
     should_alert_buy = alert_has_buy and not has_buy_signal_prev and current_buy_level > buy_alert_level_sent
 
     if should_alert_buy
-        msg = str.format("{0}: 🟢 BUY SIGNALS → ", syminfo.ticker)
-
-        if alert_buy_mtf
-            msg := msg + "🌟MTF共振 "
-        if alert_buy_div
-            msg := msg + "💎背离 "
-        if alert_buy_ext
-            msg := msg + "🔥极端 "
-        if filtered_buy_normal
-            msg := msg + "⬆️超卖 "
+        msg = str.format("{0}: 🟢 BUY → {1} ", syminfo.ticker, alert_buy_icon)
 
         if confirmation_buy
             msg := msg + "✓确认 "
@@ -1614,10 +1667,8 @@ if enable_smart_alert
         if realtime_bullish_div
             msg := msg + "⚡实时背离 "
 
-        // 添加过滤状态标记
-        filter_status = current_signal_passes_filter ? "✓" : "⚠️"
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]{4}", rsi, rsi_zscore, zscore_pct, buy_quality_grade, filter_status)
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]{4}", rsi, rsi_zscore, zscore_pct, buy_quality_grade, alert_filter_status)
 
         // 可选：添加风险提示
         if include_risk_in_alerts
@@ -1631,16 +1682,7 @@ if enable_smart_alert
     should_alert_sell = alert_has_sell and not has_sell_signal_prev and current_sell_level > sell_alert_level_sent
 
     if should_alert_sell
-        msg = str.format("{0}: 🔴 SELL SIGNALS → ", syminfo.ticker)
-
-        if alert_sell_mtf
-            msg := msg + "🌟MTF共振 "
-        if alert_sell_div
-            msg := msg + "💎背离 "
-        if alert_sell_ext
-            msg := msg + "❄️极端 "
-        if filtered_sell_normal
-            msg := msg + "⬇️超买 "
+        msg = str.format("{0}: 🔴 SELL → {1} ", syminfo.ticker, alert_sell_icon)
 
         if confirmation_sell
             msg := msg + "✓确认 "
@@ -1649,10 +1691,8 @@ if enable_smart_alert
         if realtime_bearish_div
             msg := msg + "⚡实时背离 "
 
-        // 添加过滤状态标记
-        filter_status = current_signal_passes_filter ? "✓" : "⚠️"
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
-        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]{4}", rsi, rsi_zscore, zscore_pct, sell_quality_grade, filter_status)
+        msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [{3}]{4}", rsi, rsi_zscore, zscore_pct, sell_quality_grade, alert_filter_status)
 
         // 可选：添加风险提示
         if include_risk_in_alerts
