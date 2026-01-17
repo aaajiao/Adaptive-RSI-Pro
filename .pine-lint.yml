@@ -1,0 +1,34 @@
+# Pine Script Linter Configuration
+# https://github.com/user/RSI_stock
+
+rules:
+  # Security Rules (Critical - block PR merge)
+  SEC001: error    # request.security() must have lookahead=barmerge.lookahead_off
+  SEC002: warning  # request.security() inside conditional may cause repainting
+  
+  # Syntax Rules (Important - prevent compilation errors)
+  SYN001: warning  # Multi-line ternary expression (v6 syntax pitfall)
+  SYN002: info     # switch statement missing default case
+  SYN003: warning  # table.clear() requires parameters in v6
+  
+  # Naming Convention Rules (Style)
+  NAM001: info     # Constants should use SCREAMING_SNAKE_CASE
+  NAM002: info     # Functions should use f_ prefix
+  NAM003: info     # Types should use PascalCase
+  
+  # Code Quality Rules
+  QUA001: info     # Input tooltip should have bilingual text (EN/CN)
+  QUA002: warning  # request.security() result should be checked for na
+
+# Files to ignore (glob patterns)
+ignore:
+  - "*.test.pine"
+  - "examples/*.pine"
+  - "tests/*.pine"
+
+# Project settings
+project:
+  version: 6
+  require_bilingual: true
+  function_prefix: "f_"
+  constant_case: "SCREAMING_SNAKE"
