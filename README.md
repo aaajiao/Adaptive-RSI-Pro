@@ -4,7 +4,7 @@
 [![Pine Script](https://img.shields.io/badge/Pine%20Script-v6-brightgreen)](https://www.tradingview.com/pine-script-reference/v6/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Pine Script v6** | **v7.1**
+**Pine Script v6** | **v7.2**
 
 动态超买超卖阈值 + 多周期分析 + 背离检测 + 信号统计
 
@@ -186,7 +186,14 @@ AAPL: 🟢 BUY → 🔥极端 | RSI:25.3 Z:-2.1σ (≈P2) [A]✓ | SL:-1.5% TP:+
 
 ## 版本历史 / Changelog
 
-### v7.1 (Current) - Percentile Confirm / 百分位确认
+### v7.2 (Current) - Cooldown Upgrade Awareness / 冷却升级感知
+- **New / 新功能**: Tiered cooldown with upgrade exemption / 分级冷却与升级豁免
+  - High-priority signals (Extreme/Div/MTF) use 1-bar cooldown / 高优先级信号使用 1 bar 冷却
+  - Signal upgrade bypasses cooldown (e.g., Normal → Extreme) / 信号升级可跳过冷却
+- **Improvement / 改进**: Faster response to rapid market deterioration / 急跌行情中更快响应
+- **Note / 说明**: 升级豁免仅在信号级别提升时生效，同级别信号仍受冷却约束
+
+### v7.1 - Percentile Confirm / 百分位确认
 - **New / 新功能**: 可选的百分位双重确认模式 (Trend Protection 组)
 - **Improvement / 改进**: 极端信号需同时满足 Z-Score(-2σ) 和 Percentile(P5/P95)
 - **Benefit / 优势**: 减少波动率变化时的假信号，提升胜率
