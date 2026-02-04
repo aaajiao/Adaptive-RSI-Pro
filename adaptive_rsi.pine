@@ -620,6 +620,8 @@ var int last_ext_buy_bar = na
 var int last_ext_sell_bar = na
 var int last_norm_buy_bar = na
 var int last_norm_sell_bar = na
+var int last_buy_level = 0
+var int last_sell_level = 0
 
 // ────────────────────────────────────────
 // CONSOLIDATED SIGNALS
@@ -642,33 +644,52 @@ bool raw_sig_sell_div = enable_divergence and bearish_divergence and was_extreme
 bool raw_sig_sell_extreme = extreme_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div
 bool raw_sig_sell_normal = normal_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div and not raw_sig_sell_extreme
 
-bool sig_buy_mtf = enable_signal_cooldown ? (raw_sig_buy_mtf and (na(last_mtf_buy_bar) or bar_index - last_mtf_buy_bar >= cooldown_bars)) : raw_sig_buy_mtf
-bool sig_buy_div = enable_signal_cooldown ? (raw_sig_buy_div and (na(last_div_buy_bar) or bar_index - last_div_buy_bar >= cooldown_bars)) : raw_sig_buy_div
-bool sig_buy_extreme = enable_signal_cooldown ? (raw_sig_buy_extreme and (na(last_ext_buy_bar) or bar_index - last_ext_buy_bar >= cooldown_bars)) : raw_sig_buy_extreme
-bool sig_buy_normal = enable_signal_cooldown ? (raw_sig_buy_normal and (na(last_norm_buy_bar) or bar_index - last_norm_buy_bar >= cooldown_bars)) : raw_sig_buy_normal
+int pending_buy_level = raw_sig_buy_mtf ? 4 : raw_sig_buy_div ? 3 : raw_sig_buy_extreme ? 2 : raw_sig_buy_normal ? 1 : 0
+bool buy_upgrade_exempt = pending_buy_level > last_buy_level
 
-bool sig_sell_mtf = enable_signal_cooldown ? (raw_sig_sell_mtf and (na(last_mtf_sell_bar) or bar_index - last_mtf_sell_bar >= cooldown_bars)) : raw_sig_sell_mtf
-bool sig_sell_div = enable_signal_cooldown ? (raw_sig_sell_div and (na(last_div_sell_bar) or bar_index - last_div_sell_bar >= cooldown_bars)) : raw_sig_sell_div
-bool sig_sell_extreme = enable_signal_cooldown ? (raw_sig_sell_extreme and (na(last_ext_sell_bar) or bar_index - last_ext_sell_bar >= cooldown_bars)) : raw_sig_sell_extreme
-bool sig_sell_normal = enable_signal_cooldown ? (raw_sig_sell_normal and (na(last_norm_sell_bar) or bar_index - last_norm_sell_bar >= cooldown_bars)) : raw_sig_sell_normal
+int pending_sell_level = raw_sig_sell_mtf ? 4 : raw_sig_sell_div ? 3 : raw_sig_sell_extreme ? 2 : raw_sig_sell_normal ? 1 : 0
+bool sell_upgrade_exempt = pending_sell_level > last_sell_level
+
+int cooldown_mtf = 1
+int cooldown_div = 1
+int cooldown_ext = 1
+int cooldown_norm = cooldown_bars
+
+bool sig_buy_mtf = enable_signal_cooldown ? (raw_sig_buy_mtf and (buy_upgrade_exempt or na(last_mtf_buy_bar) or bar_index - last_mtf_buy_bar >= cooldown_mtf)) : raw_sig_buy_mtf
+bool sig_buy_div = enable_signal_cooldown ? (raw_sig_buy_div and (buy_upgrade_exempt or na(last_div_buy_bar) or bar_index - last_div_buy_bar >= cooldown_div)) : raw_sig_buy_div
+bool sig_buy_extreme = enable_signal_cooldown ? (raw_sig_buy_extreme and (buy_upgrade_exempt or na(last_ext_buy_bar) or bar_index - last_ext_buy_bar >= cooldown_ext)) : raw_sig_buy_extreme
+bool sig_buy_normal = enable_signal_cooldown ? (raw_sig_buy_normal and (buy_upgrade_exempt or na(last_norm_buy_bar) or bar_index - last_norm_buy_bar >= cooldown_norm)) : raw_sig_buy_normal
+
+bool sig_sell_mtf = enable_signal_cooldown ? (raw_sig_sell_mtf and (sell_upgrade_exempt or na(last_mtf_sell_bar) or bar_index - last_mtf_sell_bar >= cooldown_mtf)) : raw_sig_sell_mtf
+bool sig_sell_div = enable_signal_cooldown ? (raw_sig_sell_div and (sell_upgrade_exempt or na(last_div_sell_bar) or bar_index - last_div_sell_bar >= cooldown_div)) : raw_sig_sell_div
+bool sig_sell_extreme = enable_signal_cooldown ? (raw_sig_sell_extreme and (sell_upgrade_exempt or na(last_ext_sell_bar) or bar_index - last_ext_sell_bar >= cooldown_ext)) : raw_sig_sell_extreme
+bool sig_sell_normal = enable_signal_cooldown ? (raw_sig_sell_normal and (sell_upgrade_exempt or na(last_norm_sell_bar) or bar_index - last_norm_sell_bar >= cooldown_norm)) : raw_sig_sell_normal
 
 if sig_buy_mtf
     last_mtf_buy_bar := bar_index
+    last_buy_level := 4
 if sig_buy_div
     last_div_buy_bar := bar_index
+    last_buy_level := 3
 if sig_buy_extreme
     last_ext_buy_bar := bar_index
+    last_buy_level := 2
 if sig_buy_normal
     last_norm_buy_bar := bar_index
+    last_buy_level := 1
 
 if sig_sell_mtf
     last_mtf_sell_bar := bar_index
+    last_sell_level := 4
 if sig_sell_div
     last_div_sell_bar := bar_index
+    last_sell_level := 3
 if sig_sell_extreme
     last_ext_sell_bar := bar_index
+    last_sell_level := 2
 if sig_sell_normal
     last_norm_sell_bar := bar_index
+    last_sell_level := 1
 
 bool sig_div_bull_only = enable_divergence and bullish_divergence and not was_extreme_oversold
 bool sig_div_bear_only = enable_divergence and bearish_divergence and not was_extreme_overbought
