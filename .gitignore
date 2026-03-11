@@ -12,6 +12,7 @@ Thumbs.db
 .vscode/
 .claude/
 .opencode/
+.sisyphus/
 *.swp
 *.swo
 *~
@@ -20,6 +21,7 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+Icon?
 
 # Python
 __pycache__/
