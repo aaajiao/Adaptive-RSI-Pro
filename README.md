@@ -216,53 +216,14 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 
 ---
 
-## Changelog
+## Current Version
 
-### v7.2 (Current) - Cooldown Upgrade Awareness
-- **New**: Tiered cooldown with upgrade exemption
-- **New**: High-priority signals (Extreme / Div / MTF) use a 1-bar cooldown
-- **New**: Signal upgrades bypass cooldown, for example `Normal -> Extreme`
-- **Improvement**: Faster response during rapid market deterioration
-- **Note**: Upgrade exemption applies only when the signal level improves; same-level signals still respect cooldown
-
-### v7.1 - Percentile Confirm
-- **New**: Optional percentile double-confirmation mode in the Trend Protection group
-- **Improvement**: Extreme signals can require both Z-Score (-2σ) and Percentile (P5 / P95)
-- **Benefit**: Reduces false positives during volatility regime changes and improves win rate
-- **Note**: Disabled by default; most useful in markets with shifting volatility
-
-### v7.0 - Dashboard Refactor
-- Removed Lite mode and kept only Mobile and Full
-- Split responsibilities between Signal and Status rows
-- Unified dynamic threshold usage in Status instead of fixed ±1.5σ
-- Fixed stale table rows when switching modes
-- Refactored alert icon selection with `switch`
-- Removed redundant variables and simplified shared display logic
-
-### v6.9
-- Added ADX trend penalty for counter-trend trades when ADX > 25
-- Added RSI pivot confirmation bonus for reversal quality scoring
-
-### v6.8
-- Added stats-driven filtering
-- Refactored divergence detection with a single-anchor + offset model
-- Added weighted MTF resonance
-- Added optional ATR risk hints
-- Fixed volume toggle and weekly/monthly calculations
-
-### v6.7
-- Added smart lookback based on volatility
-- Added distribution-width feedback
-- Added dual-layer background display
-
-### v6.6
-- Added smart normal-signal mode (`Off` / `On` / `Smart`)
-- Added automatic thresholds based on volatility
-
-### v6.5
-- Refactored the scoring model (Base + Bonuses - Penalties)
-- Added adaptive cooldown logic with dual volatility detection
-- Added ranking stats mode
+### v7.2
+- Tiered cooldown with upgrade exemption
+- High-priority signals (`🌟` / `💎` / `🔥` / `❄️`) use a 1-bar cooldown
+- Same-side upgrades can bypass cooldown, such as `Normal -> Extreme -> MTF`
+- Faster response when signal quality deteriorates quickly
+- Includes percentile confirm, stats filtering, ranking, and ATR risk hints
 
 ---
 
