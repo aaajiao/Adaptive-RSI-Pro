@@ -1,4 +1,4 @@
-// Adaptive RSI Pro v7.3 - Restored v7.2 baseline + minimal correctness fixes
+// Adaptive RSI Pro v7.3 Strategy Report - v7.2 baseline behavior + minimal correctness fixes
 // MIT License - https://github.com/user/adaptive-rsi-pro
 //
 // 信号图例 / Signal Legend:
@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────
 
 //@version=6
-indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100, max_bars_back=4500)
+strategy("Adaptive RSI Pro Strategy Report", shorttitle="ARSI Pro STRAT", overlay=false, precision=2, max_lines_count=100, max_labels_count=100, max_bars_back=4500, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.05, slippage=2)
 
 MAX_REQUEST_BARS = 1400
 WEEKLY_REQUEST_BARS = 120
@@ -74,6 +74,10 @@ stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, max
 stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值")
 stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
 
+grp_harness = "═══ Strategy Report / 策略回测 ═══"
+harness_trade_side = input.string("Long Only", "Trade Side / 交易方向", options=["Long Only", "Short Only", "Both"], group=grp_harness, tooltip="Long Only: 仅做多，卖出信号只平多\nShort Only: 仅做空，买入信号只平空\nBoth: 双向切换，买卖信号会反手")
+harness_backtest_mode = input.string("Production", "Backtest Mode / 回测模式", options=["Baseline", "Production"], group=grp_harness, tooltip="Baseline: 使用 7.2 原始信号，不加统计过滤\nProduction: 使用正式指标最终会进入警报的信号")
+
 grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
 enable_divergence = input.bool(true, "Enable Divergence Detection / 启用背离检测", group=grp_divergence)
 div_mode = input.string("Auto", "Divergence Mode / 背离模式", options=["Auto", "Low Vol", "Normal", "High Vol", "Crypto", "Custom"], group=grp_divergence, tooltip="Auto: 根据ATR自动判断\nLow Vol: 蓝筹/ETF\nNormal: 一般股票\nHigh Vol: 成长/小盘\nCrypto: 加密货币")
@@ -84,6 +88,12 @@ div_range_custom = input.int(60, "Custom Range / 自定义范围", minval=20, ma
 atr_20 = ta.atr(20)
 avg_volatility = ta.sma(atr_20 / close * 100, 252)
 auto_vol_type = avg_volatility > 6 ? "Crypto" : avg_volatility > 3 ? "High Vol" : avg_volatility > 1 ? "Normal" : "Low Vol"
+
+strategy_allowed_direction = harness_trade_side == "Long Only" ? strategy.direction.long :
+                             harness_trade_side == "Short Only" ? strategy.direction.short :
+                             strategy.direction.all
+strategy.risk.allow_entry_in(strategy_allowed_direction)
+bool harness_use_production = harness_backtest_mode == "Production"
 
 // ADX 趋势强度检测 (v6.9)
 [adx_di_plus, adx_di_minus, adx_value] = ta.dmi(14, 14)
@@ -1180,6 +1190,48 @@ status_display_color = rsi_zscore < -normal_threshold ? color_bull : rsi_zscore 
 f_status_text(_status) =>
     _status == 1 ? "🟢" : _status == -1 ? "🔴" : "⚪"
 
+f_harness_gate_snapshot() =>
+    string _source = "Idle"
+    int _count = 0
+    float _avg = 0.0
+    float _adj = 0.0
+    bool _use_buy = harness_trade_side == "Long Only" ? true : harness_trade_side == "Short Only" ? false : signal_direction != -1
+    SignalStats _stats = SignalStats.new()
+
+    if _use_buy
+        if sig_buy_mtf
+            _stats := buy_mtf_stats
+            _source := str.format("MTF[{0}]", buy_quality_grade)
+        else if sig_buy_div
+            _stats := buy_div_stats
+            _source := str.format("DIV[{0}]", buy_quality_grade)
+        else if sig_buy_extreme
+            _stats := buy_ext_stats
+            _source := str.format("EXT[{0}]", buy_quality_grade)
+        else if sig_buy_normal
+            _stats := buy_norm_stats
+            _source := str.format("NORM[{0}]", buy_quality_grade)
+    else
+        if sig_sell_mtf
+            _stats := sell_mtf_stats
+            _source := str.format("MTF[{0}]", sell_quality_grade)
+        else if sig_sell_div
+            _stats := sell_div_stats
+            _source := str.format("DIV[{0}]", sell_quality_grade)
+        else if sig_sell_extreme
+            _stats := sell_ext_stats
+            _source := str.format("EXT[{0}]", sell_quality_grade)
+        else if sig_sell_normal
+            _stats := sell_norm_stats
+            _source := str.format("NORM[{0}]", sell_quality_grade)
+
+    if _source != "Idle"
+        _count := _stats.count
+        _avg := _stats.get_avg()
+        _adj := nz(_stats.get_adjusted_winrate(), 0.0)
+
+    [_source, _count, _avg, _adj]
+
 if show_dashboard
     rsi_percentile = 0.0
     if rsi <= rsi_p5
@@ -1211,15 +1263,15 @@ if show_dashboard
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     mobile_rows = 3
-    full_rows = 8 + (enable_mtf ? 2 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0)
+    full_rows = 11 + (enable_mtf ? 2 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0)
     total_rows = dashboard_mode == "Mobile" ? mobile_rows : full_rows
 
-    var table dashboard = table.new(position.top_right, 2, 20,
+    var table dashboard = table.new(position.top_right, 2, 24,
                                      bgcolor=color.new(#1a1a2e, dashboard_transparency),
                                      border_width=1, border_color=color.new(#4a4a6a, 50))
     
-    if barstate.islast
-        table.clear(dashboard, 0, 0, 1, 19)
+    if barstate.islastconfirmedhistory or barstate.isrealtime
+        table.clear(dashboard, 0, 0, 1, 23)
         row = 0
 
         if dashboard_mode == "Mobile"
@@ -1263,6 +1315,24 @@ if show_dashboard
             // Status 行（纯状态，无评级）
             table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, status_text_full, text_color=status_display_color, text_size=txt_size_body)
+            row += 1
+
+            harness_side_display = harness_trade_side == "Long Only" ? "Long" : harness_trade_side == "Short Only" ? "Short" : "Both"
+            harness_mode_display = harness_use_production ? "Production" : "Baseline"
+            harness_tester_display = harness_trade_side == "Long Only" ? "Read All = Long" : harness_trade_side == "Short Only" ? "Read All = Short" : "Read All = Both"
+            [harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj] = f_harness_gate_snapshot()
+            harness_gate_display = harness_gate_source == "Idle" ? "Idle" : str.format("{0}({1}) {2,number,+#.1;-#.1}%|{3,number,#}%", harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj)
+
+            table.cell(dashboard, 0, row, "Harness", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, str.format("{0} | {1}", harness_side_display, harness_mode_display), text_color=color.white, text_size=txt_size_body)
+            row += 1
+
+            table.cell(dashboard, 0, row, "Tester", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, harness_tester_display, text_color=color.white, text_size=txt_size_body)
+            row += 1
+
+            table.cell(dashboard, 0, row, "Production Gate", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, harness_gate_display, text_color=color.white, text_size=txt_size_body)
             row += 1
 
             weekly_rsi_display = na(weekly_rsi) ? "W.RSI:--" : str.format("W.RSI:{0,number,#}", weekly_rsi)
@@ -1747,3 +1817,32 @@ if enable_smart_alert
 
         alert(msg, alert.freq_once_per_bar)
         sell_alert_level_sent := current_sell_level
+
+// ────────────────────────────────────────
+// STRATEGY REPORT EXECUTION
+// ────────────────────────────────────────
+
+raw_strategy_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme or (show_normal_signals and sig_buy_normal)
+raw_strategy_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme or (show_normal_signals and sig_sell_normal)
+
+production_strategy_buy_signal = alert_buy_mtf or alert_buy_div or alert_buy_ext or (show_normal_signals and alert_buy_norm)
+production_strategy_sell_signal = alert_sell_mtf or alert_sell_div or alert_sell_ext or (show_normal_signals and alert_sell_norm)
+
+strategy_buy_signal = harness_use_production ? production_strategy_buy_signal : raw_strategy_buy_signal
+strategy_sell_signal = harness_use_production ? production_strategy_sell_signal : raw_strategy_sell_signal
+strategy_signal_dir = strategy_buy_signal and not strategy_sell_signal ? 1 : strategy_sell_signal and not strategy_buy_signal ? -1 : 0
+
+allow_long_entries = harness_trade_side == "Long Only" or harness_trade_side == "Both"
+allow_short_entries = harness_trade_side == "Short Only" or harness_trade_side == "Both"
+
+if strategy_signal_dir == 1
+    if strategy.position_size < 0
+        strategy.close("Short")
+    if allow_long_entries and strategy.position_size <= 0
+        strategy.entry("Long", strategy.long)
+
+if strategy_signal_dir == -1
+    if strategy.position_size > 0
+        strategy.close("Long")
+    if allow_short_entries and strategy.position_size >= 0
+        strategy.entry("Short", strategy.short)

@@ -27,3 +27,6 @@ Icon?
 __pycache__/
 *.pyc
 *.pyo
+
+# Local exports / reports
+xlxs/
