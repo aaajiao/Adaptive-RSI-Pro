@@ -1,4 +1,6 @@
-# Adaptive RSI Pro / 自适应RSI专业版
+# Adaptive RSI Pro
+
+[中文说明 / Chinese README](docs/README_CN.md)
 
 [![TradingView](https://img.shields.io/badge/TradingView-Indicator-blue?logo=tradingview)](https://www.tradingview.com/scripts/)
 [![Pine Script](https://img.shields.io/badge/Pine%20Script-v6-brightgreen)](https://www.tradingview.com/pine-script-reference/v6/)
@@ -6,145 +8,139 @@
 
 **Pine Script v6** | **v7.2**
 
-动态阈值 + 多周期分析 + 背离检测 + 统计过滤 + 智能警报
-
-Dynamic thresholds + Multi-timeframe analysis + Divergence detection + stats filtering + smart alerts
+Dynamic thresholds + multi-timeframe analysis + divergence detection + stats filtering + smart alerts
 
 ---
 
-## 核心理念 / Core Concept
+## Core Concept
 
-传统RSI使用固定的30/70阈值，但不同资产波动特性不同。本指标使用**Z-Score统计方法**动态计算阈值，自适应每个资产的历史分布。
+Traditional RSI uses fixed 30/70 thresholds, but different assets have different volatility regimes. This indicator uses **Z-Score statistics** to calculate adaptive thresholds based on each asset's historical distribution.
 
-Traditional RSI uses fixed 30/70 thresholds, but different assets have different volatility. This indicator uses **Z-Score statistics** to dynamically calculate thresholds, adapting to each asset's historical distribution.
-
-| Z-Score | 百分位 Percentile | 含义 Meaning |
-|---------|------------------|--------------|
-| ±2σ | P2 / P98 | 极端区域 Extreme Zone |
-| ±Nσ | 动态 / Dynamic | 普通超买超卖参考 Dynamic normal threshold |
+| Z-Score | Percentile | Meaning |
+|---------|------------|---------|
+| ±2σ | P2 / P98 | Extreme zone |
+| ±Nσ | Dynamic | Dynamic normal overbought/oversold reference |
 
 ---
 
-## 信号图例 / Signal Legend
+## Signal Legend
 
-### 买入信号 Buy Signals (底部显示)
+### Buy Signals (shown near the bottom)
 
-| 图标 | 名称 | 条件 | 优先级 |
-|------|------|------|--------|
-| 🌟 | MTF共振 | 多周期同时超卖 + Z<−2σ | ★★★★★ |
-| 💎 | 背离+极端 | 看涨背离 + 极端超卖区 | ★★★★☆ |
-| 🔥 | 极端超卖 | Z-Score 跌破 −2σ (≈P2) | ★★★☆☆ |
-| ⬆️ | 普通超卖 | Z-Score 跌破 −Nσ (`normal_threshold`) | ★★☆☆☆ |
-| ↗️ | 看涨背离 | 价格新低 + RSI未新低 | ★☆☆☆☆ |
+| Icon | Name | Condition | Priority |
+|------|------|-----------|----------|
+| 🌟 | MTF Resonance | Multi-timeframe oversold alignment + Z < -2σ | ★★★★★ |
+| 💎 | Divergence + Extreme | Bullish divergence inside the extreme oversold zone | ★★★★☆ |
+| 🔥 | Extreme Oversold | Z-Score breaks below -2σ (about P2) | ★★★☆☆ |
+| ⬆️ | Normal Oversold | Z-Score breaks below -Nσ (`normal_threshold`) | ★★☆☆☆ |
+| ↗️ | Bullish Divergence | Price makes a new low while RSI does not | ★☆☆☆☆ |
 
-### 卖出信号 Sell Signals (顶部显示)
+### Sell Signals (shown near the top)
 
-| 图标 | 名称 | 条件 | 优先级 |
-|------|------|------|--------|
-| 🌟 | MTF共振 | 多周期同时超买 + Z>+2σ | ★★★★★ |
-| 💎 | 背离+极端 | 看跌背离 + 极端超买区 | ★★★★☆ |
-| ❄️ | 极端超买 | Z-Score 突破 +2σ (≈P98) | ★★★☆☆ |
-| ⬇️ | 普通超买 | Z-Score 突破 +Nσ (`normal_threshold`) | ★★☆☆☆ |
-| ↘️ | 看跌背离 | 价格新高 + RSI未新高 | ★☆☆☆☆ |
+| Icon | Name | Condition | Priority |
+|------|------|-----------|----------|
+| 🌟 | MTF Resonance | Multi-timeframe overbought alignment + Z > +2σ | ★★★★★ |
+| 💎 | Divergence + Extreme | Bearish divergence inside the extreme overbought zone | ★★★★☆ |
+| ❄️ | Extreme Overbought | Z-Score breaks above +2σ (about P98) | ★★★☆☆ |
+| ⬇️ | Normal Overbought | Z-Score breaks above +Nσ (`normal_threshold`) | ★★☆☆☆ |
+| ↘️ | Bearish Divergence | Price makes a new high while RSI does not | ★☆☆☆☆ |
 
-> **优先级系统**: 同时满足多个条件时，只显示最高优先级信号，避免叠加。
-> 
-> **Priority System**: When multiple conditions are met, only the highest priority signal is shown.
+> **Priority system**: When multiple conditions are true on the same bar, only the highest-priority signal is shown.
 
-### 状态指示 Status Indicators
+### Status Indicators
 
-| 图标 | 状态 | Z-Score范围 |
-|------|------|-------------|
-| 🟢 | 极端超卖 | Z < −2σ |
-| 🟡 | 超卖 | −2σ ≤ Z < −Nσ* |
-| ⚪ | 中性 | −Nσ ≤ Z ≤ +Nσ |
-| 🟠 | 超买 | +Nσ < Z ≤ +2σ |
-| 🔴 | 极端超买 | Z > +2σ |
+| Icon | Status | Z-Score Range |
+|------|--------|---------------|
+| 🟢 | Extreme oversold | Z < -2σ |
+| 🟡 | Oversold | -2σ ≤ Z < -Nσ* |
+| ⚪ | Neutral | -Nσ ≤ Z ≤ +Nσ |
+| 🟠 | Overbought | +Nσ < Z ≤ +2σ |
+| 🔴 | Extreme overbought | Z > +2σ |
 
-> *N = 动态普通阈值 (`normal_threshold`)，由脚本按波动率自动计算；高波动市场可接近 1.0σ，低波动市场可提升到 1.8σ 左右
+> *N = the dynamic normal threshold (`normal_threshold`). The script calculates it from volatility, so it can be near 1.0σ in high-volatility markets and around 1.8σ in lower-volatility markets.
 
-### 质量等级 Quality Grades
+### Quality Grades
 
-每个信号附带质量评级，基于多因素评分：
+Each signal carries a quality grade based on multi-factor scoring:
 
-| 等级 | 分数 | 建议 |
-|------|------|------|
-| [A] | ≥80 | 高质量，可交易 |
-| [B] | 60-79 | 良好，可交易 |
-| [C] | 40-59 | 一般，谨慎交易 |
-| [D] | <40 | 低质量，建议观望 |
+| Grade | Score | Interpretation |
+|-------|-------|----------------|
+| [A] | ≥80 | High quality, tradable |
+| [B] | 60-79 | Good, tradable |
+| [C] | 40-59 | Mixed, trade cautiously |
+| [D] | <40 | Low quality, usually skip |
 
-**评分因素**: MTF共振(+25) | 背离(+25) | RSI拐点确认(+10) | 周线趋势一致(+15) | 成交量放大(+10) | 极端深度(+10/+20) | ADX逆势惩罚(-10)
+**Scoring factors**: MTF resonance (+25) | divergence (+25) | RSI pivot confirmation (+10) | weekly trend alignment (+15) | volume surge (+10) | deeper extremes (+10/+20) | ADX counter-trend penalty (-10)
 
-### 标记说明 / Display Marks
+### Display Marks
 
-| 标记 | 含义 | 说明 |
-|------|------|------|
-| ✓ | 通过统计过滤 | Dashboard 信号行和警报消息可显示 |
-| ⚠️ | 未通过统计过滤但仍显示 | 常见于 `Alert Only` 或 `Soft` 模式下的图表/面板显示 |
-| 🚫 | 信号存在但被隐藏 | 可能由 Smart 普通信号隐藏、趋势保护或 `Hard` 过滤触发 |
-| 无 | 非触发状态或未启用统计过滤 | 例如持续区域状态 `🔥持续` / `超卖区` |
+| Mark | Meaning | Notes |
+|------|---------|-------|
+| ✓ | Passed the stats filter | Can appear in dashboard signal rows and alert messages |
+| ⚠️ | Failed the stats filter but still shown | Common in `Alert Only` or `Soft` mode |
+| 🚫 | Signal exists but is hidden | Can be caused by Smart normal-signal hiding, trend protection, or `Hard` filtering |
+| None | Not triggered or stats filter disabled | For example persistent state text such as `🔥持续` or `超卖区` |
 
-> **注意 / Note**: 当前脚本的警报只会对通过统计过滤的信号触发，因此警报消息通常显示 `✓` 或无标记，不会发送 `⚠️`。
+> **Note**: Alerts fire only for signals that pass the stats filter. In practice, alert text usually shows `✓` or no mark at all, and does not send `⚠️`.
 
 ---
 
-## 主要功能 / Key Features
+## Key Features
 
-### 1. 自适应阈值 Adaptive Thresholds
-- 自动计算回看期，基于统计公式 `n = (Z × σ / E)²`
-- 根据资产波动率自动调整 `lookback_min` / `lookback_max`
-- 三级精度可选: High / Normal / Low
-- 内置健康度检查: 样本覆盖、分布宽度、统计有效性
+### 1. Adaptive Thresholds
+- Automatically calculates the lookback window from the statistical formula `n = (Z × σ / E)²`
+- Adjusts `lookback_min` and `lookback_max` from asset volatility
+- Three precision presets: High / Normal / Low
+- Includes health checks for sample coverage, distribution width, and statistical validity
 
-### 2. 阈值线与视觉模式 Visual Line Modes
-- `Unified` / `Z-Score` / `Percentile` / `Both` 四种阈值线模式
-- 可选渐变填充与自定义多空配色
-- Dashboard 支持 `Mobile` / `Full` 两种模式与四档尺寸
+### 2. Threshold Lines and Visual Modes
+- Four line modes: `Unified`, `Z-Score`, `Percentile`, and `Both`
+- Optional gradient fills and custom bull/bear colors
+- Dashboard supports both `Mobile` and `Full` layouts with four size presets
 
-### 3. 多周期分析 Multi-Timeframe (MTF)
-- 自动选择分形周期或手动设置3个周期
-- 加权共振检测 (最高周期权重×2)
-- 共振信号 `🌟` 为最高优先级
+### 3. Multi-Timeframe (MTF) Analysis
+- Automatic fractal timeframe selection or manual selection of three timeframes
+- Weighted resonance detection, with the highest timeframe counting double
+- `🌟` resonance signals are the top-priority signals
 
-### 4. 背离检测 Divergence Detection
-- 自动适应波动率 (Low Vol / Normal / High Vol / Crypto)
-- 单锚点检测，信号绘制在结构转折点
-- 极端区背离 `💎` vs 普通背离 `↗️` / `↘️`
-- 警报可附加 `⚡实时背离`
+### 4. Divergence Detection
+- Volatility-adaptive behavior for Low Vol / Normal / High Vol / Crypto
+- Single-anchor divergence detection, plotted at the structure pivot
+- Extreme-zone divergence `💎` versus regular divergence `↗️` / `↘️`
+- Alerts can append `⚡实时背离` when realtime divergence is present
 
-### 5. 趋势保护 Trend Protection
-- 周线趋势过滤，避免逆势交易
-- 三档保护级别: Aggressive / Moderate / Loose
-- `Percentile Confirm` 可要求极端信号同时满足 Z-Score 与 P5/P95
-- Smart 普通信号模式会在周线极端环境下自动隐藏普通信号
+### 5. Trend Protection
+- Weekly trend filter to reduce counter-trend trades
+- Three protection levels: Aggressive / Moderate / Loose
+- `Percentile Confirm` can require extreme signals to satisfy both Z-Score and P5/P95 conditions
+- Smart normal-signal mode automatically hides normal signals during weekly extreme conditions
 
-### 6. 冷却与信号升级 Cooldown Upgrade Awareness
-- 高优先级信号 (`🌟` / `💎` / `🔥` / `❄️`) 使用 1 bar 冷却
-- 普通信号 `⬆️` / `⬇️` 使用固定或智能冷却期
-- 同方向信号升级可绕过冷却，例如 `⬆️ -> 🔥 -> 🌟`
+### 6. Cooldown Upgrade Awareness
+- High-priority signals (`🌟` / `💎` / `🔥` / `❄️`) use a 1-bar cooldown
+- Normal signals `⬆️` / `⬇️` use fixed or adaptive cooldown bars
+- Same-side signal upgrades can bypass cooldown, such as `⬆️ -> 🔥 -> 🌟`
 
-### 7. 信号统计与过滤 Signal Statistics & Filtering
-- 统计模式: `Signal Type` / `Grade` / `Ranking`
-- 贝叶斯调整小样本偏差，按样本数与调整胜率过滤
-- 三种过滤模式:
-  - `Alert Only`: 图表照常显示，警报过滤未通过信号
-  - `Soft`: 未通过信号降级显示
-  - `Hard`: 未通过信号直接隐藏
+### 7. Signal Statistics and Filtering
+- Stats modes: `Signal Type`, `Grade`, and `Ranking`
+- Uses Bayesian adjustment to reduce small-sample bias before filtering by sample count and adjusted win rate
+- Three filter modes:
+  - `Alert Only`: chart signals stay visible, alerts are filtered
+  - `Soft`: failed signals are downgraded visually
+  - `Hard`: failed signals are hidden
 
-### 8. 智能警报 Smart Alert
-- 一条警报聚合所有信号
-- 包含完整上下文: RSI值、Z-Score、近似百分位、质量等级
-- 警报图标与脚本保持一致: `🌟MTF共振` / `💎背离` / `🔥极端` / `❄️极端` / `⬆️超卖` / `⬇️超买`
-- 条件满足时可附加 `✓确认` / `↩反转` / `⚡实时背离`
-- 可选ATR风险提示 (止损/止盈建议)
+### 8. Smart Alert
+- A single alert aggregates all signal types
+- Includes RSI, Z-Score, approximate percentile, and quality grade
+- Alert icons match the script output: `🌟MTF共振` / `💎背离` / `🔥极端` / `❄️极端` / `⬆️超卖` / `⬇️超买`
+- Can append `✓确认`, `↩反转`, and `⚡实时背离` when conditions apply
+- Optional ATR-based risk hints for stop-loss and take-profit suggestions
 
 ---
 
-## 仪表盘 / Dashboard
+## Dashboard
 
-### Full 模式 (PC)
-```
+### Full Mode (Desktop)
+```text
 ┌────────────────────────────────────────┐
 │ ADAPTIVE RSI                    35.2   │
 ├────────────────────────────────────────┤
@@ -166,148 +162,144 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets have different
 └────────────────────────────────────────┘
 ```
 
-### Mobile 模式 (手机)
-```
+### Mobile Mode
+```text
 ┌─────────────────┐
 │  RSI      35.2  │
-│  Signal   🔥[A]✓│  信号+评级+标记
-│  Status   🟢极卖 │  纯状态
+│  Signal   🔥[A]✓│  Signal + grade + mark
+│  Status   🟢EXT │  Pure status
 └─────────────────┘
 ```
 
 ---
 
-## 快速开始 / Quick Start
+## Quick Start
 
-### 1. 添加指标
-1. TradingView → Pine Editor
-2. 粘贴 `adaptive_rsi.pine` 代码
-3. 点击 `Add to chart`
+### 1. Add the Indicator
+1. Open TradingView and go to Pine Editor.
+2. Paste the contents of `adaptive_rsi.pine`.
+3. Click `Add to chart`.
 
-### 2. 设置警报
-1. 右键指标 → "Add Alert"
-2. 条件选择 **"Any alert() function call"**
-3. 如需风险提示，开启 `Include Risk Hints in Alerts`
+### 2. Configure Alerts
+1. Right-click the indicator and choose `Add Alert`.
+2. Set the condition to **Any alert() function call**.
+3. If you want ATR hints in alerts, enable `Include Risk Hints in Alerts`.
 
-### 3. 推荐设置
+### 3. Suggested Presets
 
-| 场景 | Dashboard | 普通信号 | 保护级别 | 过滤模式 |
-|------|-----------|----------|----------|----------|
-| 日内交易 | Full | Smart | Moderate | Alert Only |
-| 波段交易 | Full | Off | Moderate | Hard |
-| 手机查看 | Mobile | Off | Loose | Alert Only |
+| Scenario | Dashboard | Normal Signals | Protection Level | Filter Mode |
+|----------|-----------|----------------|------------------|-------------|
+| Intraday trading | Full | Smart | Moderate | Alert Only |
+| Swing trading | Full | Off | Moderate | Hard |
+| Mobile monitoring | Mobile | Off | Loose | Alert Only |
 
-### 4. 过滤模式建议 / Filter Mode Tips
-- `Alert Only`: 最适合多数用户，图上保留全部信号，警报只发统计通过的信号
-- `Soft`: 想保留上下文，但弱化低质量信号时使用
-- `Hard`: 只看历史表现达标的信号，图表最干净
+### 4. Filter Mode Tips
+- `Alert Only`: best default for most users; keep all chart context while filtering alerts
+- `Soft`: useful when you want context but lower-quality signals de-emphasized
+- `Hard`: use when you only want historically qualified signals and a cleaner chart
 
 ---
 
-## 警报消息示例 / Alert Examples
+## Alert Examples
 
-```
+```text
 AAPL: 🟢 BUY → 🌟MTF共振 | RSI:25.3 Z:-2.1σ (≈P2) [A]✓
 AAPL: 🔴 SELL → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98) [B]✓
 ```
 
-开启风险提示后:
-```
+With risk hints enabled:
+```text
 AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈P2) [A]✓ | SL:-1.5% TP:+3.0%
 ```
 
-> **说明 / Note**: 警报不会发送未通过统计过滤的 `⚠️` 信号；如果关闭统计过滤，警报末尾的过滤标记会消失。
+> **Note**: Alerts do not send `⚠️` signals that fail the stats filter. If stats filtering is disabled, the filter mark at the end of the alert also disappears.
 
 ---
 
-## 版本历史 / Changelog
+## Changelog
 
-### v7.2 (Current) - Cooldown Upgrade Awareness / 冷却升级感知
-- **New / 新功能**: Tiered cooldown with upgrade exemption / 分级冷却与升级豁免
-  - High-priority signals (Extreme/Div/MTF) use 1-bar cooldown / 高优先级信号使用 1 bar 冷却
-  - Signal upgrade bypasses cooldown (e.g., Normal → Extreme) / 信号升级可跳过冷却
-- **Improvement / 改进**: Faster response to rapid market deterioration / 急跌行情中更快响应
-- **Note / 说明**: 升级豁免仅在信号级别提升时生效，同级别信号仍受冷却约束
+### v7.2 (Current) - Cooldown Upgrade Awareness
+- **New**: Tiered cooldown with upgrade exemption
+- **New**: High-priority signals (Extreme / Div / MTF) use a 1-bar cooldown
+- **New**: Signal upgrades bypass cooldown, for example `Normal -> Extreme`
+- **Improvement**: Faster response during rapid market deterioration
+- **Note**: Upgrade exemption applies only when the signal level improves; same-level signals still respect cooldown
 
-### v7.1 - Percentile Confirm / 百分位确认
-- **New / 新功能**: 可选的百分位双重确认模式 (Trend Protection 组)
-- **Improvement / 改进**: 极端信号需同时满足 Z-Score(-2σ) 和 Percentile(P5/P95)
-- **Benefit / 优势**: 减少波动率变化时的假信号，提升胜率
-- **Note / 说明**: 默认关闭，适用于波动率变化较大的市场
+### v7.1 - Percentile Confirm
+- **New**: Optional percentile double-confirmation mode in the Trend Protection group
+- **Improvement**: Extreme signals can require both Z-Score (-2σ) and Percentile (P5 / P95)
+- **Benefit**: Reduces false positives during volatility regime changes and improves win rate
+- **Note**: Disabled by default; most useful in markets with shifting volatility
 
-### v7.0 - Dashboard 重构 / Dashboard Refactor
-- **移除 Lite 模式** - 仅保留 Mobile 和 Full 两种模式
-- **Signal/Status 职责分离** - Signal 行显示信号+评级+标记，Status 行只显示纯区域状态
-- **统一动态阈值** - Status 状态使用动态 `normal_threshold` 而非固定 ±1.5σ
-- **修复表格残留** - 切换模式时自动清除旧行内容
-- **Alert 重构** - 使用 switch 语句简化图标选择，过滤标记仅在启用时显示
-- **代码优化** - 删除冗余变量，统一信号显示逻辑
+### v7.0 - Dashboard Refactor
+- Removed Lite mode and kept only Mobile and Full
+- Split responsibilities between Signal and Status rows
+- Unified dynamic threshold usage in Status instead of fixed ±1.5σ
+- Fixed stale table rows when switching modes
+- Refactored alert icon selection with `switch`
+- Removed redundant variables and simplified shared display logic
 
 ### v6.9
-- ADX趋势惩罚 (ADX>25时逆势信号-10分，避免强趋势中逆势交易)
-- RSI拐点确认加分 (极端区形成RSI拐点+10分，提升反转信号可信度)
+- Added ADX trend penalty for counter-trend trades when ADX > 25
+- Added RSI pivot confirmation bonus for reversal quality scoring
 
 ### v6.8
-- 统计驱动过滤器 (基于历史胜率过滤信号)
-- 背离检测重构 (单锚点 + offset绘制)
-- MTF加权共振 (高周期权重×2)
-- ATR风险提示 (可选止损止盈)
-- Bug修复: 成交量开关、周月线计算
+- Added stats-driven filtering
+- Refactored divergence detection with a single-anchor + offset model
+- Added weighted MTF resonance
+- Added optional ATR risk hints
+- Fixed volume toggle and weekly/monthly calculations
 
 ### v6.7
-- 智能回看期 (基于波动率动态范围)
-- 分布宽度反馈环
-- 双层背景显示
+- Added smart lookback based on volatility
+- Added distribution-width feedback
+- Added dual-layer background display
 
 ### v6.6
-- 智能普通信号模式 (Off/On/Smart)
-- 自动阈值 (基于波动率)
+- Added smart normal-signal mode (`Off` / `On` / `Smart`)
+- Added automatic thresholds based on volatility
 
 ### v6.5
-- 重构评分系统 (Base + Bonuses - Penalties)
-- 智能冷却期 (双重波动率检测)
-- 排行榜统计模式
+- Refactored the scoring model (Base + Bonuses - Penalties)
+- Added adaptive cooldown logic with dual volatility detection
+- Added ranking stats mode
 
 ---
 
-## 代码质量 / Code Quality
+## Code Quality
 
-本项目使用自定义的 **Pine Script 静态分析器** 进行代码质量检查。
-
-This project uses a custom **Pine Script Static Analyzer** for code quality checks.
+This project uses a custom **Pine Script Static Analyzer** for local and CI checks.
 
 ### GitHub CI
 
-每次推送或提交涉及 `.pine`、`.pine-lint.yml`、`tools/pine_linter/**` 的变更时，GitHub Actions 会自动运行 lint 检查。
-
-Lint checks run automatically via GitHub Actions when changes touch `.pine`, `.pine-lint.yml`, or `tools/pine_linter/**`.
+GitHub Actions runs lint checks automatically when changes touch `.pine`, `.pine-lint.yml`, or `tools/pine_linter/**`.
 
 [![Pine Script Lint](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml/badge.svg)](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml)
 
-### 本地检查 / Local Check
+### Local Check
 
 ```bash
 python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi.pine
 python3 tools/pine_linter/cli.py --config .pine-lint.yml --format markdown --output lint-report.md adaptive_rsi.pine
 ```
 
-### 检查规则 / Lint Rules
+### Lint Rules
 
-| 规则 Rule | 严重性 Severity | 描述 Description |
-|-----------|----------------|------------------|
-| SEC001 | error | `request.security()` 需要 `lookahead=barmerge.lookahead_off` |
-| SEC002 | warning | `request.security()` 在条件语句内可能导致重绘 |
-| SYN001 | warning | 多行三元表达式 (v6 语法陷阱) |
-| SYN002 | info | `switch` 语句应包含默认分支 |
-| SYN003 | warning | `table.clear()` 需要传入清理范围参数 |
-| NAM001-003 | info | 命名规范检查 (常量/函数/类型) |
-| QUA001 | info | Tooltip 应包含双语文本 |
-| QUA002 | warning | `request.security()` 结果应检查 na |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| SEC001 | error | `request.security()` must use `lookahead=barmerge.lookahead_off` |
+| SEC002 | warning | `request.security()` inside conditional branches may repaint |
+| SYN001 | warning | Multi-line ternary expressions are fragile in Pine v6 |
+| SYN002 | info | `switch` statements should include a default branch |
+| SYN003 | warning | `table.clear()` must receive an explicit range |
+| NAM001-003 | info | Naming convention checks for constants, functions, and types |
+| QUA001 | info | Tooltips should include bilingual text |
+| QUA002 | warning | `request.security()` outputs should be checked for `na` |
 
-配置文件: `.pine-lint.yml`
+Config file: `.pine-lint.yml`
 
 ---
 
 ## License
 
-MIT License - Feel free to use, modify, and share.
+MIT License. You are free to use, modify, and share the project.
