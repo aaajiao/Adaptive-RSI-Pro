@@ -2,104 +2,158 @@
 
 > Guidelines for AI agents working on this TradingView Pine Script v6 indicator.
 
-**Generated**: 2026-01-17 | **Version**: v7.1 | **Branch**: main
+**Generated**: 2026-03-11 | **Version**: v7.2 | **Branch**: main
 
 ## Quick Reference
 
 | Item | Value |
 |------|-------|
 | **Language** | Pine Script v6 |
-| **Main File** | `adaptive_rsi.pine` (~1714 lines) |
+| **Main File** | `adaptive_rsi.pine` (1734 lines) |
 | **Platform** | TradingView (tradingview.com) |
-| **Build/Test** | Manual via TradingView Pine Editor |
+| **Indicator** | `Adaptive RSI Pro` / `ARSI Pro` |
+| **Validation** | Local lint + manual TradingView compile/runtime check |
 
 ## Project Structure
 
-```
+```text
 RSI_stock/
-├── adaptive_rsi.pine           # ALL Pine Script code here (single-file requirement)
+├── adaptive_rsi.pine           # All Pine logic lives here (single-file requirement)
 ├── README.md                   # User docs + changelog (bilingual EN/CN)
-├── AGENTS.md                   # This file - AI agent guidelines
+├── AGENTS.md                   # This file
 ├── LICENSE                     # MIT
-├── .pine-lint.yml              # Linter configuration
+├── .pine-lint.yml              # Pine linter config
 ├── .github/
 │   └── workflows/
-│       └── pine-lint.yml       # GitHub Actions CI workflow
+│       └── pine-lint.yml       # GitHub Actions lint workflow
 ├── tools/
 │   └── pine_linter/            # Custom Pine Script static analyzer
-│       ├── __init__.py
-│       ├── cli.py              # Command-line interface
-│       ├── linter.py           # Core linting engine
-│       ├── rules.py            # Lint rule definitions
-│       ├── config.py           # Configuration loader
-│       └── reporter.py         # Output formatters
-└── images/                     # Documentation screenshots
+│       ├── cli.py
+│       ├── config.py
+│       ├── linter.py
+│       ├── reporter.py
+│       └── rules.py
+└── images/
+    └── annotated_rsi_indicator.png
 ```
+
+## Current Architecture
+
+```text
+INPUTS
+  -> RSI + LOOKBACK + PERCENTILES + Z-SCORE
+  -> TREND PROTECTION + VOLUME + MTF + DIVERGENCE
+  -> SIGNAL DETECTION + COOLDOWN + PRIORITY CONSOLIDATION
+  -> QUALITY SCORING + ATR RISK + STATS
+  -> STATS FILTER + HIDDEN STATE + DISPLAY
+  -> DASHBOARD + SMART ALERT
+```
+
+### Current version focus
+- **v7.2** adds tiered signal cooldown with upgrade exemption.
+- High-priority signals (`MTF`, `DIV`, `EXT`) use 1-bar cooldown.
+- Normal signals use adaptive/fixed cooldown bars.
+- Signal escalation on the same side can bypass cooldown (`Normal -> Extreme`, `Extreme -> MTF`, etc.).
 
 ## Where to Look
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Signal logic | Lines 592-685 | `sig_buy_*`, `sig_sell_*`, `pct_allows_*` variables |
-| Quality scoring | Lines 687-760 | `f_buy_quality()`, `f_sell_quality()` |
-| Dashboard UI | Lines 1141-1630 | Table rendering, Mobile/Full modes |
-| MTF analysis | Lines 259-370 | `request.security()` calls |
-| Divergence | Lines 460-520 | Single-anchor detection |
-| Statistics | Lines 371-458 | `SignalStats` type + methods |
-| Alerts | Lines 1631-1714 | Smart alert message generation |
-| Input groups | Lines 15-105 | 9 groups, 50+ parameters |
+| Input groups | Lines 15-102 | 9 groups, 50+ inputs, all EN/CN user text lives here |
+| Dynamic lookback | Lines 111-162 | Auto/custom lookback, health metrics, spread feedback |
+| Percentiles + Z-score | Lines 165-217 | Percentile bands and helper conversion functions |
+| Trend protection | Lines 220-243 | Weekly RSI/SMA filter and Smart normal-signal gating |
+| MTF analysis | Lines 258-367 | Auto/manual timeframe selection and `request.security()` calls |
+| Statistics type | Lines 370-456 | `SignalStats` type and methods |
+| Divergence | Lines 459-549 | Single-anchor divergence + realtime divergence |
+| Signal detection | Lines 591-609 | Raw extreme/normal trigger conditions |
+| Cooldown + consolidation | Lines 612-704 | v7.2 cooldown tiers, upgrade exemption, final signal priority |
+| Quality scoring | Lines 707-779 | `f_buy_quality()`, `f_sell_quality()`, grade mapping |
+| ATR risk hints | Lines 782-817 | Alert stop-loss/take-profit calculation |
+| Statistics engine | Lines 820-1040 | Forward-return bookkeeping and stats-driven filter |
+| Hidden/display state | Lines 1043-1158 | Hidden reasons, soft degrade, shared signal/status text |
+| Dashboard UI | Lines 1161-1647 | Mobile/Full table rendering, stats views, ranking table |
+| Smart alerts | Lines 1650-1734 | Aggregated alert messages and dedupe gating |
 
 ## Build & Validation
 
-**No local build system.** Pine Script compiles only on TradingView.
+Pine Script still compiles only on TradingView, but this repo now has a local static-analysis step.
 
-### Validation Steps
-1. Copy full `adaptive_rsi.pine` content
-2. TradingView → Pine Editor → paste → "Add to chart"
-3. Compiler shows errors inline; runtime errors appear on chart
+### Local lint
 
-### Testing Checklist
-- [ ] Compiles without errors
-- [ ] Works on multiple timeframes (1m, 1H, 4H, D, W, M)
-- [ ] Works on different assets (stocks, crypto, forex, ETFs)
-- [ ] Both dashboard modes render correctly (Mobile/Full)
-- [ ] Alerts fire with correct message format
-- [ ] No performance lag
+```bash
+python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi.pine
+```
+
+Optional formats:
+
+```bash
+python3 tools/pine_linter/cli.py --config .pine-lint.yml --format github adaptive_rsi.pine
+python3 tools/pine_linter/cli.py --config .pine-lint.yml --format markdown --output lint-report.md adaptive_rsi.pine
+```
+
+### CI
+- GitHub Actions runs `.github/workflows/pine-lint.yml`.
+- CI installs `pyyaml` and runs the same linter.
+- Lint `error` findings fail CI.
+- `warning`/`info` still matter, but only `error` is blocking by default.
+
+### TradingView validation steps
+1. Copy full `adaptive_rsi.pine`.
+2. TradingView -> Pine Editor -> paste -> `Add to chart`.
+3. Check compile errors in editor.
+4. Check runtime behavior on chart and alert preview.
+
+### Manual test checklist
+- [ ] Compiles without TradingView errors
+- [ ] Works on 1m / 15m / 1H / 4H / D / W / M
+- [ ] Works on stocks / crypto / forex / ETFs
+- [ ] Mobile and Full dashboard render correctly
+- [ ] Stats modes switch correctly: `Signal Type`, `Grade`, `Ranking`
+- [ ] Smart normal-signal hiding behaves correctly under weekly extremes
+- [ ] Hard/Soft/Alert Only stats filter modes behave correctly
+- [ ] Cooldown upgrade exemption works on rapid deterioration/reversal bars
+- [ ] Alerts fire once per bar with correct message text and optional risk hints
+- [ ] No obvious performance degradation from table or ranking logic
 
 ## Code Style
 
-### Naming Conventions
+### Naming conventions
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Constants | SCREAMING_SNAKE | `MAX_BARS_BACK = 4500` |
-| Variables | snake_case | `rsi_zscore`, `lookback_min` |
-| Functions | f_prefix_snake | `f_zscore_to_percentile()` |
-| User Types | PascalCase | `SignalStats`, `RankEntry` |
-| Methods | camelCase | `this.get_winrate()` |
-| Input groups | grp_prefix | `grp_rsi`, `grp_alerts` |
+| Constants | `SCREAMING_SNAKE` | `MAX_BARS_BACK` |
+| Variables | `snake_case` | `rsi_zscore`, `lookback_min` |
+| Functions | `f_prefix_snake` | `f_zscore_to_percentile()` |
+| User types | `PascalCase` | `SignalStats` |
+| Methods | `camelCase` | `this.get_winrate()` |
+| Input groups | `grp_prefix` | `grp_rsi`, `grp_alerts` |
 
-### File Header
+### File header
+
 ```pinescript
 //@version=6
-indicator("Title", shorttitle="SHORT", overlay=false, precision=2, max_bars_back=4500)
+indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100, max_bars_back=4500)
 ```
 
-### Section Structure
+### Section structure
+
 ```pinescript
 // ────────────────────────────────────────
 // SECTION NAME
 // ────────────────────────────────────────
 ```
 
-### Input Groups (Bilingual EN/CN)
+### Input groups
+
 ```pinescript
 grp_rsi = "═══ RSI Settings / RSI设置 ═══"
 rsi_length = input.int(14, "RSI Length / RSI周期", group=grp_rsi,
     tooltip="English explanation\n中文说明")
 ```
 
-### User-Defined Types
+### User-defined types
+
 ```pinescript
 type SignalStats
     int count = 0
@@ -110,173 +164,128 @@ method get_avg(SignalStats this) =>
     this.count > 0 ? this.total_return / this.count : 0.0
 ```
 
-### Conditional Logic
-- **Ternary** for simple assignments:
-  ```pinescript
-  status = zscore > 2 ? "overbought" : zscore < -2 ? "oversold" : "neutral"
-  ```
-- **if/else** for side effects or multi-line logic
+### Control-flow guidance
+- Use ternary only for short single-line assignments.
+- Use `switch` or helper booleans for longer multi-branch logic.
+- Prefer explicit `string` / `bool` typing when Pine may infer poorly.
 
-### String Formatting
+### String formatting
+
 ```pinescript
 str.format("{0}: {1,number,#.##}%", label, value)
-str.format("{0,number,+#.1;-#.1}%", return_value)  // +/- sign
+str.format("{0,number,+#.1;-#.1}%", return_value)
 ```
 
 ## Critical Patterns
 
-### request.security() - ALWAYS prevent lookahead bias
+### `request.security()` must disable lookahead
+
 ```pinescript
 [weekly_rsi, weekly_close] = request.security(
     syminfo.tickerid, "W",
     [ta.rsi(close, 14), close],
-    lookahead=barmerge.lookahead_off  // REQUIRED
+    lookahead=barmerge.lookahead_off
 )
 ```
 
-### var vs varip
+### Current cooldown pattern
+
 ```pinescript
-var int persistent_across_bars = 0      // Recalculates each tick
-varip int persistent_across_ticks = 0   // Truly persistent within bar
+int pending_buy_level = raw_sig_buy_mtf ? 4 : raw_sig_buy_div ? 3 : raw_sig_buy_extreme ? 2 : raw_sig_buy_normal ? 1 : 0
+bool buy_upgrade_exempt = pending_buy_level > last_buy_level
+
+bool sig_buy_extreme = enable_signal_cooldown ?
+    (raw_sig_buy_extreme and (buy_upgrade_exempt or na(last_ext_buy_bar) or bar_index - last_ext_buy_bar >= cooldown_ext)) :
+    raw_sig_buy_extreme
 ```
 
-### Signal Cooldown (prevent duplicates)
+### `table.clear()` requires a range
+
 ```pinescript
-varip int last_alert_bar = -1
-varip int last_alert_level = 0
-
-new_signal = bar_index != last_alert_bar or current_level > last_alert_level
-if new_signal
-    last_alert_bar := bar_index
-    last_alert_level := current_level
+table.clear(dashboard, 0, 0, 1, 19)
 ```
 
-### Timeframe Detection
-```pinescript
-tf_minutes = timeframe.in_seconds(timeframe.period) / 60
-bars_per_day = timeframe.ismonthly ? 1.0/21 : timeframe.isweekly ? 1.0/5 : 
-               timeframe.isdaily ? 1 : math.ceil(1440 / tf_minutes)
-```
+### Weekly protection affects more than extremes
+- It gates extreme buy/sell permission.
+- It also controls Smart mode visibility for normal signals.
+- Hidden signals still affect shared display state and alert logic in some paths, so follow the cascade before editing.
 
-## Architecture Overview
+### Stats filter modes
+- `Alert Only`: chart keeps signals, alerts are filtered.
+- `Soft`: failed signals still render but degraded.
+- `Hard`: failed signals can be fully hidden.
 
-```
-INPUT GROUPS → RSI CALC → Z-SCORE → SIGNAL DETECTION → QUALITY SCORING → DASHBOARD
-                  ↓              ↓           ↓
-              PERCENTILES    MTF DATA    DIVERGENCE
-```
+## Signal Model
 
-### Signal Flow
-1. **RSI Calculation**: Standard RSI from `ta.rsi()`
-2. **Z-Score**: `(rsi - mean) / stdev` over dynamic lookback
-3. **Percentile Mapping**: Z-Score → approximate percentile
-4. **MTF Analysis**: `request.security()` for higher timeframes
-5. **Signal Detection**: Crossover/crossunder of Z-Score thresholds
-6. **Percentile Confirm** (v7.1, optional): Dual confirmation with P5/P95
-7. **Quality Grading**: A/B/C/D based on multi-factor scoring
-8. **Statistics Tracking**: Win rate, returns per signal type
-9. **Dashboard Rendering**: Table-based UI
+### Priority order
 
-### Signal Priority (highest wins)
 | Priority | Signal | Condition |
 |----------|--------|-----------|
-| 4 | MTF Resonance 🌟 | Multiple TFs aligned + extreme |
-| 3 | Divergence+Extreme 💎 | Divergence in extreme zone |
-| 2 | Extreme 🔥/❄️ | Z-Score crosses ±2σ |
-| 1 | Normal ⬆️/⬇️ | Z-Score crosses ±1.5σ |
+| 4 | `🌟` MTF resonance | MTF alignment + extreme trigger |
+| 3 | `💎` Divergence + extreme | Divergence in extreme zone |
+| 2 | `🔥` / `❄️` Extreme | Z-score crosses `±2σ` |
+| 1 | `⬆️` / `⬇️` Normal | Z-score crosses `±normal_threshold` |
+| 0 | `↗️` / `↘️` Divergence only | Divergence outside extreme zone |
 
-### Quality Score Factors
-- **Base**: 50 pts if in extreme zone
-- **Bonuses**: MTF/Divergence (+25), RSI pivot (+10), Weekly trend (+15), Volume surge (+10), Extreme depth (+10/20)
-- **Penalties**: Weekly extreme bearish (-20), Low volume (-10), Poor health (-15), ADX counter-trend (-10)
+### Quality score factors
+- Base: 50 points in extreme zone
+- Bonuses: divergence/MTF, RSI pivot confirmation, weekly trend alignment, volume surge, deeper extremes
+- Penalties: weekly extreme counter-trend, low volume, unhealthy sample/distribution, ADX strong-trend opposition
 
 ## Common Gotchas
 
-| Issue | Solution |
-|-------|----------|
-| Array/lookback limit | Max ~4500 bars; use `max_bars_back=4500` |
-| Future data leak | Always `lookahead=barmerge.lookahead_off` |
-| Plot limits | Use tables for dashboards, not plots |
-| String in switch | Pine v6 requires exact string matches |
-| na propagation | Always check `not na()` before using values |
+| Issue | Guidance |
+|------|----------|
+| Future-data leak | Every `request.security()` must use `lookahead=barmerge.lookahead_off` |
+| Pine multiline syntax | Avoid multi-line ternary chains and fragile boolean wraps |
+| Table clearing | `table.clear()` needs start/end coordinates |
+| Dashboard row drift | Keep row math aligned with `enable_mtf`, `enable_divergence`, `enable_stats`, and stats mode |
+| Hidden vs displayed signal | A signal may exist logically but be hidden/degraded visually |
+| Stats filter regressions | Alert behavior, plot behavior, and dashboard markers are not the same path |
+| Cooldown regressions | Side-specific `last_*_bar` and `last_*_level` updates affect future exemption logic |
+| Percentile confirm | Extreme checks may be dual-gated by Z-score and P5/P95 |
+| `na` propagation | Guard MTF and percentile values before using them |
 
 ## Common Syntax Errors (Pine Script v6)
 
-### 1. Multi-line Expressions: "end of line without line continuation"
-
-**Problem**: Pine Script v6 is sensitive to multi-line ternary expressions and boolean chains.
+### 1. Multi-line expressions
 
 ```pinescript
-// ❌ WRONG - may cause syntax error
+// WRONG
 status_text = rsi_zscore < -2 ? "EXTREME" :
               rsi_zscore < -1.5 ? "OVERSOLD" :
               "NEUTRAL"
 
-// ❌ WRONG - multi-line boolean
-current_is_hidden = (signal_direction == 1 and (normal_buy_hidden or 
-                                                extreme_buy_hidden)) or
-                    (signal_direction == -1 and normal_sell_hidden)
-```
-
-**Solutions**:
-
-```pinescript
-// ✅ Option 1: Single line (for short expressions)
-status_text = rsi_zscore < -2 ? "EXTREME" : rsi_zscore < -1.5 ? "OVERSOLD" : "NEUTRAL"
-
-// ✅ Option 2: Use switch statement (for complex conditions)
+// BETTER
 string status_text = switch
     rsi_zscore < -2 => "EXTREME"
     rsi_zscore < -1.5 => "OVERSOLD"
     => "NEUTRAL"
-
-// ✅ Option 3: Break into helper variables (for boolean chains)
-bool buy_hidden = normal_buy_hidden or extreme_buy_hidden
-bool sell_hidden = normal_sell_hidden or extreme_sell_hidden
-current_is_hidden = (signal_direction == 1 and buy_hidden) or (signal_direction == -1 and sell_hidden)
 ```
 
-### 2. table.clear() Requires Parameters
-
-**Problem**: `table.clear()` in Pine v6 requires range parameters.
+### 2. `table.clear()` without coordinates
 
 ```pinescript
-// ❌ WRONG - missing parameters
+// WRONG
 table.clear(dashboard)
 
-// ✅ CORRECT - specify range (start_column, start_row, end_column, end_row)
-table.clear(dashboard, 0, 0, 1, 19)  // Clear 2 columns × 20 rows
+// CORRECT
+table.clear(dashboard, 0, 0, 1, 19)
 ```
 
-### 3. Type Inference Issues
-
-**Problem**: Sometimes Pine Script cannot infer variable types, especially with `switch` or complex expressions.
+### 3. Type inference around `switch`
 
 ```pinescript
-// ❌ May cause "Cannot determine type" error
-signal_icon = switch
-    is_mtf => "🌟"
-    is_div => "💎"
-    => ""
-
-// ✅ CORRECT - explicit type annotation
-string signal_icon = switch
-    is_mtf => "🌟"
-    is_div => "💎"
+// SAFER
+string alert_buy_icon = switch
+    alert_buy_mtf => "🌟MTF共振"
+    alert_buy_div => "💎背离"
     => ""
 ```
 
-### 4. Switch Statement Syntax
-
-**Problem**: Switch requires proper formatting.
+### 4. Missing default case in `switch`
 
 ```pinescript
-// ❌ WRONG - missing default case or wrong syntax
-string result = switch
-    condition1 => "A"
-    condition2 => "B"
-
-// ✅ CORRECT - always include default case
 string result = switch
     condition1 => "A"
     condition2 => "B"
@@ -285,16 +294,20 @@ string result = switch
 
 ## Making Changes
 
-1. **Read entire file** - Single ~1700 line file; understand signal flow
-2. **Preserve bilingual** - All user-facing text needs EN/CN
-3. **Test both modes** - Mobile/Full dashboard, all timeframes
-4. **Check signal cascade** - Changes to scoring affect multiple signals
-5. **Avoid multi-line expressions** - Use switch or helper variables instead
+1. Read the full `adaptive_rsi.pine` flow before editing. It is a single-file script with coupled behavior.
+2. Preserve bilingual EN/CN user-facing text in inputs, dashboard labels, alerts, and docs.
+3. Run local lint after edits. Treat lint `error` as blocking, and inspect new `warning`/`info`.
+4. Re-check the full cascade when touching signals: detection -> cooldown -> stats -> hidden state -> display -> alerts.
+5. Re-test both dashboard modes and at least one stats mode after UI or row-count changes.
+6. If you touch `request.security()`, percentile logic, or alert gating, assume regressions are easy and verify manually.
+7. Avoid multi-line ternary/boolean expressions when a helper variable or `switch` is clearer.
 
-### Changelog Format (in README.md)
+### README changelog format
+
 ```markdown
 ### vX.Y - Feature Name / 功能名称
 - **New / 新功能**: Description / 描述
+- **Improvement / 改进**: Description / 描述
 - **Fix / 修复**: Description / 描述
 ```
 
@@ -302,4 +315,4 @@ string result = switch
 
 - [Pine Script v6 Reference](https://www.tradingview.com/pine-script-reference/v6/)
 - [Pine Script v6 Manual](https://www.tradingview.com/pine-script-docs/en/v6/)
-- [TradingView Pine Editor](https://www.tradingview.com/chart/) → Pine Editor tab
+- [TradingView Pine Editor](https://www.tradingview.com/chart/)
