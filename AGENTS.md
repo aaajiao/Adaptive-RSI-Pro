@@ -43,7 +43,9 @@ RSI_stock/
   - `lookback` floor uses the statistical lower bound
   - weekly protection uses confirmed HTF data
   - lower-timeframe MTF uses `request.security_lower_tf()`
-- Stats filtering remains the original `v7.2` adjusted-win-rate model.
+- Stats filtering still uses the original adjusted-win-rate gate, but the active
+  `Stats Mode` now selects whether the gate reads Signal Type, Grade, or Ranking
+  buckets.
 
 ### Strategy report harness
 
@@ -52,7 +54,8 @@ RSI_stock/
   - `Trade Side`
   - `Backtest Mode = Baseline | Production`
 - `Baseline` trades raw `v7.2` signals.
-- `Production` trades the same final signals that would be allowed into alerts.
+- `Production` trades signals that pass the production alert gate/filter.
+- It is a gated-signal backtest, not an exact intrabar `alert()` delivery simulation.
 
 ## Where to Look
 
@@ -64,13 +67,13 @@ RSI_stock/
 | MTF analysis | `adaptive_rsi.pine:260-385` | Auto/manual TF selection and lower-TF aggregation |
 | Statistics type | `adaptive_rsi.pine:388-466` | `SignalStats` + adjusted win rate |
 | Signal detection | `adaptive_rsi.pine:596-644` | Raw signals and cooldown inputs |
-| Statistics engine | `adaptive_rsi.pine:850-979` | Forward-return bookkeeping |
-| Stats filter | `adaptive_rsi.pine:981-1038` | Original `v7.2` filter logic |
-| Dashboard | `adaptive_rsi.pine:1138-1662` | Main indicator UI |
-| Alerts | `adaptive_rsi.pine:1665-1749` | Smart alert aggregation |
-| Harness inputs | `adaptive_rsi_strategy_harness.pine:67-78` | `Trade Side` and `Backtest Mode` |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1321-1335` | `Harness`, `Tester`, `Production Gate` |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1824-1848` | Entry/close rules |
+| Statistics engine | `adaptive_rsi.pine:842-956` | Forward-return bookkeeping |
+| Stats filter | `adaptive_rsi.pine:958-1088` | Stats-mode-aware adjusted win-rate gate |
+| Dashboard | `adaptive_rsi.pine:1211-1690` | Main indicator UI |
+| Alerts | `adaptive_rsi.pine:1694-1777` | Smart alert aggregation |
+| Harness inputs | `adaptive_rsi_strategy_harness.pine:67-79` | `Trade Side` and `Backtest Mode` |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1365-1380` | `Harness`, `Tester`, `Production Gate` |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1868-1891` | Entry/close rules |
 
 ## Build & Validation
 
@@ -119,7 +122,7 @@ array<int> statuses = request.security_lower_tf(
 
 - `All` is always present in TradingView Strategy Tester.
 - Read it according to `Trade Side`.
-- `Production Gate` shows the current signal bucket and adjusted win-rate gate for the active signal.
+- `Production Gate` shows the actual stats bucket selected by `Stats Mode` for the active signal.
 
 ## Making Changes
 

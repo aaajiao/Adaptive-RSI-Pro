@@ -140,7 +140,8 @@ Each signal carries a quality grade based on multi-factor scoring:
 - `Trade Side`: `Long Only / Short Only / Both`
 - `Backtest Mode`
   - `Baseline`: raw production signals
-  - `Production`: only the signals that would make it into production alerts
+  - `Production`: signals that pass the production alert gate/filter
+- `Production` is a gated-signal backtest, not an exact intrabar `alert()` delivery simulation
 - Full guide: [docs/STRATEGY_REPORT.md](/Users/aaajiao/o_projects/RSI_stock/docs/STRATEGY_REPORT.md)
 
 ---

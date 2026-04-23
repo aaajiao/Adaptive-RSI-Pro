@@ -140,7 +140,8 @@
 - `Trade Side`：`Long Only / Short Only / Both`
 - `Backtest Mode`
   - `Baseline`：原始正式信号
-  - `Production`：正式指标最终会进入 alert 的信号
+  - `Production`：通过正式警报 gate/过滤的信号
+- `Production` 是过滤后信号回测，不是逐笔盘中 `alert()` 投递模拟
 - 详细说明见 [docs/STRATEGY_REPORT_CN.md](/Users/aaajiao/o_projects/RSI_stock/docs/STRATEGY_REPORT_CN.md)
 
 ---

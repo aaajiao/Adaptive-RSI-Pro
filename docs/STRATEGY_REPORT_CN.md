@@ -18,9 +18,9 @@
 ### Backtest Mode / 回测模式
 
 - `Baseline`：交易原始 `v7.2` 信号
-- `Production`：只交易正式指标最终会放进警报里的信号
+- `Production`：交易通过正式警报 gate/过滤的信号
 
-`Production` 是最接近正式指标最终 alert 路径的策略回测口径。
+`Production` 是过滤后信号的执行口径。它不模拟盘中 `alert()` 投递、alert 调度或 smart alert 的精确投递次数；它用于评估过滤路径，不用于和 alert 日志逐条对齐。
 
 ## dashboard 新增三行
 
@@ -28,9 +28,9 @@ harness 在完整 dashboard 里多三行：
 
 - `Harness`：当前 `Trade Side` 和 `Backtest Mode`
 - `Tester`：提示你该如何解读 TradingView 的 `All`
-- `Production Gate`：当前信号桶、样本数、平均收益、调整胜率
+- `Production Gate`：`Stats Mode` 当前实际使用的统计 gate 桶、样本数、平均收益、调整胜率
 
-例如：
+`Ranking` 模式下例如：
 
 ```text
 Production Gate: EXT[A](12) +2.8%|67%
@@ -42,6 +42,8 @@ Production Gate: EXT[A](12) +2.8%|67%
 - 样本数 = `12`
 - 平均前瞻收益 = `+2.8%`
 - 调整胜率 = `67%`
+
+当 `Stats Mode` 是 `Signal Type` 时，标签会显示为 `TYPE:EXT`；当它是 `Grade` 时，会显示为 `GRADE[A]`。这些标签就是生产过滤实际使用的统计桶。
 
 如果当前 bar 没有活动信号，会显示 `Idle`。
 

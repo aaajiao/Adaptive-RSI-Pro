@@ -18,9 +18,9 @@ The strategy harness exists only to answer one question: how does the restored `
 ### Backtest Mode
 
 - `Baseline`: trades the raw `v7.2` production signals
-- `Production`: trades only the same signals that the production indicator would finally allow into alerts
+- `Production`: trades signals that pass the production alert gate/filter
 
-`Production` is the closest strategy approximation of the production script's final alert path.
+`Production` is a gated-signal execution view. It does not model intrabar `alert()` delivery, alert scheduling, or exact smart-alert delivery counts; use it to evaluate the filter path, not alert-log parity.
 
 ## Dashboard rows
 
@@ -28,9 +28,9 @@ The harness adds three rows to the full dashboard:
 
 - `Harness`: current `Trade Side` and `Backtest Mode`
 - `Tester`: how to read TradingView `All`
-- `Production Gate`: current signal bucket, sample count, average return, adjusted win rate
+- `Production Gate`: actual stats bucket selected by `Stats Mode`, sample count, average return, adjusted win rate
 
-Example:
+Example in `Ranking` mode:
 
 ```text
 Production Gate: EXT[A](12) +2.8%|67%
@@ -42,6 +42,8 @@ This means:
 - samples = `12`
 - average forward return = `+2.8%`
 - adjusted win rate = `67%`
+
+When `Stats Mode` is `Signal Type`, the label uses `TYPE:EXT`; when it is `Grade`, it uses `GRADE[A]`. Those labels are the same buckets used by the production filter.
 
 If there is no active signal on the current bar, the row shows `Idle`.
 

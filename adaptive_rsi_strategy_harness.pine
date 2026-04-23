@@ -76,7 +76,7 @@ stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", opt
 
 grp_harness = "═══ Strategy Report / 策略回测 ═══"
 harness_trade_side = input.string("Long Only", "Trade Side / 交易方向", options=["Long Only", "Short Only", "Both"], group=grp_harness, tooltip="Long Only: 仅做多，卖出信号只平多\nShort Only: 仅做空，买入信号只平空\nBoth: 双向切换，买卖信号会反手")
-harness_backtest_mode = input.string("Production", "Backtest Mode / 回测模式", options=["Baseline", "Production"], group=grp_harness, tooltip="Baseline: 使用 7.2 原始信号，不加统计过滤\nProduction: 使用正式指标最终会进入警报的信号")
+harness_backtest_mode = input.string("Production", "Backtest Mode / 回测模式", options=["Baseline", "Production"], group=grp_harness, tooltip="Baseline: raw v7.2 signals, no stats filter\nProduction: gate-passing production alert signals; not exact intrabar alert delivery\nBaseline: 使用 7.2 原始信号，不加统计过滤\nProduction: 使用通过正式警报 gate/过滤的信号，不精确模拟盘中 alert 投递")
 
 grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
 enable_divergence = input.bool(true, "Enable Divergence Detection / 启用背离检测", group=grp_divergence)
@@ -986,6 +986,49 @@ f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
                            (_grade == "A" ? norm_a_sell : _grade == "B" ? norm_b_sell : _grade == "C" ? norm_c_sell : norm_d_sell)
     result
 
+f_get_type_stats(_is_buy, _is_mtf, _is_div, _is_ext) =>
+    SignalStats result = SignalStats.new()
+    if _is_mtf
+        result := _is_buy ? mtf_buy_stats : mtf_sell_stats
+    else if _is_div
+        result := _is_buy ? div_buy_stats : div_sell_stats
+    else if _is_ext
+        result := _is_buy ? ext_buy_stats : ext_sell_stats
+    else
+        result := _is_buy ? norm_buy_stats : norm_sell_stats
+    result
+
+f_get_grade_stats(_is_buy, _grade) =>
+    SignalStats result = SignalStats.new()
+    if _grade == "A"
+        result := _is_buy ? grade_a_buy_stats : grade_a_sell_stats
+    else if _grade == "B"
+        result := _is_buy ? grade_b_buy_stats : grade_b_sell_stats
+    else if _grade == "C"
+        result := _is_buy ? grade_c_buy_stats : grade_c_sell_stats
+    else
+        result := _is_buy ? grade_d_buy_stats : grade_d_sell_stats
+    result
+
+f_get_filter_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    SignalStats result = SignalStats.new()
+    if stats_mode == "Signal Type"
+        result := f_get_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
+    else if stats_mode == "Grade"
+        result := f_get_grade_stats(_is_buy, _grade)
+    else
+        result := f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+    result
+
+f_get_signal_type_label(_is_mtf, _is_div, _is_ext) =>
+    _is_mtf ? "MTF" : _is_div ? "DIV" : _is_ext ? "EXT" : "NORM"
+
+f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade) =>
+    _type_label = f_get_signal_type_label(_is_mtf, _is_div, _is_ext)
+    stats_mode == "Signal Type" ? str.format("TYPE:{0}", _type_label) :
+     stats_mode == "Grade" ? str.format("GRADE[{0}]", _grade) :
+     str.format("{0}[{1}]", _type_label, _grade)
+
 // 检查信号是否通过统计过滤
 f_passes_stats_filter(_stats) =>
     if not enable_stats_filter or not enable_stats
@@ -997,16 +1040,16 @@ f_passes_stats_filter(_stats) =>
         _has_good_winrate = not na(_adj_wr) and _adj_wr >= stats_min_winrate
         _has_enough_samples and _has_good_winrate
 
-// 计算各信号的过滤状态
-buy_mtf_stats = f_get_signal_stats(true, true, false, false, buy_quality_grade)
-buy_div_stats = f_get_signal_stats(true, false, true, false, buy_quality_grade)
-buy_ext_stats = f_get_signal_stats(true, false, false, true, buy_quality_grade)
-buy_norm_stats = f_get_signal_stats(true, false, false, false, buy_quality_grade)
+// 根据 stats_mode 选择实际用于生产过滤的统计桶
+buy_mtf_stats = f_get_filter_stats(true, true, false, false, buy_quality_grade)
+buy_div_stats = f_get_filter_stats(true, false, true, false, buy_quality_grade)
+buy_ext_stats = f_get_filter_stats(true, false, false, true, buy_quality_grade)
+buy_norm_stats = f_get_filter_stats(true, false, false, false, buy_quality_grade)
 
-sell_mtf_stats = f_get_signal_stats(false, true, false, false, sell_quality_grade)
-sell_div_stats = f_get_signal_stats(false, false, true, false, sell_quality_grade)
-sell_ext_stats = f_get_signal_stats(false, false, false, true, sell_quality_grade)
-sell_norm_stats = f_get_signal_stats(false, false, false, false, sell_quality_grade)
+sell_mtf_stats = f_get_filter_stats(false, true, false, false, sell_quality_grade)
+sell_div_stats = f_get_filter_stats(false, false, true, false, sell_quality_grade)
+sell_ext_stats = f_get_filter_stats(false, false, false, true, sell_quality_grade)
+sell_norm_stats = f_get_filter_stats(false, false, false, false, sell_quality_grade)
 
 // 过滤结果
 filter_buy_mtf = f_passes_stats_filter(buy_mtf_stats)
@@ -1201,29 +1244,29 @@ f_harness_gate_snapshot() =>
     if _use_buy
         if sig_buy_mtf
             _stats := buy_mtf_stats
-            _source := str.format("MTF[{0}]", buy_quality_grade)
+            _source := f_get_filter_source_label(true, false, false, buy_quality_grade)
         else if sig_buy_div
             _stats := buy_div_stats
-            _source := str.format("DIV[{0}]", buy_quality_grade)
+            _source := f_get_filter_source_label(false, true, false, buy_quality_grade)
         else if sig_buy_extreme
             _stats := buy_ext_stats
-            _source := str.format("EXT[{0}]", buy_quality_grade)
+            _source := f_get_filter_source_label(false, false, true, buy_quality_grade)
         else if sig_buy_normal
             _stats := buy_norm_stats
-            _source := str.format("NORM[{0}]", buy_quality_grade)
+            _source := f_get_filter_source_label(false, false, false, buy_quality_grade)
     else
         if sig_sell_mtf
             _stats := sell_mtf_stats
-            _source := str.format("MTF[{0}]", sell_quality_grade)
+            _source := f_get_filter_source_label(true, false, false, sell_quality_grade)
         else if sig_sell_div
             _stats := sell_div_stats
-            _source := str.format("DIV[{0}]", sell_quality_grade)
+            _source := f_get_filter_source_label(false, true, false, sell_quality_grade)
         else if sig_sell_extreme
             _stats := sell_ext_stats
-            _source := str.format("EXT[{0}]", sell_quality_grade)
+            _source := f_get_filter_source_label(false, false, true, sell_quality_grade)
         else if sig_sell_normal
             _stats := sell_norm_stats
-            _source := str.format("NORM[{0}]", sell_quality_grade)
+            _source := f_get_filter_source_label(false, false, false, sell_quality_grade)
 
     if _source != "Idle"
         _count := _stats.count
@@ -1770,9 +1813,9 @@ if enable_smart_alert
     // 过滤状态标记（仅在启用统计过滤时显示）
     string alert_filter_status = (enable_stats_filter and enable_stats) ? (current_signal_passes_filter ? "✓" : "⚠️") : ""
 
-    has_buy_signal_prev = alert_buy_mtf[1] or alert_buy_div[1] or alert_buy_ext[1] or (show_normal_signals[1] and alert_buy_norm[1])
     current_buy_level = f_signal_level(alert_buy_mtf, alert_buy_div, alert_buy_ext, filtered_buy_normal)
-    should_alert_buy = alert_has_buy and not has_buy_signal_prev and current_buy_level > buy_alert_level_sent
+    previous_buy_level = f_signal_level(alert_buy_mtf[1], alert_buy_div[1], alert_buy_ext[1], show_normal_signals[1] and alert_buy_norm[1])
+    should_alert_buy = alert_has_buy and current_buy_level > previous_buy_level and current_buy_level > buy_alert_level_sent
 
     if should_alert_buy
         msg = str.format("{0}: 🟢 BUY → {1} ", syminfo.ticker, alert_buy_icon)
@@ -1794,9 +1837,9 @@ if enable_smart_alert
         alert(msg, alert.freq_once_per_bar)
         buy_alert_level_sent := current_buy_level
 
-    has_sell_signal_prev = alert_sell_mtf[1] or alert_sell_div[1] or alert_sell_ext[1] or (show_normal_signals[1] and alert_sell_norm[1])
     current_sell_level = f_signal_level(alert_sell_mtf, alert_sell_div, alert_sell_ext, filtered_sell_normal)
-    should_alert_sell = alert_has_sell and not has_sell_signal_prev and current_sell_level > sell_alert_level_sent
+    previous_sell_level = f_signal_level(alert_sell_mtf[1], alert_sell_div[1], alert_sell_ext[1], show_normal_signals[1] and alert_sell_norm[1])
+    should_alert_sell = alert_has_sell and current_sell_level > previous_sell_level and current_sell_level > sell_alert_level_sent
 
     if should_alert_sell
         msg = str.format("{0}: 🔴 SELL → {1} ", syminfo.ticker, alert_sell_icon)
