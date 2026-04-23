@@ -137,6 +137,7 @@ Each signal carries a quality grade based on multi-factor scoring:
 
 ### 9. Strategy Harness
 - Separate file: [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine)
+- Generated from [adaptive_rsi.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi.pine) by [tools/generate_strategy_harness.py](/Users/aaajiao/o_projects/RSI_stock/tools/generate_strategy_harness.py)
 - `Trade Side`: `Long Only / Short Only / Both`
 - `Backtest Mode`
   - `Baseline`: raw production signals
@@ -238,7 +239,8 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
   - `lookback` floor stays above the statistical lower bound
   - weekly protection uses confirmed weekly data
   - lower-timeframe MTF uses proper lower-TF aggregation
-- Adds [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine) for Strategy Tester validation
+- Keeps [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine) generated from the production indicator for Strategy Tester validation
+- Stores signal statistics in indexed buckets instead of duplicated per-bucket variables
 
 ### v7.2
 - Tiered cooldown with upgrade exemption
@@ -251,26 +253,34 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 
 ## Code Quality
 
-This project uses a custom **Pine Script Static Analyzer** for local and CI checks.
+This project uses a custom **Pine Script Static Analyzer** and a generated strategy harness check for local and CI validation.
 
 ### GitHub CI
 
-GitHub Actions runs lint checks automatically when changes touch `.pine`, `.pine-lint.yml`, or `tools/pine_linter/**`.
+GitHub Actions runs lint and harness-generation checks automatically when changes touch `.pine`, `.pine-lint.yml`, or project tooling.
 
 [![Pine Script Lint](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml/badge.svg)](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml)
 
 ### Local Check
 
 ```bash
+python3 tools/generate_strategy_harness.py --check
 python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi.pine
-python3 tools/pine_linter/cli.py --config .pine-lint.yml --format markdown --output lint-report.md adaptive_rsi.pine
+python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi_strategy_harness.pine
+python3 tools/pine_linter/cli.py --config .pine-lint.yml --format markdown --output lint-report.md adaptive_rsi.pine adaptive_rsi_strategy_harness.pine
+```
+
+When production logic changes, regenerate the harness with:
+
+```bash
+python3 tools/generate_strategy_harness.py
 ```
 
 ### Lint Rules
 
 | Rule | Severity | Description |
 |------|----------|-------------|
-| SEC001 | error | `request.security()` must use `lookahead=barmerge.lookahead_off` |
+| SEC001 | error | `request.security()` must declare `lookahead`; `lookahead_off` is safe, while `lookahead_on` requires a `[1]` confirmed historical expression |
 | SEC002 | warning | `request.security()` inside conditional branches may repaint |
 | SYN001 | warning | Multi-line ternary expressions are fragile in Pine v6 |
 | SYN002 | info | `switch` statements should include a default branch |

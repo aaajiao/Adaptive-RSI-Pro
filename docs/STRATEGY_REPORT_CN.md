@@ -7,6 +7,8 @@
 正式指标仍然是 [adaptive_rsi.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi.pine)。  
 策略壳的唯一作用，是把这套恢复后的正式信号接到 TradingView `Strategy Tester`，观察它在策略执行模型下的结果。
 
+策略壳由 [tools/generate_strategy_harness.py](/Users/aaajiao/o_projects/RSI_stock/tools/generate_strategy_harness.py) 从正式指标生成。修改信号逻辑时应改 `adaptive_rsi.pine`，然后重新生成策略壳，不要手工维护两份重复逻辑。
+
 ## 参数
 
 ### Trade Side / 交易方向
@@ -72,6 +74,17 @@ harness 的 `Tester` 行会重复提示这条规则。
 - `GOOGL 1D`
 - `AAPL 1D`
 - `BTCUSDT 4H`
+
+## 维护流程
+
+正式指标逻辑变更后运行：
+
+```bash
+python3 tools/generate_strategy_harness.py
+python3 tools/generate_strategy_harness.py --check
+```
+
+CI 也会运行 `--check`，如果正式指标和策略壳出现漂移会提前失败。
 
 ## 一个重要边界
 

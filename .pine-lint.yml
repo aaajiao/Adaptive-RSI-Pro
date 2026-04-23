@@ -3,7 +3,7 @@
 
 rules:
   # Security Rules (Critical - block PR merge)
-  SEC001: error    # request.security() must have lookahead=barmerge.lookahead_off
+  SEC001: error    # request.security() must declare safe lookahead behavior
   SEC002: warning  # request.security() inside conditional may cause repainting
   
   # Syntax Rules (Important - prevent compilation errors)

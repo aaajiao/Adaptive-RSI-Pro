@@ -137,6 +137,7 @@
 
 ### 9. Strategy Harness
 - 单独提供 [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine)
+- 由 [tools/generate_strategy_harness.py](/Users/aaajiao/o_projects/RSI_stock/tools/generate_strategy_harness.py) 从 [adaptive_rsi.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi.pine) 生成
 - `Trade Side`：`Long Only / Short Only / Both`
 - `Backtest Mode`
   - `Baseline`：原始正式信号
@@ -238,7 +239,8 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
   - `lookback` 不低于统计下限
   - 周线保护使用已确认周线数据
   - 下级别 MTF 使用正确的 lower-TF 聚合
-- 新增 [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine) 用于 Strategy Tester 验证
+- [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine) 由正式指标生成，用于 Strategy Tester 验证
+- 信号统计使用索引化 bucket，减少重复变量和手工同步风险
 
 ### v7.2
 - 分级冷却与升级豁免

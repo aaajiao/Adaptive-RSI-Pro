@@ -426,59 +426,89 @@ method get_adjusted_winrate(SignalStats this) =>
         raw_rate = this.get_winrate()
         prior * (1 - confidence) + raw_rate * confidence
 
-// Signal Type Mode
-var mtf_buy_stats = SignalStats.new()
-var mtf_sell_stats = SignalStats.new()
-var div_buy_stats = SignalStats.new()
-var div_sell_stats = SignalStats.new()
-var ext_buy_stats = SignalStats.new()
-var ext_sell_stats = SignalStats.new()
-var norm_buy_stats = SignalStats.new()
-var norm_sell_stats = SignalStats.new()
+STATS_SIGNAL_MTF = 0
+STATS_SIGNAL_DIV = 1
+STATS_SIGNAL_EXT = 2
+STATS_SIGNAL_NORM = 3
+STATS_SIGNAL_COUNT = 4
 
-// Grade Mode
-var grade_a_buy_stats = SignalStats.new()
-var grade_a_sell_stats = SignalStats.new()
-var grade_b_buy_stats = SignalStats.new()
-var grade_b_sell_stats = SignalStats.new()
-var grade_c_buy_stats = SignalStats.new()
-var grade_c_sell_stats = SignalStats.new()
-var grade_d_buy_stats = SignalStats.new()
-var grade_d_sell_stats = SignalStats.new()
+STATS_GRADE_COUNT = 4
+STATS_DIR_BUY = 0
+STATS_DIR_SELL = 1
+STATS_DIR_COUNT = 2
 
-// Ranking Mode (Signal Type × Grade × Direction)
-var mtf_a_buy = SignalStats.new()
-var mtf_a_sell = SignalStats.new()
-var mtf_b_buy = SignalStats.new()
-var mtf_b_sell = SignalStats.new()
-var mtf_c_buy = SignalStats.new()
-var mtf_c_sell = SignalStats.new()
-var mtf_d_buy = SignalStats.new()
-var mtf_d_sell = SignalStats.new()
-var div_a_buy = SignalStats.new()
-var div_a_sell = SignalStats.new()
-var div_b_buy = SignalStats.new()
-var div_b_sell = SignalStats.new()
-var div_c_buy = SignalStats.new()
-var div_c_sell = SignalStats.new()
-var div_d_buy = SignalStats.new()
-var div_d_sell = SignalStats.new()
-var ext_a_buy = SignalStats.new()
-var ext_a_sell = SignalStats.new()
-var ext_b_buy = SignalStats.new()
-var ext_b_sell = SignalStats.new()
-var ext_c_buy = SignalStats.new()
-var ext_c_sell = SignalStats.new()
-var ext_d_buy = SignalStats.new()
-var ext_d_sell = SignalStats.new()
-var norm_a_buy = SignalStats.new()
-var norm_a_sell = SignalStats.new()
-var norm_b_buy = SignalStats.new()
-var norm_b_sell = SignalStats.new()
-var norm_c_buy = SignalStats.new()
-var norm_c_sell = SignalStats.new()
-var norm_d_buy = SignalStats.new()
-var norm_d_sell = SignalStats.new()
+STATS_SIGNAL_BUCKETS = STATS_SIGNAL_COUNT * STATS_DIR_COUNT
+STATS_GRADE_BUCKETS = STATS_GRADE_COUNT * STATS_DIR_COUNT
+STATS_RANKING_BUCKETS = STATS_SIGNAL_COUNT * STATS_GRADE_COUNT * STATS_DIR_COUNT
+STATS_RANKING_BUCKETS_PER_SIGNAL = STATS_GRADE_COUNT * STATS_DIR_COUNT
+
+var array<SignalStats> signal_type_stats = array.new<SignalStats>(0)
+var array<SignalStats> grade_stats = array.new<SignalStats>(0)
+var array<SignalStats> ranking_stats = array.new<SignalStats>(0)
+
+if array.size(signal_type_stats) == 0
+    for i = 0 to STATS_SIGNAL_BUCKETS - 1
+        array.push(signal_type_stats, SignalStats.new())
+    for i = 0 to STATS_GRADE_BUCKETS - 1
+        array.push(grade_stats, SignalStats.new())
+    for i = 0 to STATS_RANKING_BUCKETS - 1
+        array.push(ranking_stats, SignalStats.new())
+
+f_dir_bucket_index(_is_buy) =>
+    _is_buy ? STATS_DIR_BUY : STATS_DIR_SELL
+
+f_signal_kind_index(_is_mtf, _is_div, _is_ext) =>
+    _is_mtf ? STATS_SIGNAL_MTF : _is_div ? STATS_SIGNAL_DIV : _is_ext ? STATS_SIGNAL_EXT : STATS_SIGNAL_NORM
+
+f_grade_bucket_index_value(_grade) =>
+    _grade == "A" ? 0 : _grade == "B" ? 1 : _grade == "C" ? 2 : 3
+
+f_grade_value(_grade_idx) =>
+    _grade_idx == 0 ? "A" : _grade_idx == 1 ? "B" : _grade_idx == 2 ? "C" : "D"
+
+f_signal_type_bucket_index(_is_buy, _signal_idx) =>
+    _signal_idx * STATS_DIR_COUNT + f_dir_bucket_index(_is_buy)
+
+f_grade_bucket_index(_is_buy, _grade) =>
+    f_grade_bucket_index_value(_grade) * STATS_DIR_COUNT + f_dir_bucket_index(_is_buy)
+
+f_ranking_bucket_index(_is_buy, _signal_idx, _grade) =>
+    (_signal_idx * STATS_GRADE_COUNT + f_grade_bucket_index_value(_grade)) * STATS_DIR_COUNT + f_dir_bucket_index(_is_buy)
+
+f_update_stats_bucket(array<SignalStats> _stats, int _idx, bool _triggered, float _ret) =>
+    _bucket = array.get(_stats, _idx)
+    _bucket.update(_triggered, _ret)
+
+f_ranking_signal_number(_idx) =>
+    _idx < 8 ? 1 : _idx < 16 ? 2 : _idx < 24 ? 3 : 4
+
+f_ranking_grade_index(_idx) =>
+    _idx_in_signal = _idx % STATS_RANKING_BUCKETS_PER_SIGNAL
+    _idx_in_signal < 2 ? 0 : _idx_in_signal < 4 ? 1 : _idx_in_signal < 6 ? 2 : 3
+
+f_ranking_direction_number(_idx) =>
+    _idx % STATS_DIR_COUNT == STATS_DIR_BUY ? 1 : 2
+
+f_signal_type_dashboard_label(_signal_idx, _is_buy) =>
+    _signal_idx == STATS_SIGNAL_MTF ? (_is_buy ? "🌟MTF Buy" : "🌟MTF Sell") :
+     _signal_idx == STATS_SIGNAL_DIV ? (_is_buy ? "💎Div Buy" : "💎Div Sell") :
+     _signal_idx == STATS_SIGNAL_EXT ? (_is_buy ? "🔥Ext Buy" : "❄️Ext Sell") :
+     _is_buy ? "⬆️Norm Buy" : "⬇️Norm Sell"
+
+f_signal_type_dashboard_color(_signal_idx, _is_buy, _bull, _bear) =>
+    _signal_idx == STATS_SIGNAL_MTF ? #FFD700 :
+     _signal_idx == STATS_SIGNAL_DIV ? #00BCD4 :
+     _signal_idx == STATS_SIGNAL_EXT ? (_is_buy ? _bull : _bear) :
+     color.new(_is_buy ? _bull : _bear, 30)
+
+f_grade_dashboard_color(_grade_idx) =>
+    _grade_idx == 0 ? #FFD700 : _grade_idx == 1 ? #4CAF50 : _grade_idx == 2 ? #FF9800 : #9E9E9E
+
+f_stats_wr_text(SignalStats _stats) =>
+    _stats.count >= 5 ? str.format("{0,number,#}%", _stats.get_adjusted_winrate()) : "--"
+
+f_stats_avg_wr_text(SignalStats _stats) =>
+    _stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", _stats.get_avg(), _stats.get_adjusted_winrate()) : "--|--"
 
 
 // ────────────────────────────────────────
@@ -856,114 +886,33 @@ if enable_stats and bar_index > stats_forward_bars
     // Short Entry: 原有逻辑，做空收益
     forward_return_short = (close[stats_forward_bars] - close) / close[stats_forward_bars] * 100
 
-    mtf_buy_stats.update(sig_buy_mtf[stats_forward_bars], forward_return_long)
-    mtf_sell_stats.update(sig_sell_mtf[stats_forward_bars], forward_return_short)
-
-    div_buy_stats.update(sig_buy_div[stats_forward_bars], forward_return_long)
-    div_sell_stats.update(sig_sell_div[stats_forward_bars], forward_return_short)
-
-    ext_buy_stats.update(sig_buy_extreme[stats_forward_bars], forward_return_long)
-    ext_sell_stats.update(sig_sell_extreme[stats_forward_bars], forward_return_short)
-
-    norm_buy_stats.update(sig_buy_normal[stats_forward_bars], forward_return_long)
-    norm_sell_stats.update(sig_sell_normal[stats_forward_bars], forward_return_short)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(true, STATS_SIGNAL_MTF), sig_buy_mtf[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(false, STATS_SIGNAL_MTF), sig_sell_mtf[stats_forward_bars], forward_return_short)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(true, STATS_SIGNAL_DIV), sig_buy_div[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(false, STATS_SIGNAL_DIV), sig_sell_div[stats_forward_bars], forward_return_short)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(true, STATS_SIGNAL_EXT), sig_buy_extreme[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(false, STATS_SIGNAL_EXT), sig_sell_extreme[stats_forward_bars], forward_return_short)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(true, STATS_SIGNAL_NORM), sig_buy_normal[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(false, STATS_SIGNAL_NORM), sig_sell_normal[stats_forward_bars], forward_return_short)
 
     past_buy_signal = has_buy_signal[stats_forward_bars]
     past_buy_grade = buy_quality_grade[stats_forward_bars]
     if past_buy_signal
-        if past_buy_grade == "A"
-            grade_a_buy_stats.update(true, forward_return_long)
-        else if past_buy_grade == "B"
-            grade_b_buy_stats.update(true, forward_return_long)
-        else if past_buy_grade == "C"
-            grade_c_buy_stats.update(true, forward_return_long)
-        else if past_buy_grade == "D"
-            grade_d_buy_stats.update(true, forward_return_long)
+        f_update_stats_bucket(grade_stats, f_grade_bucket_index(true, past_buy_grade), true, forward_return_long)
 
     past_sell_signal = has_sell_signal[stats_forward_bars]
     past_sell_grade = sell_quality_grade[stats_forward_bars]
     if past_sell_signal
-        if past_sell_grade == "A"
-            grade_a_sell_stats.update(true, forward_return_short)
-        else if past_sell_grade == "B"
-            grade_b_sell_stats.update(true, forward_return_short)
-        else if past_sell_grade == "C"
-            grade_c_sell_stats.update(true, forward_return_short)
-        else if past_sell_grade == "D"
-            grade_d_sell_stats.update(true, forward_return_short)
+        f_update_stats_bucket(grade_stats, f_grade_bucket_index(false, past_sell_grade), true, forward_return_short)
 
-    if sig_buy_mtf[stats_forward_bars]
-        if past_buy_grade == "A"
-            mtf_a_buy.update(true, forward_return_long)
-        else if past_buy_grade == "B"
-            mtf_b_buy.update(true, forward_return_long)
-        else if past_buy_grade == "C"
-            mtf_c_buy.update(true, forward_return_long)
-        else if past_buy_grade == "D"
-            mtf_d_buy.update(true, forward_return_long)
-    if sig_sell_mtf[stats_forward_bars]
-        if past_sell_grade == "A"
-            mtf_a_sell.update(true, forward_return_short)
-        else if past_sell_grade == "B"
-            mtf_b_sell.update(true, forward_return_short)
-        else if past_sell_grade == "C"
-            mtf_c_sell.update(true, forward_return_short)
-        else if past_sell_grade == "D"
-            mtf_d_sell.update(true, forward_return_short)
-    if sig_buy_div[stats_forward_bars]
-        if past_buy_grade == "A"
-            div_a_buy.update(true, forward_return_long)
-        else if past_buy_grade == "B"
-            div_b_buy.update(true, forward_return_long)
-        else if past_buy_grade == "C"
-            div_c_buy.update(true, forward_return_long)
-        else if past_buy_grade == "D"
-            div_d_buy.update(true, forward_return_long)
-    if sig_sell_div[stats_forward_bars]
-        if past_sell_grade == "A"
-            div_a_sell.update(true, forward_return_short)
-        else if past_sell_grade == "B"
-            div_b_sell.update(true, forward_return_short)
-        else if past_sell_grade == "C"
-            div_c_sell.update(true, forward_return_short)
-        else if past_sell_grade == "D"
-            div_d_sell.update(true, forward_return_short)
-    if sig_buy_extreme[stats_forward_bars]
-        if past_buy_grade == "A"
-            ext_a_buy.update(true, forward_return_long)
-        else if past_buy_grade == "B"
-            ext_b_buy.update(true, forward_return_long)
-        else if past_buy_grade == "C"
-            ext_c_buy.update(true, forward_return_long)
-        else if past_buy_grade == "D"
-            ext_d_buy.update(true, forward_return_long)
-    if sig_sell_extreme[stats_forward_bars]
-        if past_sell_grade == "A"
-            ext_a_sell.update(true, forward_return_short)
-        else if past_sell_grade == "B"
-            ext_b_sell.update(true, forward_return_short)
-        else if past_sell_grade == "C"
-            ext_c_sell.update(true, forward_return_short)
-        else if past_sell_grade == "D"
-            ext_d_sell.update(true, forward_return_short)
-    if sig_buy_normal[stats_forward_bars]
-        if past_buy_grade == "A"
-            norm_a_buy.update(true, forward_return_long)
-        else if past_buy_grade == "B"
-            norm_b_buy.update(true, forward_return_long)
-        else if past_buy_grade == "C"
-            norm_c_buy.update(true, forward_return_long)
-        else if past_buy_grade == "D"
-            norm_d_buy.update(true, forward_return_long)
-    if sig_sell_normal[stats_forward_bars]
-        if past_sell_grade == "A"
-            norm_a_sell.update(true, forward_return_short)
-        else if past_sell_grade == "B"
-            norm_b_sell.update(true, forward_return_short)
-        else if past_sell_grade == "C"
-            norm_c_sell.update(true, forward_return_short)
-        else if past_sell_grade == "D"
-            norm_d_sell.update(true, forward_return_short)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(true, STATS_SIGNAL_MTF, past_buy_grade), sig_buy_mtf[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(false, STATS_SIGNAL_MTF, past_sell_grade), sig_sell_mtf[stats_forward_bars], forward_return_short)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(true, STATS_SIGNAL_DIV, past_buy_grade), sig_buy_div[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(false, STATS_SIGNAL_DIV, past_sell_grade), sig_sell_div[stats_forward_bars], forward_return_short)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(true, STATS_SIGNAL_EXT, past_buy_grade), sig_buy_extreme[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(false, STATS_SIGNAL_EXT, past_sell_grade), sig_sell_extreme[stats_forward_bars], forward_return_short)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(true, STATS_SIGNAL_NORM, past_buy_grade), sig_buy_normal[stats_forward_bars], forward_return_long)
+    f_update_stats_bucket(ranking_stats, f_ranking_bucket_index(false, STATS_SIGNAL_NORM, past_sell_grade), sig_sell_normal[stats_forward_bars], forward_return_short)
 
 // ────────────────────────────────────────
 // STATISTICS-DRIVEN FILTER
@@ -971,54 +920,21 @@ if enable_stats and bar_index > stats_forward_bars
 
 // 获取当前信号对应的统计数据
 f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
-    SignalStats result = SignalStats.new()
-    if _is_mtf
-        result := _is_buy ? (_grade == "A" ? mtf_a_buy : _grade == "B" ? mtf_b_buy : _grade == "C" ? mtf_c_buy : mtf_d_buy) :
-                           (_grade == "A" ? mtf_a_sell : _grade == "B" ? mtf_b_sell : _grade == "C" ? mtf_c_sell : mtf_d_sell)
-    else if _is_div
-        result := _is_buy ? (_grade == "A" ? div_a_buy : _grade == "B" ? div_b_buy : _grade == "C" ? div_c_buy : div_d_buy) :
-                           (_grade == "A" ? div_a_sell : _grade == "B" ? div_b_sell : _grade == "C" ? div_c_sell : div_d_sell)
-    else if _is_ext
-        result := _is_buy ? (_grade == "A" ? ext_a_buy : _grade == "B" ? ext_b_buy : _grade == "C" ? ext_c_buy : ext_d_buy) :
-                           (_grade == "A" ? ext_a_sell : _grade == "B" ? ext_b_sell : _grade == "C" ? ext_c_sell : ext_d_sell)
-    else
-        result := _is_buy ? (_grade == "A" ? norm_a_buy : _grade == "B" ? norm_b_buy : _grade == "C" ? norm_c_buy : norm_d_buy) :
-                           (_grade == "A" ? norm_a_sell : _grade == "B" ? norm_b_sell : _grade == "C" ? norm_c_sell : norm_d_sell)
-    result
+    array.get(ranking_stats, f_ranking_bucket_index(_is_buy, f_signal_kind_index(_is_mtf, _is_div, _is_ext), _grade))
 
 f_get_type_stats(_is_buy, _is_mtf, _is_div, _is_ext) =>
-    SignalStats result = SignalStats.new()
-    if _is_mtf
-        result := _is_buy ? mtf_buy_stats : mtf_sell_stats
-    else if _is_div
-        result := _is_buy ? div_buy_stats : div_sell_stats
-    else if _is_ext
-        result := _is_buy ? ext_buy_stats : ext_sell_stats
-    else
-        result := _is_buy ? norm_buy_stats : norm_sell_stats
-    result
+    array.get(signal_type_stats, f_signal_type_bucket_index(_is_buy, f_signal_kind_index(_is_mtf, _is_div, _is_ext)))
 
 f_get_grade_stats(_is_buy, _grade) =>
-    SignalStats result = SignalStats.new()
-    if _grade == "A"
-        result := _is_buy ? grade_a_buy_stats : grade_a_sell_stats
-    else if _grade == "B"
-        result := _is_buy ? grade_b_buy_stats : grade_b_sell_stats
-    else if _grade == "C"
-        result := _is_buy ? grade_c_buy_stats : grade_c_sell_stats
-    else
-        result := _is_buy ? grade_d_buy_stats : grade_d_sell_stats
-    result
+    array.get(grade_stats, f_grade_bucket_index(_is_buy, _grade))
 
 f_get_filter_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
-    SignalStats result = SignalStats.new()
     if stats_mode == "Signal Type"
-        result := f_get_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
+        f_get_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
     else if stats_mode == "Grade"
-        result := f_get_grade_stats(_is_buy, _grade)
+        f_get_grade_stats(_is_buy, _grade)
     else
-        result := f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
-    result
+        f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
 
 f_get_signal_type_label(_is_mtf, _is_div, _is_ext) =>
     _is_mtf ? "MTF" : _is_div ? "DIV" : _is_ext ? "EXT" : "NORM"
@@ -1243,29 +1159,29 @@ f_harness_gate_snapshot() =>
 
     if _use_buy
         if sig_buy_mtf
-            _stats := buy_mtf_stats
+            _stats := f_get_filter_stats(true, true, false, false, buy_quality_grade)
             _source := f_get_filter_source_label(true, false, false, buy_quality_grade)
         else if sig_buy_div
-            _stats := buy_div_stats
+            _stats := f_get_filter_stats(true, false, true, false, buy_quality_grade)
             _source := f_get_filter_source_label(false, true, false, buy_quality_grade)
         else if sig_buy_extreme
-            _stats := buy_ext_stats
+            _stats := f_get_filter_stats(true, false, false, true, buy_quality_grade)
             _source := f_get_filter_source_label(false, false, true, buy_quality_grade)
         else if sig_buy_normal
-            _stats := buy_norm_stats
+            _stats := f_get_filter_stats(true, false, false, false, buy_quality_grade)
             _source := f_get_filter_source_label(false, false, false, buy_quality_grade)
     else
         if sig_sell_mtf
-            _stats := sell_mtf_stats
+            _stats := f_get_filter_stats(false, true, false, false, sell_quality_grade)
             _source := f_get_filter_source_label(true, false, false, sell_quality_grade)
         else if sig_sell_div
-            _stats := sell_div_stats
+            _stats := f_get_filter_stats(false, false, true, false, sell_quality_grade)
             _source := f_get_filter_source_label(false, true, false, sell_quality_grade)
         else if sig_sell_extreme
-            _stats := sell_ext_stats
+            _stats := f_get_filter_stats(false, false, false, true, sell_quality_grade)
             _source := f_get_filter_source_label(false, false, true, sell_quality_grade)
         else if sig_sell_normal
-            _stats := sell_norm_stats
+            _stats := f_get_filter_stats(false, false, false, false, sell_quality_grade)
             _source := f_get_filter_source_label(false, false, false, sell_quality_grade)
 
     if _source != "Idle"
@@ -1425,321 +1341,38 @@ if show_dashboard
                     row += 1
 
                     if stats_mode == "Signal Type"
-                        mtf_buy_wr = mtf_buy_stats.count >= 5 ? str.format("{0,number,#}%", mtf_buy_stats.get_adjusted_winrate()) : "--"
-                        mtf_sell_wr = mtf_sell_stats.count >= 5 ? str.format("{0,number,#}%", mtf_sell_stats.get_adjusted_winrate()) : "--"
-                        table.cell(dashboard, 0, row, str.format("🌟MTF Buy({0}){1}", mtf_buy_stats.count, mtf_buy_stats.get_reliability()), text_color=#FFD700, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", mtf_buy_stats.get_avg(), mtf_buy_wr), text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("🌟MTF Sell({0}){1}", mtf_sell_stats.count, mtf_sell_stats.get_reliability()), text_color=#FFD700, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", mtf_sell_stats.get_avg(), mtf_sell_wr), text_color=color_bear, text_size=txt_size_body)
-                        row += 1
-
-                        div_buy_wr = div_buy_stats.count >= 5 ? str.format("{0,number,#}%", div_buy_stats.get_adjusted_winrate()) : "--"
-                        div_sell_wr = div_sell_stats.count >= 5 ? str.format("{0,number,#}%", div_sell_stats.get_adjusted_winrate()) : "--"
-                        table.cell(dashboard, 0, row, str.format("💎Div Buy({0}){1}", div_buy_stats.count, div_buy_stats.get_reliability()), text_color=#00BCD4, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", div_buy_stats.get_avg(), div_buy_wr), text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("💎Div Sell({0}){1}", div_sell_stats.count, div_sell_stats.get_reliability()), text_color=#00BCD4, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", div_sell_stats.get_avg(), div_sell_wr), text_color=color_bear, text_size=txt_size_body)
-                        row += 1
-
-                        ext_buy_wr = ext_buy_stats.count >= 5 ? str.format("{0,number,#}%", ext_buy_stats.get_adjusted_winrate()) : "--"
-                        ext_sell_wr = ext_sell_stats.count >= 5 ? str.format("{0,number,#}%", ext_sell_stats.get_adjusted_winrate()) : "--"
-                        table.cell(dashboard, 0, row, str.format("🔥Ext Buy({0}){1}", ext_buy_stats.count, ext_buy_stats.get_reliability()), text_color=color_bull, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", ext_buy_stats.get_avg(), ext_buy_wr), text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("❄️Ext Sell({0}){1}", ext_sell_stats.count, ext_sell_stats.get_reliability()), text_color=color_bear, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", ext_sell_stats.get_avg(), ext_sell_wr), text_color=color_bear, text_size=txt_size_body)
-                        row += 1
-
-                        norm_buy_wr = norm_buy_stats.count >= 5 ? str.format("{0,number,#}%", norm_buy_stats.get_adjusted_winrate()) : "--"
-                        norm_sell_wr = norm_sell_stats.count >= 5 ? str.format("{0,number,#}%", norm_sell_stats.get_adjusted_winrate()) : "--"
-                        table.cell(dashboard, 0, row, str.format("⬆️Norm Buy({0}){1}", norm_buy_stats.count, norm_buy_stats.get_reliability()), text_color=color.new(color_bull, 30), text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", norm_buy_stats.get_avg(), norm_buy_wr), text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("⬇️Norm Sell({0}){1}", norm_sell_stats.count, norm_sell_stats.get_reliability()), text_color=color.new(color_bear, 30), text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", norm_sell_stats.get_avg(), norm_sell_wr), text_color=color_bear, text_size=txt_size_body)
-                        row += 1
+                        for sig_idx = 0 to STATS_SIGNAL_COUNT - 1
+                            for dir_idx = 0 to STATS_DIR_COUNT - 1
+                                is_buy = dir_idx == STATS_DIR_BUY
+                                sig_stats = array.get(signal_type_stats, f_signal_type_bucket_index(is_buy, sig_idx))
+                                sig_wr = f_stats_wr_text(sig_stats)
+                                table.cell(dashboard, 0, row, str.format("{0}({1}){2}", f_signal_type_dashboard_label(sig_idx, is_buy), sig_stats.count, sig_stats.get_reliability()), text_color=f_signal_type_dashboard_color(sig_idx, is_buy, color_bull, color_bear), text_size=txt_size_body)
+                                table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", sig_stats.get_avg(), sig_wr), text_color=is_buy ? color_bull : color_bear, text_size=txt_size_body)
+                                row += 1
 
                     else if stats_mode == "Grade"
-                        a_buy_display = grade_a_buy_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_a_buy_stats.get_avg(), grade_a_buy_stats.get_adjusted_winrate()) : "--|--"
-                        a_sell_display = grade_a_sell_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_a_sell_stats.get_avg(), grade_a_sell_stats.get_adjusted_winrate()) : "--|--"
-                        table.cell(dashboard, 0, row, str.format("[A]📈({0}){1}", grade_a_buy_stats.count, grade_a_buy_stats.get_reliability()), text_color=#FFD700, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, a_buy_display, text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("[A]📉({0}){1}", grade_a_sell_stats.count, grade_a_sell_stats.get_reliability()), text_color=#FFD700, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, a_sell_display, text_color=color_bear, text_size=txt_size_body)
-                        row += 1
-
-                        b_buy_display = grade_b_buy_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_b_buy_stats.get_avg(), grade_b_buy_stats.get_adjusted_winrate()) : "--|--"
-                        b_sell_display = grade_b_sell_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_b_sell_stats.get_avg(), grade_b_sell_stats.get_adjusted_winrate()) : "--|--"
-                        table.cell(dashboard, 0, row, str.format("[B]📈({0}){1}", grade_b_buy_stats.count, grade_b_buy_stats.get_reliability()), text_color=#4CAF50, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, b_buy_display, text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("[B]📉({0}){1}", grade_b_sell_stats.count, grade_b_sell_stats.get_reliability()), text_color=#4CAF50, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, b_sell_display, text_color=color_bear, text_size=txt_size_body)
-                        row += 1
-
-                        c_buy_display = grade_c_buy_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_c_buy_stats.get_avg(), grade_c_buy_stats.get_adjusted_winrate()) : "--|--"
-                        c_sell_display = grade_c_sell_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_c_sell_stats.get_avg(), grade_c_sell_stats.get_adjusted_winrate()) : "--|--"
-                        table.cell(dashboard, 0, row, str.format("[C]📈({0}){1}", grade_c_buy_stats.count, grade_c_buy_stats.get_reliability()), text_color=#FF9800, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, c_buy_display, text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("[C]📉({0}){1}", grade_c_sell_stats.count, grade_c_sell_stats.get_reliability()), text_color=#FF9800, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, c_sell_display, text_color=color_bear, text_size=txt_size_body)
-                        row += 1
-
-                        d_buy_display = grade_d_buy_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_d_buy_stats.get_avg(), grade_d_buy_stats.get_adjusted_winrate()) : "--|--"
-                        d_sell_display = grade_d_sell_stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", grade_d_sell_stats.get_avg(), grade_d_sell_stats.get_adjusted_winrate()) : "--|--"
-                        table.cell(dashboard, 0, row, str.format("[D]📈({0}){1}", grade_d_buy_stats.count, grade_d_buy_stats.get_reliability()), text_color=#9E9E9E, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, d_buy_display, text_color=color_bull, text_size=txt_size_body)
-                        row += 1
-                        table.cell(dashboard, 0, row, str.format("[D]📉({0}){1}", grade_d_sell_stats.count, grade_d_sell_stats.get_reliability()), text_color=#9E9E9E, text_size=txt_size_body)
-                        table.cell(dashboard, 1, row, d_sell_display, text_color=color_bear, text_size=txt_size_body)
-                        row += 1
+                        for grade_idx = 0 to STATS_GRADE_COUNT - 1
+                            for dir_idx = 0 to STATS_DIR_COUNT - 1
+                                is_buy = dir_idx == STATS_DIR_BUY
+                                grade_label = f_grade_value(grade_idx)
+                                grade_bucket = array.get(grade_stats, grade_idx * STATS_DIR_COUNT + dir_idx)
+                                grade_display = f_stats_avg_wr_text(grade_bucket)
+                                table.cell(dashboard, 0, row, str.format("[{0}]{1}({2}){3}", grade_label, is_buy ? "📈" : "📉", grade_bucket.count, grade_bucket.get_reliability()), text_color=f_grade_dashboard_color(grade_idx), text_size=txt_size_body)
+                                table.cell(dashboard, 1, row, grade_display, text_color=is_buy ? color_bull : color_bear, text_size=txt_size_body)
+                                row += 1
 
                     else if stats_mode == "Ranking"
-                        var ranking_wr = array.new_float(32, 0.0)
-                        var ranking_ret = array.new_float(32, 0.0)
-                        var ranking_cnt = array.new_int(32, 0)
-                        var ranking_sig = array.new_int(32, 0)
-                        var ranking_grd = array.new_string(32, "")
-                        var ranking_dir = array.new_int(32, 0)
+                        var ranking_wr = array.new_float(STATS_RANKING_BUCKETS, 0.0)
+                        var ranking_idx = array.new_int(STATS_RANKING_BUCKETS)
 
-                        array.set(ranking_wr, 0, mtf_a_buy.count >= 5 ? mtf_a_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 0, mtf_a_buy.get_avg())
-                        array.set(ranking_cnt, 0, mtf_a_buy.count)
-                        array.set(ranking_sig, 0, 1)
-                        array.set(ranking_grd, 0, "A")
-                        array.set(ranking_dir, 0, 1)
-
-                        array.set(ranking_wr, 1, mtf_a_sell.count >= 5 ? mtf_a_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 1, mtf_a_sell.get_avg())
-                        array.set(ranking_cnt, 1, mtf_a_sell.count)
-                        array.set(ranking_sig, 1, 1)
-                        array.set(ranking_grd, 1, "A")
-                        array.set(ranking_dir, 1, 2)
-
-                        array.set(ranking_wr, 2, mtf_b_buy.count >= 5 ? mtf_b_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 2, mtf_b_buy.get_avg())
-                        array.set(ranking_cnt, 2, mtf_b_buy.count)
-                        array.set(ranking_sig, 2, 1)
-                        array.set(ranking_grd, 2, "B")
-                        array.set(ranking_dir, 2, 1)
-
-                        array.set(ranking_wr, 3, mtf_b_sell.count >= 5 ? mtf_b_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 3, mtf_b_sell.get_avg())
-                        array.set(ranking_cnt, 3, mtf_b_sell.count)
-                        array.set(ranking_sig, 3, 1)
-                        array.set(ranking_grd, 3, "B")
-                        array.set(ranking_dir, 3, 2)
-
-                        array.set(ranking_wr, 4, mtf_c_buy.count >= 5 ? mtf_c_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 4, mtf_c_buy.get_avg())
-                        array.set(ranking_cnt, 4, mtf_c_buy.count)
-                        array.set(ranking_sig, 4, 1)
-                        array.set(ranking_grd, 4, "C")
-                        array.set(ranking_dir, 4, 1)
-
-                        array.set(ranking_wr, 5, mtf_c_sell.count >= 5 ? mtf_c_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 5, mtf_c_sell.get_avg())
-                        array.set(ranking_cnt, 5, mtf_c_sell.count)
-                        array.set(ranking_sig, 5, 1)
-                        array.set(ranking_grd, 5, "C")
-                        array.set(ranking_dir, 5, 2)
-
-                        array.set(ranking_wr, 6, mtf_d_buy.count >= 5 ? mtf_d_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 6, mtf_d_buy.get_avg())
-                        array.set(ranking_cnt, 6, mtf_d_buy.count)
-                        array.set(ranking_sig, 6, 1)
-                        array.set(ranking_grd, 6, "D")
-                        array.set(ranking_dir, 6, 1)
-
-                        array.set(ranking_wr, 7, mtf_d_sell.count >= 5 ? mtf_d_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 7, mtf_d_sell.get_avg())
-                        array.set(ranking_cnt, 7, mtf_d_sell.count)
-                        array.set(ranking_sig, 7, 1)
-                        array.set(ranking_grd, 7, "D")
-                        array.set(ranking_dir, 7, 2)
-
-                        // Div × Grade (index 8-15)
-                        array.set(ranking_wr, 8, div_a_buy.count >= 5 ? div_a_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 8, div_a_buy.get_avg())
-                        array.set(ranking_cnt, 8, div_a_buy.count)
-                        array.set(ranking_sig, 8, 2)
-                        array.set(ranking_grd, 8, "A")
-                        array.set(ranking_dir, 8, 1)
-
-                        array.set(ranking_wr, 9, div_a_sell.count >= 5 ? div_a_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 9, div_a_sell.get_avg())
-                        array.set(ranking_cnt, 9, div_a_sell.count)
-                        array.set(ranking_sig, 9, 2)
-                        array.set(ranking_grd, 9, "A")
-                        array.set(ranking_dir, 9, 2)
-
-                        array.set(ranking_wr, 10, div_b_buy.count >= 5 ? div_b_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 10, div_b_buy.get_avg())
-                        array.set(ranking_cnt, 10, div_b_buy.count)
-                        array.set(ranking_sig, 10, 2)
-                        array.set(ranking_grd, 10, "B")
-                        array.set(ranking_dir, 10, 1)
-
-                        array.set(ranking_wr, 11, div_b_sell.count >= 5 ? div_b_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 11, div_b_sell.get_avg())
-                        array.set(ranking_cnt, 11, div_b_sell.count)
-                        array.set(ranking_sig, 11, 2)
-                        array.set(ranking_grd, 11, "B")
-                        array.set(ranking_dir, 11, 2)
-
-                        array.set(ranking_wr, 12, div_c_buy.count >= 5 ? div_c_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 12, div_c_buy.get_avg())
-                        array.set(ranking_cnt, 12, div_c_buy.count)
-                        array.set(ranking_sig, 12, 2)
-                        array.set(ranking_grd, 12, "C")
-                        array.set(ranking_dir, 12, 1)
-
-                        array.set(ranking_wr, 13, div_c_sell.count >= 5 ? div_c_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 13, div_c_sell.get_avg())
-                        array.set(ranking_cnt, 13, div_c_sell.count)
-                        array.set(ranking_sig, 13, 2)
-                        array.set(ranking_grd, 13, "C")
-                        array.set(ranking_dir, 13, 2)
-
-                        array.set(ranking_wr, 14, div_d_buy.count >= 5 ? div_d_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 14, div_d_buy.get_avg())
-                        array.set(ranking_cnt, 14, div_d_buy.count)
-                        array.set(ranking_sig, 14, 2)
-                        array.set(ranking_grd, 14, "D")
-                        array.set(ranking_dir, 14, 1)
-
-                        array.set(ranking_wr, 15, div_d_sell.count >= 5 ? div_d_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 15, div_d_sell.get_avg())
-                        array.set(ranking_cnt, 15, div_d_sell.count)
-                        array.set(ranking_sig, 15, 2)
-                        array.set(ranking_grd, 15, "D")
-                        array.set(ranking_dir, 15, 2)
-
-                        // Ext × Grade (index 16-23)
-                        array.set(ranking_wr, 16, ext_a_buy.count >= 5 ? ext_a_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 16, ext_a_buy.get_avg())
-                        array.set(ranking_cnt, 16, ext_a_buy.count)
-                        array.set(ranking_sig, 16, 3)
-                        array.set(ranking_grd, 16, "A")
-                        array.set(ranking_dir, 16, 1)
-
-                        array.set(ranking_wr, 17, ext_a_sell.count >= 5 ? ext_a_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 17, ext_a_sell.get_avg())
-                        array.set(ranking_cnt, 17, ext_a_sell.count)
-                        array.set(ranking_sig, 17, 3)
-                        array.set(ranking_grd, 17, "A")
-                        array.set(ranking_dir, 17, 2)
-
-                        array.set(ranking_wr, 18, ext_b_buy.count >= 5 ? ext_b_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 18, ext_b_buy.get_avg())
-                        array.set(ranking_cnt, 18, ext_b_buy.count)
-                        array.set(ranking_sig, 18, 3)
-                        array.set(ranking_grd, 18, "B")
-                        array.set(ranking_dir, 18, 1)
-
-                        array.set(ranking_wr, 19, ext_b_sell.count >= 5 ? ext_b_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 19, ext_b_sell.get_avg())
-                        array.set(ranking_cnt, 19, ext_b_sell.count)
-                        array.set(ranking_sig, 19, 3)
-                        array.set(ranking_grd, 19, "B")
-                        array.set(ranking_dir, 19, 2)
-
-                        array.set(ranking_wr, 20, ext_c_buy.count >= 5 ? ext_c_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 20, ext_c_buy.get_avg())
-                        array.set(ranking_cnt, 20, ext_c_buy.count)
-                        array.set(ranking_sig, 20, 3)
-                        array.set(ranking_grd, 20, "C")
-                        array.set(ranking_dir, 20, 1)
-
-                        array.set(ranking_wr, 21, ext_c_sell.count >= 5 ? ext_c_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 21, ext_c_sell.get_avg())
-                        array.set(ranking_cnt, 21, ext_c_sell.count)
-                        array.set(ranking_sig, 21, 3)
-                        array.set(ranking_grd, 21, "C")
-                        array.set(ranking_dir, 21, 2)
-
-                        array.set(ranking_wr, 22, ext_d_buy.count >= 5 ? ext_d_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 22, ext_d_buy.get_avg())
-                        array.set(ranking_cnt, 22, ext_d_buy.count)
-                        array.set(ranking_sig, 22, 3)
-                        array.set(ranking_grd, 22, "D")
-                        array.set(ranking_dir, 22, 1)
-
-                        array.set(ranking_wr, 23, ext_d_sell.count >= 5 ? ext_d_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 23, ext_d_sell.get_avg())
-                        array.set(ranking_cnt, 23, ext_d_sell.count)
-                        array.set(ranking_sig, 23, 3)
-                        array.set(ranking_grd, 23, "D")
-                        array.set(ranking_dir, 23, 2)
-
-                        // Norm × Grade (index 24-31)
-                        array.set(ranking_wr, 24, norm_a_buy.count >= 5 ? norm_a_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 24, norm_a_buy.get_avg())
-                        array.set(ranking_cnt, 24, norm_a_buy.count)
-                        array.set(ranking_sig, 24, 4)
-                        array.set(ranking_grd, 24, "A")
-                        array.set(ranking_dir, 24, 1)
-
-                        array.set(ranking_wr, 25, norm_a_sell.count >= 5 ? norm_a_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 25, norm_a_sell.get_avg())
-                        array.set(ranking_cnt, 25, norm_a_sell.count)
-                        array.set(ranking_sig, 25, 4)
-                        array.set(ranking_grd, 25, "A")
-                        array.set(ranking_dir, 25, 2)
-
-                        array.set(ranking_wr, 26, norm_b_buy.count >= 5 ? norm_b_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 26, norm_b_buy.get_avg())
-                        array.set(ranking_cnt, 26, norm_b_buy.count)
-                        array.set(ranking_sig, 26, 4)
-                        array.set(ranking_grd, 26, "B")
-                        array.set(ranking_dir, 26, 1)
-
-                        array.set(ranking_wr, 27, norm_b_sell.count >= 5 ? norm_b_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 27, norm_b_sell.get_avg())
-                        array.set(ranking_cnt, 27, norm_b_sell.count)
-                        array.set(ranking_sig, 27, 4)
-                        array.set(ranking_grd, 27, "B")
-                        array.set(ranking_dir, 27, 2)
-
-                        array.set(ranking_wr, 28, norm_c_buy.count >= 5 ? norm_c_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 28, norm_c_buy.get_avg())
-                        array.set(ranking_cnt, 28, norm_c_buy.count)
-                        array.set(ranking_sig, 28, 4)
-                        array.set(ranking_grd, 28, "C")
-                        array.set(ranking_dir, 28, 1)
-
-                        array.set(ranking_wr, 29, norm_c_sell.count >= 5 ? norm_c_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 29, norm_c_sell.get_avg())
-                        array.set(ranking_cnt, 29, norm_c_sell.count)
-                        array.set(ranking_sig, 29, 4)
-                        array.set(ranking_grd, 29, "C")
-                        array.set(ranking_dir, 29, 2)
-
-                        array.set(ranking_wr, 30, norm_d_buy.count >= 5 ? norm_d_buy.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 30, norm_d_buy.get_avg())
-                        array.set(ranking_cnt, 30, norm_d_buy.count)
-                        array.set(ranking_sig, 30, 4)
-                        array.set(ranking_grd, 30, "D")
-                        array.set(ranking_dir, 30, 1)
-
-                        array.set(ranking_wr, 31, norm_d_sell.count >= 5 ? norm_d_sell.get_adjusted_winrate() : 0)
-                        array.set(ranking_ret, 31, norm_d_sell.get_avg())
-                        array.set(ranking_cnt, 31, norm_d_sell.count)
-                        array.set(ranking_sig, 31, 4)
-                        array.set(ranking_grd, 31, "D")
-                        array.set(ranking_dir, 31, 2)
-
-                        // 创建索引数组用于排序
-                        var ranking_idx = array.new_int(32)
-                        for i = 0 to 31
+                        for i = 0 to STATS_RANKING_BUCKETS - 1
+                            rank_stats = array.get(ranking_stats, i)
+                            array.set(ranking_wr, i, rank_stats.count >= 5 ? rank_stats.get_adjusted_winrate() : 0)
                             array.set(ranking_idx, i, i)
 
-                        for i = 0 to 30
-                            for j = 0 to 30 - i
+                        // 创建索引数组用于排序
+                        for i = 0 to STATS_RANKING_BUCKETS - 2
+                            for j = 0 to STATS_RANKING_BUCKETS - 2 - i
                                 idx_j = array.get(ranking_idx, j)
                                 idx_j1 = array.get(ranking_idx, j + 1)
                                 if array.get(ranking_wr, idx_j) < array.get(ranking_wr, idx_j1)
@@ -1747,17 +1380,18 @@ if show_dashboard
                                     array.set(ranking_idx, j + 1, idx_j)
 
                         display_count = 0
-                        for i = 0 to 31
+                        for i = 0 to STATS_RANKING_BUCKETS - 1
                             if display_count >= 8
                                 break
                             idx = array.get(ranking_idx, i)
                             wr = array.get(ranking_wr, idx)
                             if wr > 0  // 只显示有数据的
-                                sig = array.get(ranking_sig, idx)
-                                grd = array.get(ranking_grd, idx)
-                                dir = array.get(ranking_dir, idx)
-                                ret = array.get(ranking_ret, idx)
-                                cnt = array.get(ranking_cnt, idx)
+                                rank_stats = array.get(ranking_stats, idx)
+                                sig = f_ranking_signal_number(idx)
+                                grd = f_grade_value(f_ranking_grade_index(idx))
+                                dir = f_ranking_direction_number(idx)
+                                ret = rank_stats.get_avg()
+                                cnt = rank_stats.count
                                 rel = cnt >= 20 ? "✓" : cnt >= 5 ? "⚠️" : "❌"
                                 dir_text = dir == 1 ? "📈" : "📉"
                                 dir_clr = f_dir_color(dir, color_bull, color_bear)

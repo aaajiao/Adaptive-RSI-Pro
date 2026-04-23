@@ -6,10 +6,12 @@ on:
       - '**.pine'
       - '.pine-lint.yml'
       - 'tools/pine_linter/**'
+      - 'tools/generate_strategy_harness.py'
   pull_request:
     paths:
       - '**.pine'
       - '.pine-lint.yml'
+      - 'tools/**'
 
 jobs:
   lint:
@@ -27,6 +29,9 @@ jobs:
       
       - name: Install dependencies
         run: pip install pyyaml
+
+      - name: Check generated strategy harness
+        run: python tools/generate_strategy_harness.py --check
       
       - name: Run Pine Linter
         id: lint
@@ -34,7 +39,8 @@ jobs:
           python tools/pine_linter/cli.py \
             --config .pine-lint.yml \
             --format github \
-            adaptive_rsi.pine
+            adaptive_rsi.pine \
+            adaptive_rsi_strategy_harness.pine
         continue-on-error: true
       
       - name: Generate Markdown Report
@@ -44,7 +50,8 @@ jobs:
             --config .pine-lint.yml \
             --format markdown \
             --output lint-report.md \
-            adaptive_rsi.pine || true
+            adaptive_rsi.pine \
+            adaptive_rsi_strategy_harness.pine || true
       
       - name: Upload Report
         if: always()

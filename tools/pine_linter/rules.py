@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from abc import ABC, abstractmethod
 
 
@@ -32,23 +32,260 @@ class BaseRule(ABC):
         return pos - last_newline if last_newline >= 0 else pos + 1
 
 
-class SEC001_LookaheadOff(BaseRule):
+class SEC001_SafeLookahead(BaseRule):
     rule_id = "SEC001"
     severity = "error"
-    message = "request.security() should have lookahead=barmerge.lookahead_off to prevent future data leak"
+    message = "request.security() must declare safe lookahead behavior"
 
     SECURITY_START_PATTERN = re.compile(r"request\.security\s*\(", re.DOTALL)
+    LOOKAHEAD_OFF = "barmerge.lookahead_off"
+    LOOKAHEAD_ON = "barmerge.lookahead_on"
 
     def _find_matching_paren(self, content: str, start: int) -> int:
         depth = 1
         i = start
+        in_string = False
+        string_quote = ""
+        in_line_comment = False
+
         while i < len(content) and depth > 0:
-            if content[i] == "(":
+            char = content[i]
+            next_char = content[i + 1] if i + 1 < len(content) else ""
+
+            if in_line_comment:
+                if char == "\n":
+                    in_line_comment = False
+                i += 1
+                continue
+
+            if in_string:
+                if char == "\\":
+                    i += 2
+                    continue
+                if char == string_quote:
+                    in_string = False
+                    string_quote = ""
+                i += 1
+                continue
+
+            if char == "/" and next_char == "/":
+                in_line_comment = True
+                i += 2
+                continue
+
+            if char in ("'", '"'):
+                in_string = True
+                string_quote = char
+            elif char == "(":
                 depth += 1
-            elif content[i] == ")":
+            elif char == ")":
                 depth -= 1
             i += 1
         return i
+
+    def _strip_comments_and_strings(self, text: str) -> str:
+        result = []
+        i = 0
+        in_string = False
+        string_quote = ""
+        in_line_comment = False
+
+        while i < len(text):
+            char = text[i]
+            next_char = text[i + 1] if i + 1 < len(text) else ""
+
+            if in_line_comment:
+                result.append("\n" if char == "\n" else " ")
+                if char == "\n":
+                    in_line_comment = False
+                i += 1
+                continue
+
+            if in_string:
+                result.append(" ")
+                if char == "\\":
+                    if i + 1 < len(text):
+                        result.append(" ")
+                    i += 2
+                    continue
+                if char == string_quote:
+                    in_string = False
+                    string_quote = ""
+                i += 1
+                continue
+
+            if char == "/" and next_char == "/":
+                result.extend("  ")
+                in_line_comment = True
+                i += 2
+                continue
+
+            if char in ("'", '"'):
+                result.append(" ")
+                in_string = True
+                string_quote = char
+                i += 1
+                continue
+
+            result.append(char)
+            i += 1
+
+        return "".join(result)
+
+    def _split_top_level_args(self, text: str) -> List[str]:
+        args = []
+        start = 0
+        paren_depth = 0
+        bracket_depth = 0
+        brace_depth = 0
+        i = 0
+        in_string = False
+        string_quote = ""
+        in_line_comment = False
+
+        while i < len(text):
+            char = text[i]
+            next_char = text[i + 1] if i + 1 < len(text) else ""
+
+            if in_line_comment:
+                if char == "\n":
+                    in_line_comment = False
+                i += 1
+                continue
+
+            if in_string:
+                if char == "\\":
+                    i += 2
+                    continue
+                if char == string_quote:
+                    in_string = False
+                    string_quote = ""
+                i += 1
+                continue
+
+            if char == "/" and next_char == "/":
+                in_line_comment = True
+                i += 2
+                continue
+
+            if char in ("'", '"'):
+                in_string = True
+                string_quote = char
+            elif char == "(":
+                paren_depth += 1
+            elif char == ")":
+                paren_depth -= 1
+            elif char == "[":
+                bracket_depth += 1
+            elif char == "]":
+                bracket_depth -= 1
+            elif char == "{":
+                brace_depth += 1
+            elif char == "}":
+                brace_depth -= 1
+            elif (
+                char == ","
+                and paren_depth == 0
+                and bracket_depth == 0
+                and brace_depth == 0
+            ):
+                args.append(text[start:i].strip())
+                start = i + 1
+            i += 1
+
+        trailing = text[start:].strip()
+        if trailing:
+            args.append(trailing)
+
+        return args
+
+    def _parse_named_arg(self, arg: str) -> Tuple[Optional[str], str]:
+        match = re.match(r"\s*([A-Za-z_]\w*)\s*=\s*(.*)\s*$", arg, re.DOTALL)
+        if not match:
+            return None, arg.strip()
+        return match.group(1), match.group(2).strip()
+
+    def _normalize_value(self, value: str) -> str:
+        value_without_comments = self._strip_comments_and_strings(value)
+        return re.sub(r"\s+", "", value_without_comments)
+
+    def _get_security_expression(self, args: List[str]) -> Optional[str]:
+        for arg in args:
+            name, value = self._parse_named_arg(arg)
+            if name == "expression":
+                return value
+
+        if len(args) >= 3:
+            return self._parse_named_arg(args[2])[1]
+
+        return None
+
+    def _get_lookahead_value(self, args: List[str]) -> Optional[str]:
+        for arg in args:
+            name, value = self._parse_named_arg(arg)
+            if name == "lookahead":
+                return value
+
+        if len(args) >= 5:
+            name, value = self._parse_named_arg(args[4])
+            if name is None:
+                return value
+
+        return None
+
+    def _matching_outer_bracket(self, text: str) -> bool:
+        stripped = text.strip()
+        if not stripped.startswith("[") or not stripped.endswith("]"):
+            return False
+
+        depth = 0
+        in_string = False
+        string_quote = ""
+        in_line_comment = False
+
+        for i, char in enumerate(stripped):
+            next_char = stripped[i + 1] if i + 1 < len(stripped) else ""
+
+            if in_line_comment:
+                if char == "\n":
+                    in_line_comment = False
+                continue
+
+            if in_string:
+                if char == "\\":
+                    continue
+                if char == string_quote:
+                    in_string = False
+                    string_quote = ""
+                continue
+
+            if char == "/" and next_char == "/":
+                in_line_comment = True
+                continue
+
+            if char in ("'", '"'):
+                in_string = True
+                string_quote = char
+            elif char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+                if depth == 0 and i != len(stripped) - 1:
+                    return False
+
+        return depth == 0
+
+    def _uses_confirmed_historical_offset(self, expression: str) -> bool:
+        if self._matching_outer_bracket(expression):
+            inner = expression.strip()[1:-1]
+            items = self._split_top_level_args(inner)
+            return bool(items) and all(
+                self._uses_confirmed_historical_offset(item) for item in items
+            )
+
+        expression_without_comments = self._strip_comments_and_strings(expression)
+        normalized_expression = re.sub(r"\s+", "", expression_without_comments)
+        return normalized_expression.endswith("[1]")
 
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
@@ -71,10 +308,86 @@ class SEC001_LookaheadOff(BaseRule):
                         severity=self.severity,
                         line=line_num,
                         column=self._get_column(content, match.start()),
-                        message=self.message,
-                        suggestion="Add: lookahead=barmerge.lookahead_off",
+                        message="request.security() must explicitly set lookahead",
+                        suggestion=(
+                            "Add lookahead=barmerge.lookahead_off, or use "
+                            "lookahead=barmerge.lookahead_on only with a [1] "
+                            "confirmed historical expression."
+                        ),
                     )
                 )
+                continue
+
+            args = self._split_top_level_args(call_text[call_text.find("(") + 1 : -1])
+            lookahead_value = self._get_lookahead_value(args)
+            expression = self._get_security_expression(args)
+
+            line_num = self._get_line_number(content, match.start())
+            line_content = lines[line_num - 1] if line_num <= len(lines) else ""
+            if line_content.strip().startswith("//"):
+                continue
+
+            if lookahead_value is None:
+                issues.append(
+                    Issue(
+                        rule_id=self.rule_id,
+                        severity=self.severity,
+                        line=line_num,
+                        column=self._get_column(content, match.start()),
+                        message="request.security() must explicitly set lookahead",
+                        suggestion=(
+                            "Add lookahead=barmerge.lookahead_off, or use "
+                            "lookahead=barmerge.lookahead_on only with a [1] "
+                            "confirmed historical expression."
+                        ),
+                    )
+                )
+                continue
+
+            normalized_lookahead = self._normalize_value(lookahead_value)
+            if normalized_lookahead == self.LOOKAHEAD_OFF:
+                continue
+
+            if normalized_lookahead == self.LOOKAHEAD_ON:
+                if expression and self._uses_confirmed_historical_offset(expression):
+                    continue
+
+                issues.append(
+                    Issue(
+                        rule_id=self.rule_id,
+                        severity=self.severity,
+                        line=line_num,
+                        column=self._get_column(content, match.start()),
+                        message=(
+                            "request.security() with lookahead_on must use a [1] "
+                            "confirmed historical expression"
+                        ),
+                        suggestion=(
+                            "Offset the requested expression, for example "
+                            "close[1] or [expr1[1], expr2[1]], or switch to "
+                            "lookahead=barmerge.lookahead_off."
+                        ),
+                    )
+                )
+                continue
+
+            issues.append(
+                Issue(
+                    rule_id=self.rule_id,
+                    severity=self.severity,
+                    line=line_num,
+                    column=self._get_column(content, match.start()),
+                    message=(
+                        "request.security() lookahead must be "
+                        "barmerge.lookahead_off or safe barmerge.lookahead_on"
+                    ),
+                    suggestion=(
+                        "Use lookahead=barmerge.lookahead_off, or "
+                        "lookahead=barmerge.lookahead_on with a [1] confirmed "
+                        "historical expression."
+                    ),
+                )
+            )
 
         return issues
 
@@ -389,7 +702,7 @@ class QUA002_NaCheck(BaseRule):
 
 
 ALL_RULES = [
-    SEC001_LookaheadOff(),
+    SEC001_SafeLookahead(),
     SEC002_SecurityInCondition(),
     SYN001_MultilineTernary(),
     SYN002_SwitchDefault(),

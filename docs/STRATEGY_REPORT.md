@@ -7,6 +7,8 @@ This guide explains how to use [adaptive_rsi_strategy_harness.pine](/Users/aaaji
 The production indicator is still [adaptive_rsi.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi.pine).  
 The strategy harness exists only to answer one question: how does the restored `v7.3` signal engine behave inside TradingView `Strategy Tester`.
 
+The harness is generated from the production indicator by [tools/generate_strategy_harness.py](/Users/aaajiao/o_projects/RSI_stock/tools/generate_strategy_harness.py). Edit production logic in `adaptive_rsi.pine`, then regenerate the harness instead of hand-editing duplicated signal code.
+
 ## Modes
 
 ### Trade Side
@@ -72,6 +74,17 @@ Suggested first symbols:
 - `GOOGL 1D`
 - `AAPL 1D`
 - `BTCUSDT 4H`
+
+## Maintenance
+
+After production logic changes, run:
+
+```bash
+python3 tools/generate_strategy_harness.py
+python3 tools/generate_strategy_harness.py --check
+```
+
+CI also runs the `--check` path so drift between the production indicator and strategy harness fails early.
 
 ## Important limitation
 
