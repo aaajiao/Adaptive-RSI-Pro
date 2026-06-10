@@ -1,5 +1,5 @@
 # Pine Script Linter Configuration
-# https://github.com/user/RSI_stock
+# https://github.com/aaajiao/Adaptive-RSI-Pro
 
 rules:
   # Security Rules (Critical - block PR merge)

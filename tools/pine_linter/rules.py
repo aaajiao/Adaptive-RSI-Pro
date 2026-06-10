@@ -31,6 +31,61 @@ class BaseRule(ABC):
         last_newline = content.rfind("\n", 0, pos)
         return pos - last_newline if last_newline >= 0 else pos + 1
 
+    def _strip_comments_and_strings(self, text: str) -> str:
+        """Blank out comments and string literals, preserving offsets.
+
+        Every replaced character becomes a space (newlines are kept), so
+        match positions and line numbers computed on the result map 1:1
+        onto the original text.
+        """
+        result = []
+        i = 0
+        in_string = False
+        string_quote = ""
+        in_line_comment = False
+
+        while i < len(text):
+            char = text[i]
+            next_char = text[i + 1] if i + 1 < len(text) else ""
+
+            if in_line_comment:
+                result.append("\n" if char == "\n" else " ")
+                if char == "\n":
+                    in_line_comment = False
+                i += 1
+                continue
+
+            if in_string:
+                result.append(" ")
+                if char == "\\":
+                    if i + 1 < len(text):
+                        result.append(" ")
+                    i += 2
+                    continue
+                if char == string_quote:
+                    in_string = False
+                    string_quote = ""
+                i += 1
+                continue
+
+            if char == "/" and next_char == "/":
+                result.extend("  ")
+                in_line_comment = True
+                i += 2
+                continue
+
+            if char in ("'", '"'):
+                result.append(" ")
+                in_string = True
+                string_quote = char
+                i += 1
+                continue
+
+            result.append(char)
+            i += 1
+
+        return "".join(result)
+
 
 class SEC001_SafeLookahead(BaseRule):
     rule_id = "SEC001"
@@ -82,55 +137,6 @@ class SEC001_SafeLookahead(BaseRule):
                 depth -= 1
             i += 1
         return i
-
-    def _strip_comments_and_strings(self, text: str) -> str:
-        result = []
-        i = 0
-        in_string = False
-        string_quote = ""
-        in_line_comment = False
-
-        while i < len(text):
-            char = text[i]
-            next_char = text[i + 1] if i + 1 < len(text) else ""
-
-            if in_line_comment:
-                result.append("\n" if char == "\n" else " ")
-                if char == "\n":
-                    in_line_comment = False
-                i += 1
-                continue
-
-            if in_string:
-                result.append(" ")
-                if char == "\\":
-                    if i + 1 < len(text):
-                        result.append(" ")
-                    i += 2
-                    continue
-                if char == string_quote:
-                    in_string = False
-                    string_quote = ""
-                i += 1
-                continue
-
-            if char == "/" and next_char == "/":
-                result.extend("  ")
-                in_line_comment = True
-                i += 2
-                continue
-
-            if char in ("'", '"'):
-                result.append(" ")
-                in_string = True
-                string_quote = char
-                i += 1
-                continue
-
-            result.append(char)
-            i += 1
-
-        return "".join(result)
 
     def _split_top_level_args(self, text: str) -> List[str]:
         args = []
@@ -399,23 +405,25 @@ class SEC002_SecurityInCondition(BaseRule):
 
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
+        # Scan code only: comment/string text mentioning request.security
+        # must not trigger this rule. Offsets are preserved by the stripper,
+        # so indentation and line numbers stay correct.
+        code_lines = self._strip_comments_and_strings(content).split("\n")
         in_conditional = False
         conditional_indent = 0
-        conditional_line = 0
 
-        for i, line in enumerate(lines):
-            stripped = line.lstrip()
-            current_indent = len(line) - len(stripped)
+        for i, line in enumerate(code_lines):
+            stripped = line.strip()
+            current_indent = len(line) - len(line.lstrip())
 
             if stripped.startswith(("if ", "if(", "else if ", "switch ")):
                 in_conditional = True
                 conditional_indent = current_indent
-                conditional_line = i + 1
             elif in_conditional:
                 if (
                     current_indent <= conditional_indent
                     and stripped
-                    and not stripped.startswith(("else", "//"))
+                    and not stripped.startswith("else")
                 ):
                     in_conditional = False
                 elif "request.security" in line and current_indent > conditional_indent:
@@ -438,13 +446,17 @@ class SYN001_MultilineTernary(BaseRule):
     severity = "warning"
     message = "Multi-line ternary expression may cause 'end of line without line continuation' error in v6"
 
-    MULTILINE_TERNARY_PATTERN = re.compile(r"\?\s*\n\s*[^:]+:\s*\n", re.MULTILINE)
+    # `?` at end of line, true branch on the following line ending with `:`.
+    # The true branch must stay on a single line ([^:\n]); the previous [^:]
+    # class could swallow newlines and pair a `?` with a `:` many lines away.
+    MULTILINE_TERNARY_PATTERN = re.compile(r"\?\s*\n\s*[^:\n]+:\s*\n", re.MULTILINE)
 
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
+        code_content = self._strip_comments_and_strings(content)
 
-        for match in self.MULTILINE_TERNARY_PATTERN.finditer(content):
-            line_num = self._get_line_number(content, match.start())
+        for match in self.MULTILINE_TERNARY_PATTERN.finditer(code_content):
+            line_num = self._get_line_number(code_content, match.start())
             issues.append(
                 Issue(
                     rule_id=self.rule_id,
@@ -464,18 +476,23 @@ class SYN002_SwitchDefault(BaseRule):
     severity = "info"
     message = "switch statement may be missing default case (=> without condition)"
 
-    SWITCH_PATTERN = re.compile(r"switch\s*\n((?:.*\n)*?)(?=\n\S|\Z)", re.MULTILINE)
+    # (?<![\w.]) keeps identifiers such as `mode_switch` or member access
+    # like `obj.switch` from being mistaken for the switch keyword.
+    SWITCH_PATTERN = re.compile(
+        r"(?<![\w.])switch\s*\n((?:.*\n)*?)(?=\n\S|\Z)", re.MULTILINE
+    )
 
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
+        code_content = self._strip_comments_and_strings(content)
 
-        for match in self.SWITCH_PATTERN.finditer(content):
+        for match in self.SWITCH_PATTERN.finditer(code_content):
             switch_body = match.group(1)
 
             if "=>" in switch_body and not re.search(
                 r"^\s*=>", switch_body, re.MULTILINE
             ):
-                line_num = self._get_line_number(content, match.start())
+                line_num = self._get_line_number(code_content, match.start())
                 issues.append(
                     Issue(
                         rule_id=self.rule_id,
@@ -499,15 +516,16 @@ class SYN003_TableClearParams(BaseRule):
 
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
+        code_content = self._strip_comments_and_strings(content)
 
-        for match in self.TABLE_CLEAR_PATTERN.finditer(content):
-            line_num = self._get_line_number(content, match.start())
+        for match in self.TABLE_CLEAR_PATTERN.finditer(code_content):
+            line_num = self._get_line_number(code_content, match.start())
             issues.append(
                 Issue(
                     rule_id=self.rule_id,
                     severity=self.severity,
                     line=line_num,
-                    column=self._get_column(content, match.start()),
+                    column=self._get_column(code_content, match.start()),
                     message=self.message,
                     suggestion="Use: table.clear(table_id, start_col, start_row, end_col, end_row)",
                 )
@@ -521,28 +539,69 @@ class NAM001_ConstantCase(BaseRule):
     severity = "info"
     message = "Constant should use SCREAMING_SNAKE_CASE"
 
+    # A "constant" here is a top-level, single-line binding with a literal
+    # initializer. `var`/`varip` declarations are persistent *mutable* state
+    # in Pine, never constants, so they are explicitly excluded (the previous
+    # pattern required `var`, which inverted the rule and flagged mutable
+    # state such as `var float prev_spread = 30.0`).
     CONSTANT_PATTERN = re.compile(
-        r'^var\s+(?:int|float|string|bool)\s+([a-z][a-z0-9_]*)\s*=\s*(?:\d|"|\btrue\b|\bfalse\b)',
+        r"^(?!(?:var|varip|import|export|method|type)\b)"
+        r"(?:(?:const\s+)?(?:int|float|string|bool|color)\s+)?"
+        r"([A-Za-z][A-Za-z0-9_]*)\s*=[ \t]*(.+?)[ \t]*$",
         re.MULTILINE,
     )
 
+    # Literal / constant right-hand sides only: numbers, strings, booleans,
+    # hex colors, and color.* built-ins, with an optional trailing comment.
+    CONST_VALUE_PATTERN = re.compile(
+        r"^(?:"
+        r"-?\d+(?:\.\d+)?"
+        r"|true|false"
+        r'|"(?:[^"\\]|\\.)*"'
+        r"|#[0-9a-fA-F]{6,8}"
+        r"|color\.[a-z_]+"
+        r")\s*(?://.*)?$"
+    )
+
+    REASSIGN_PATTERN = re.compile(r"\b([A-Za-z_]\w*)\s*:=")
+
+    def _is_constant_styled(self, name: str) -> bool:
+        # Only names written in (broken) SCREAMING_SNAKE style, for example
+        # `Max_Bars` or `MAX_bars`, show clear constant-naming intent. Pine
+        # bindings are immutable by default, so a plain lowercase binding
+        # like `realtime_lookback = 20` or a UI label such as
+        # `grp_rsi = "..."` is an ordinary variable, not a constant.
+        return "_" in name and any(c.isupper() for c in name)
+
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
+        code_content = self._strip_comments_and_strings(content)
+        reassigned_names = set(self.REASSIGN_PATTERN.findall(code_content))
 
         for match in self.CONSTANT_PATTERN.finditer(content):
             var_name = match.group(1)
-            if not var_name.isupper():
-                line_num = self._get_line_number(content, match.start())
-                issues.append(
-                    Issue(
-                        rule_id=self.rule_id,
-                        severity=self.severity,
-                        line=line_num,
-                        column=1,
-                        message=f"Constant '{var_name}' should be '{var_name.upper()}'",
-                        suggestion=var_name.upper(),
-                    )
+            value = match.group(2)
+
+            if var_name.isupper():
+                continue
+            if var_name in reassigned_names:
+                continue
+            if not self.CONST_VALUE_PATTERN.match(value):
+                continue
+            if not self._is_constant_styled(var_name):
+                continue
+
+            line_num = self._get_line_number(content, match.start())
+            issues.append(
+                Issue(
+                    rule_id=self.rule_id,
+                    severity=self.severity,
+                    line=line_num,
+                    column=1,
+                    message=f"Constant '{var_name}' should be '{var_name.upper()}'",
+                    suggestion=var_name.upper(),
                 )
+            )
 
         return issues
 
@@ -628,7 +687,12 @@ class QUA001_BilingualTooltip(BaseRule):
     severity = "info"
     message = "Input tooltip should contain bilingual text (EN/CN)"
 
-    TOOLTIP_PATTERN = re.compile(r'tooltip\s*=\s*"([^"]*)"', re.MULTILINE | re.DOTALL)
+    # (?:[^"\\]|\\.)* handles escaped quotes (\") inside the tooltip text;
+    # a plain [^"]* would truncate the capture at the first escape and
+    # misjudge which language is missing.
+    TOOLTIP_PATTERN = re.compile(
+        r'tooltip\s*=\s*"((?:[^"\\]|\\.)*)"', re.MULTILINE | re.DOTALL
+    )
 
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
@@ -667,9 +731,13 @@ class QUA002_NaCheck(BaseRule):
 
     def check(self, lines: List[str], content: str) -> List[Issue]:
         issues = []
+        # Work on comment/string-stripped code so a variable mentioned in a
+        # comment is neither counted as a usage nor accepted as an na-check.
+        code_content = self._strip_comments_and_strings(content)
+        code_lines = code_content.split("\n")
         security_vars = set()
 
-        for match in self.SECURITY_ASSIGN_PATTERN.finditer(content):
+        for match in self.SECURITY_ASSIGN_PATTERN.finditer(code_content):
             var_name = match.group(1)
             security_vars.add(var_name)
 
@@ -678,10 +746,12 @@ class QUA002_NaCheck(BaseRule):
                 rf"(?:na\s*\(\s*{re.escape(var_name)}\s*\)|not\s+na\s*\(\s*{re.escape(var_name)}\s*\)|nz\s*\(\s*{re.escape(var_name)})",
                 re.MULTILINE,
             )
-            if not na_check_pattern.search(content):
-                for match in re.finditer(rf"\b{re.escape(var_name)}\b", content):
-                    line_num = self._get_line_number(content, match.start())
-                    line_content = lines[line_num - 1] if line_num <= len(lines) else ""
+            if not na_check_pattern.search(code_content):
+                for match in re.finditer(rf"\b{re.escape(var_name)}\b", code_content):
+                    line_num = self._get_line_number(code_content, match.start())
+                    line_content = (
+                        code_lines[line_num - 1] if line_num <= len(code_lines) else ""
+                    )
                     if (
                         "request.security" not in line_content
                         and "=" not in line_content.split(var_name)[0]

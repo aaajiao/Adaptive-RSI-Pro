@@ -2,7 +2,7 @@
 
 > Guidelines for AI agents working on this TradingView Pine Script v6 project.
 
-**Generated**: 2026-03-11 | **Version**: v7.3 | **Branch**: main
+**Generated**: 2026-06-10 | **Version**: v7.4 | **Branch**: main
 
 ## Quick Reference
 
@@ -10,9 +10,10 @@
 |------|-------|
 | **Language** | Pine Script v6 |
 | **Production File** | `adaptive_rsi.pine` |
-| **Strategy Report File** | `adaptive_rsi_strategy_harness.pine` |
+| **Strategy Report File** | `adaptive_rsi_strategy_harness.pine` (generated) |
 | **Platform** | TradingView |
 | **Indicator** | `Adaptive RSI Pro` / `ARSI Pro` |
+| **Tooling Tests** | `tests/` (stdlib `unittest`, Python 3) |
 
 ## Project Structure
 
@@ -31,6 +32,9 @@ RSI_stock/
 ├── .github/workflows/pine-lint.yml
 ├── tools/generate_strategy_harness.py
 ├── tools/pine_linter/
+├── tests/
+│   ├── test_generate_strategy_harness.py
+│   └── test_pine_linter.py
 └── images/
 ```
 
@@ -38,55 +42,103 @@ RSI_stock/
 
 ### Production indicator
 
-- Public `v7.2` baseline behavior.
-- Keeps adaptive thresholds, MTF resonance, divergence, stats filtering, and tiered cooldown.
-- Only obvious correctness fixes are retained:
+- `v7.2` baseline signal model (adaptive thresholds, MTF resonance, divergence,
+  tiered cooldown) plus the v7.3 correctness fixes:
   - `lookback` floor uses the statistical lower bound
   - weekly protection uses confirmed HTF data
   - lower-timeframe MTF uses `request.security_lower_tf()`
-- Stats filtering still uses the original adjusted-win-rate gate, but the active
-  `Stats Mode` now selects whether the gate reads Signal Type, Grade, or Ranking
-  buckets.
+- v7.4 deliberately upgraded the **stats engine** (each upgrade keeps a legacy
+  revert switch):
+  - **Time decay**: `SignalStats` sample weights decay exponentially with
+    half-life `stats_half_life_bars` (`0` = legacy equal-weight accumulation).
+    Decay only affects win-rate confidence; sample-sufficiency checks (the
+    `Min Samples` gate and the adjusted-winrate floor) use the undecayed
+    `lifetime_count`, because the decayed effective count is capped at
+    `1/(1-0.5^(spacing/half_life))` and would permanently lock out rare
+    signal buckets.
+  - **Independent sampling**: `stats_independent_samples` makes each bucket
+    wait at least `Forward Bars` between recorded samples so overlapping
+    forward-return windows don't inflate counts (off = legacy overlap).
+  - **Edge-vs-baseline gate**: `stats_gate_mode = "Edge vs Baseline"` (default)
+    records per-direction unconditional baseline buckets; the Bayesian prior
+    shrinks toward the direction baseline and the required win rate becomes
+    `baseline + (Min Adjusted WinRate − 50)`. `"Absolute (Legacy)"` restores
+    the old fixed-threshold/50% prior behavior.
+- Other v7.4 behavior changes:
+  - **`alert_on_close`**: optional input — alerts fire only on confirmed bars
+    (anti-repaint) at the cost of delivery delay; off = legacy intrabar alerts.
+  - **MTF availability surfacing**: `f_mtf_status()` returns
+    `[status, available]`; unavailable TF data renders `–` plus a dashboard
+    warning. Display-only — resonance math and stats recording are unchanged.
+  - **Spread hysteresis**: the lookback spread-boost factor uses a hysteresis
+    band on the previous bar's `P95−P5` spread (engage 1.3 below 18, release
+    above 22) to stop flip-flopping near the threshold.
+  - **Upgrade-level reset**: the cooldown upgrade exemption only compares
+    against a still-cooling previous signal (expired levels count as 0), and
+    the `varip` alert level-sent trackers reset on every new bar.
+- `Stats Mode` still selects whether the gate reads Signal Type, Grade, or
+  Ranking buckets.
 
 ### Strategy report harness
 
 - Generated `strategy()` wrapper using the same signal engine.
-- Source of truth is `adaptive_rsi.pine`; regenerate the harness with
+- Source of truth is `adaptive_rsi.pine`; regenerate with
   `python3 tools/generate_strategy_harness.py` after production logic changes.
-- Adds:
+- The generator is **anchor-based**: `adaptive_rsi.pine` carries
+  `// @harness: <name>` comment lines (`inputs`, `risk-direction`,
+  `stats-helpers`, `gate-helper`, `dashboard-rows`) marking where harness-only
+  code is inserted. Each anchor must appear exactly once and must be preserved
+  verbatim — the generator no longer matches long verbatim copies of
+  production code; the only production text it keys on is the header line, the
+  `indicator(...)` declaration, and four narrowly-regexed dashboard sizing
+  lines.
+- Harness-only inputs:
   - `Trade Side`
   - `Backtest Mode = Baseline | Production`
-- `Baseline` trades raw `v7.2` signals.
-- `Production` trades signals that pass the production alert gate/filter.
-- It is a gated-signal backtest, not an exact intrabar `alert()` delivery simulation.
+  - Risk exits: `Use ATR SL/TP Exits` (entry-snapshotted ATR stop/limit via
+    `strategy.exit`) and `Max Holding Bars` (time exit, `0` = off)
+- `Baseline` trades raw `v7.2` signals; `Production` trades signals that pass
+  the production alert gate/filter.
+- It is a gated-signal backtest, not an exact intrabar `alert()` delivery
+  simulation.
 
 ## Where to Look
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Input groups | `adaptive_rsi.pine:17-85` | Main production inputs |
-| Dynamic lookback | `adaptive_rsi.pine:114-167` | Adaptive sample-depth logic |
-| Weekly protection | `adaptive_rsi.pine:226-248` | Confirmed weekly trend filter |
-| MTF analysis | `adaptive_rsi.pine:260-385` | Auto/manual TF selection and lower-TF aggregation |
-| Statistics type | `adaptive_rsi.pine:386-501` | `SignalStats`, indexed buckets, adjusted win rate |
-| Signal detection | `adaptive_rsi.pine:637-684` | Raw signals and cooldown inputs |
-| Statistics engine | `adaptive_rsi.pine:866-905` | Forward-return bookkeeping |
-| Stats filter | `adaptive_rsi.pine:908-1124` | Stats-mode-aware adjusted win-rate gate |
-| Dashboard | `adaptive_rsi.pine:1127-1331` | Main indicator UI |
-| Alerts | `adaptive_rsi.pine:1334-1417` | Smart alert aggregation |
-| Harness inputs | `adaptive_rsi_strategy_harness.pine:67-79` | `Trade Side` and `Backtest Mode` |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1279-1295` | `Harness`, `Tester`, `Production Gate` |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1499-1522` | Entry/close rules |
+| Input groups | `adaptive_rsi.pine:17-86` | All production inputs incl. v7.4 stats/gate/alert toggles |
+| Dynamic lookback | `adaptive_rsi.pine:120-178` | Adaptive sample-depth logic |
+| Spread hysteresis | `adaptive_rsi.pine:160-192` | Boost state machine + `prev_spread` feedback update |
+| Weekly protection | `adaptive_rsi.pine:234-263` | Confirmed weekly trend filter |
+| MTF analysis | `adaptive_rsi.pine:276-407` | TF selection, lower-TF aggregation, availability flags (330-385) |
+| Statistics types | `adaptive_rsi.pine:408-556` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate |
+| Signal detection | `adaptive_rsi.pine:689-727` | Raw signals and cooldown state |
+| Consolidated signals | `adaptive_rsi.pine:728-822` | Priority merge, upgrade exemption with expired-level reset |
+| Statistics engine | `adaptive_rsi.pine:936-983` | Forward-return bookkeeping, baseline sampling, independent sampling |
+| Stats filter | `adaptive_rsi.pine:984-1125` | Edge-vs-baseline / legacy gate, stats-mode-aware buckets, hidden-state detection |
+| Dashboard | `adaptive_rsi.pine:1210-1421` | Main indicator UI incl. MTF availability warning |
+| Alerts | `adaptive_rsi.pine:1422-1505` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
+| Harness inputs | `adaptive_rsi_strategy_harness.pine:80-86` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
+| Harness risk direction | `adaptive_rsi_strategy_harness.pine:98-103` | `strategy.risk.allow_entry_in` wiring |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1367-1384` | `Harness`, `Tester`, `Production Gate` |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1588-1634` | Entry/close rules, ATR SL/TP exits, time exit |
+| Generator anchors | `tools/generate_strategy_harness.py` | Anchor names, harness-owned snippets, `--check` mode |
+| Tooling tests | `tests/` | Generator golden/anchor tests, linter rule tests |
 
 ## Build & Validation
 
-### Local lint
+### Local lint & tests
 
 ```bash
 python3 tools/generate_strategy_harness.py --check
 python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi.pine
 python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi_strategy_harness.pine
+python3 -m unittest discover -s tests -v
 ```
+
+CI (`.github/workflows/pine-lint.yml`) runs the same harness check, the
+unittest suite, and the linter on every push/PR that touches `.pine` files,
+the lint config, `tools/`, or `tests/`.
 
 ### TradingView validation
 
@@ -122,18 +174,41 @@ array<int> statuses = request.security_lower_tf(
 )
 ```
 
+### Harness anchors
+
+```pinescript
+// @harness: stats-helpers
+```
+
+Anchor comments in `adaptive_rsi.pine` are load-bearing generator markers.
+They flow through into the generated harness unchanged and must each appear
+exactly once.
+
 ### Strategy harness interpretation
 
 - `All` is always present in TradingView Strategy Tester.
 - Read it according to `Trade Side`.
 - `Production Gate` shows the actual stats bucket selected by `Stats Mode` for the active signal.
+- With `Use ATR SL/TP Exits` off and `Max Holding Bars = 0`, trades exit only
+  on opposite signals (legacy harness behavior).
 
 ## Making Changes
 
 1. Treat [adaptive_rsi.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi.pine) as the primary product.
 2. Do not hand-edit duplicated signal logic in [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine); regenerate it.
-3. Keep the signal model close to public `v7.2` unless the user explicitly requests a new product direction.
-4. Preserve bilingual EN/CN user-facing text where already present.
-5. Run harness generation check and local lint after edits.
-6. When touching MTF/HTF logic, verify manually on TradingView if possible.
-7. Do not reintroduce later experimental concepts unless the user explicitly asks for them.
+3. Keep the raw signal model at the public `v7.2` baseline. The strict
+   v7.2-freeze applied to v7.3 and was lifted by the user for v7.4, which
+   deliberately upgraded the stats engine (time decay, independent sampling,
+   edge-vs-baseline gate). Further signal-model or stats-engine changes still
+   need an explicit user request, and the legacy revert switches
+   (`stats_half_life_bars = 0`, `Independent Samples` off,
+   `Absolute (Legacy)` gate) must keep restoring the old behavior.
+4. Never delete or reword `// @harness: <name>` anchor comments in
+   `adaptive_rsi.pine` without updating `tools/generate_strategy_harness.py`
+   and `tests/test_generate_strategy_harness.py` to match; each anchor must
+   appear exactly once. If `--check` fails because an anchor/marker broke, fix
+   the generator — never patch the harness by hand.
+5. Preserve bilingual EN/CN user-facing text where already present.
+6. Run harness generation check, unittest suite, and local lint after edits.
+7. When touching MTF/HTF logic, verify manually on TradingView if possible.
+8. Do not reintroduce later experimental concepts unless the user explicitly asks for them.

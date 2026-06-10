@@ -1,5 +1,5 @@
-// Adaptive RSI Pro v7.3 Strategy Report - v7.2 baseline behavior + minimal correctness fixes
-// MIT License - https://github.com/user/adaptive-rsi-pro
+// Adaptive RSI Pro v7.4 Strategy Report - v7.2 baseline behavior + stats engine upgrades & toolchain hardening
+// MIT License - https://github.com/aaajiao/Adaptive-RSI-Pro
 //
 // 信号图例 / Signal Legend:
 // ─────────────────────────────────────────
@@ -26,7 +26,7 @@ grp_adaptive = "═══ Adaptive Settings / 自适应设置 ═══"
 lookback_mode = input.string("Auto", "Lookback Mode / 回看模式", options=["Auto", "Custom"], group=grp_adaptive, tooltip="Auto: 根据时间框架和RSI波动率自动计算\nCustom: 使用自定义值")
 lookback_custom = input.int(252, "Custom Lookback / 自定义回看", minval=50, maxval=2000, group=grp_adaptive, tooltip="仅在 Custom 模式下使用。建议：日线252，4小时500，1小时750")
 lookback_precision = input.string("Normal", "Precision / 精度", options=["High", "Normal", "Low"], group=grp_adaptive, tooltip="High(高精度): 需要更多数据，更准确\nNormal(平衡): 推荐设置\nLow(快适应): 更少数据，更快响应")
-vol_history_mode = input.string("1 Year", "History Depth / 历史深度", options=["6 Months", "1 Year", "2 Years"], group=grp_adaptive, tooltip="波动率参考的历史时间长度\n自动根据时间框架转换为K线数量")
+vol_history_mode = input.string("1 Year", "History Depth / 历史深度", options=["6 Months", "1 Year", "2 Years"], group=grp_adaptive, tooltip="波动率参考的历史时间长度\n自动根据时间框架转换为K线数量\n---\nHistory window for the volatility reference\nAuto-converted to bar count by timeframe")
 
 grp_visual = "═══ Visual Settings / 视觉设置 ═══"
 visual_line_mode = input.string("Unified", "Threshold Line Mode / 阈值线模式", options=["Unified", "Z-Score", "Percentile", "Both"], group=grp_visual, tooltip="Unified(推荐): Z-Score线+百分位标注，兼顾严谨性和直观性\nZ-Score: 仅统计学阈值线(±2σ, ±1.5σ)\nPercentile: 仅百分位线(P5-P95)\nBoth: 同时显示两种")
@@ -41,22 +41,23 @@ color_rsi = input.color(#FFEB3B, "RSI Line Color / RSI线颜色", group=grp_visu
 
 grp_alerts = "═══ Alert Settings / 警报设置 ═══"
 normal_signal_mode = input.string("Smart", "Normal Signal Mode / 普通信号模式", options=["Off", "On", "Smart"], group=grp_alerts, tooltip="Off: 关闭普通信号\nOn: 总是显示，使用手动阈值\nSmart: 自动判断显示+自动阈值")
-normal_threshold_manual = input.float(1.5, "Manual Threshold / 手动阈值 (On模式)", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="仅On模式使用\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
-enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据")
+normal_threshold_manual = input.float(1.5, "Manual Threshold / 手动阈值 (On模式)", minval=1.0, maxval=2.0, step=0.1, group=grp_alerts, tooltip="仅On模式使用\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90\n---\nUsed only in On mode\n1.5σ ≈ P6.7/P93.3\n1.28σ ≈ P10/P90")
+enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据\n---\nPrevents repeated signals in the same zone from polluting the statistics")
 cooldown_mode = input.string("Smart", "Cooldown Mode / 冷却模式", options=["Smart", "Fixed"], group=grp_alerts, tooltip="Smart: 根据市场波动率自动调整冷却期\nFixed: 使用固定冷却期")
 cooldown_bars_fixed = input.int(5, "Fixed Cooldown (Bars) / 固定冷却期", minval=1, maxval=20, group=grp_alerts, tooltip="Fixed模式下的冷却时间（K线数）")
 enable_smart_alert = input.bool(true, "🎯 Smart Alert / 智能警报", group=grp_alerts, tooltip="V6动态警报：自动聚合所有信号到一条消息\n包含完整上下文（RSI值、Z-Score、百分位）\n实时触发，智能去重")
+alert_on_close = input.bool(false, "Alert on Bar Close / 仅收盘确认警报", group=grp_alerts, tooltip="开启: 仅在K线收盘确认后触发警报，避免盘中信号闪现后消失（重绘），代价是警报延迟到收盘\n关闭: 保持当前行为，盘中实时触发\n---\nOn: alerts fire only on confirmed bars, avoiding intrabar repaint at the cost of later delivery\nOff: current immediate intrabar behavior")
 include_risk_in_alerts = input.bool(false, "Include Risk Hints in Alerts / 警报含风险提示", group=grp_alerts, tooltip="在警报消息中包含ATR止损/止盈建议\n默认关闭，避免消息过长")
-alert_rr_ratio = input.float(2.0, "Risk-Reward Ratio / 风险回报比", minval=1.5, maxval=3.0, step=0.5, group=grp_alerts, tooltip="止盈/止损比例\n2.0 = 1:2 风险回报比")
+alert_rr_ratio = input.float(2.0, "Risk-Reward Ratio / 风险回报比", minval=1.5, maxval=3.0, step=0.5, group=grp_alerts, tooltip="止盈/止损比例\n2.0 = 1:2 风险回报比\n---\nTake-profit / stop-loss ratio\n2.0 = 1:2 risk-reward")
 
 grp_protection = "═══ Trend Protection / 趋势保护 ═══"
-enable_trend_protection = input.bool(true, "Enable Trend Protection / 启用趋势保护", group=grp_protection, tooltip="使用周线趋势过滤极端风险：避免在周线极端下跌中抄底")
+enable_trend_protection = input.bool(true, "Enable Trend Protection / 启用趋势保护", group=grp_protection, tooltip="使用周线趋势过滤极端风险：避免在周线极端下跌中抄底\n---\nFilters extreme risk with the weekly trend\nAvoids bottom-fishing during extreme weekly downtrends")
 protection_level = input.string("Moderate", "Protection Level / 保护级别", options=["Aggressive", "Moderate", "Loose"], group=grp_protection, tooltip="Aggressive: 周线必须上升趋势\nModerate(推荐): 排除周线极端下跌\nLoose: 仅排除周线RSI<20的极端情况")
 enable_percentile_confirm = input.bool(false, "🎯 Percentile Confirm / 百分位确认", group=grp_protection, tooltip="极端信号需同时满足 Z-Score(-2σ) 和 Percentile(P5/P95)\n可减少波动率变化时的假信号，提升胜率\n适用于波动率变化较大的市场\n---\nExtreme signals require both Z-Score AND Percentile\nReduces false signals when volatility changes")
 
 grp_volume = "═══ Volume Confirmation / 成交量确认 ═══"
-enable_volume_scoring = input.bool(true, "Enable Volume Scoring / 启用成交量评分", group=grp_volume, tooltip="成交量作为信号质量评分项，不强制过滤")
-volume_surge_mult = input.float(1.5, "Volume Surge Multiplier / 放量倍数", minval=1.0, maxval=3.0, step=0.1, group=grp_volume, tooltip="高于均量X倍视为放量")
+enable_volume_scoring = input.bool(true, "Enable Volume Scoring / 启用成交量评分", group=grp_volume, tooltip="成交量作为信号质量评分项，不强制过滤\n---\nVolume contributes to signal quality scoring\nNo hard filtering")
+volume_surge_mult = input.float(1.5, "Volume Surge Multiplier / 放量倍数", minval=1.0, maxval=3.0, step=0.1, group=grp_volume, tooltip="高于均量X倍视为放量\n---\nVolume above X times the average counts as a surge")
 
 grp_mtf = "═══ Multi-Timeframe / 多时间框架 ═══"
 enable_mtf = input.bool(true, "Enable MTF RSI / 启用多时间框架", group=grp_mtf)
@@ -68,15 +69,21 @@ mtf_tf3_input = input.timeframe("D", "Manual TF3 / 手动周期3", group=grp_mtf
 grp_stats = "═══ Signal Statistics / 信号统计 ═══"
 enable_stats = input.bool(true, "Enable Statistics / 启用统计", group=grp_stats)
 stats_mode = input.string("Ranking", "Stats Mode / 统计模式", options=["Signal Type", "Grade", "Ranking"], group=grp_stats, tooltip="Signal Type: 按信号类型统计\nGrade: 按质量等级统计\nRanking: 交叉排行榜（信号×等级）")
-stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, maxval=100, group=grp_stats, tooltip="信号触发后多少根K线计算收益")
-enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤", group=grp_stats, tooltip="基于历史统计数据过滤低质量信号\n根据样本数和胜率自动过滤")
-stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="信号组合需要的最小样本数\n≥20为统计可靠")
-stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值")
+stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, maxval=100, group=grp_stats, tooltip="信号触发后多少根K线计算收益\n---\nBars after a signal used to measure forward return")
+stats_half_life_bars = input.int(1500, "Stats Half-Life Bars / 统计半衰期K线数", minval=0, maxval=20000, step=100, group=grp_stats, tooltip="样本权重按K线间隔指数衰减的半衰期\n1500根K线 ≈ 日线6年 / 4小时图9个月：日线上覆盖完整市场周期，同时淡出旧市场环境的样本\n0 = 关闭衰减（等权累计，旧版行为）\n衰减只影响胜率置信度，最小样本数门槛按未衰减的累计样本数判断\n---\nHalf-life in bars for exponential decay of sample weights\n1500 bars ≈ 6 years on 1D / 9 months on 4H: covers a full market cycle on daily charts while fading samples from old regimes\n0 = decay off (equal-weight accumulation, legacy behavior)\nDecay only affects win-rate confidence; the Min Samples gate uses the undecayed lifetime count")
+stats_independent_samples = input.bool(true, "Independent Samples / 独立采样", group=grp_stats, tooltip="每个统计桶记录一个样本后，至少间隔前瞻K线数才记录下一个\n避免相邻信号的前瞻收益区间重叠而虚增样本数\n关闭 = 旧版重叠采样行为\n---\nEach bucket waits at least Forward Bars between recorded samples\nPrevents overlapping forward-return windows from inflating sample counts\nOff = legacy overlapping behavior")
+enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤", group=grp_stats, tooltip="基于历史统计数据过滤低质量信号\n根据样本数和胜率自动过滤\n---\nFilters low-quality signals using historical statistics\nBased on sample count and win rate")
+stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="信号组合需要的最小样本数\n≥20为统计可靠\n按未衰减的累计样本数判断，时间衰减不影响该门槛\n---\nMinimum samples required per signal bucket\n≥20 is statistically reliable\nChecked against the undecayed lifetime sample count; time decay does not affect this gate")
+stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值\nEdge vs Baseline 模式下：(本值 - 50) 被解读为相对方向基准胜率的最小优势（百分点）\n---\nMinimum Bayesian-adjusted win rate per signal bucket\n55% is the recommended value\nIn Edge vs Baseline mode, (value - 50) is the required edge in percentage points over the direction baseline")
+stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对每个方向的无条件基准胜率（要求超额优势），贝叶斯先验也收缩到基准胜率\n可避免趋势市场中卖出桶因口径问题被系统性拒绝\nAbsolute (Legacy): 旧版固定绝对胜率门槛\n---\nEdge vs Baseline: the win-rate gate is relative to each direction's unconditional baseline win rate (requires an edge); the Bayesian prior shrinks toward the baseline\nAvoids sell buckets being systematically rejected on trending assets\nAbsolute (Legacy): legacy fixed absolute threshold")
 stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
+// @harness: inputs
 
 grp_harness = "═══ Strategy Report / 策略回测 ═══"
 harness_trade_side = input.string("Long Only", "Trade Side / 交易方向", options=["Long Only", "Short Only", "Both"], group=grp_harness, tooltip="Long Only: 仅做多，卖出信号只平多\nShort Only: 仅做空，买入信号只平空\nBoth: 双向切换，买卖信号会反手")
 harness_backtest_mode = input.string("Production", "Backtest Mode / 回测模式", options=["Baseline", "Production"], group=grp_harness, tooltip="Baseline: raw v7.2 signals, no stats filter\nProduction: gate-passing production alert signals; not exact intrabar alert delivery\nBaseline: 使用 7.2 原始信号，不加统计过滤\nProduction: 使用通过正式警报 gate/过滤的信号，不精确模拟盘中 alert 投递")
+harness_use_risk_exits = input.bool(false, "Use ATR SL/TP Exits / 启用ATR止损止盈", group=grp_harness, tooltip="On: trades exit via the same ATR-based SL/TP prices the alerts advertise, snapshotted at entry\nOff: trades exit only on opposite signals (legacy harness behavior)\n开启：按警报展示的ATR止损/止盈价格退出（入场时快照价格）\n关闭：仅按反向信号平仓（原有回测行为）")
+harness_max_holding_bars = input.int(0, "Max Holding Bars / 最大持仓K线数", minval=0, group=grp_harness, tooltip="0 = off\n>0: force-close the position after holding N bars (Time Exit)\n0 = 关闭\n大于0：持仓达到N根K线后强制平仓（时间退出）")
 
 grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
 enable_divergence = input.bool(true, "Enable Divergence Detection / 启用背离检测", group=grp_divergence)
@@ -88,6 +95,7 @@ div_range_custom = input.int(60, "Custom Range / 自定义范围", minval=20, ma
 atr_20 = ta.atr(20)
 avg_volatility = ta.sma(atr_20 / close * 100, 252)
 auto_vol_type = avg_volatility > 6 ? "Crypto" : avg_volatility > 3 ? "High Vol" : avg_volatility > 1 ? "Normal" : "Low Vol"
+// @harness: risk-direction
 
 strategy_allowed_direction = harness_trade_side == "Long Only" ? strategy.direction.long :
                              harness_trade_side == "Short Only" ? strategy.direction.short :
@@ -163,8 +171,12 @@ lookback_max = price_based_max
 
 // 分布宽度反馈（使用前一个bar的spread，形成反馈环）
 // 只在分布窄时增加lookback，分布宽时不减少（避免低于统计需求）
+// 滞回区间：spread < 18 启用 1.3，spread > 22 释放回 1.0，18-22 之间保持原状态，避免阈值附近反复跳变
+// Hysteresis: engage 1.3 below 18, release to 1.0 above 22, hold previous state in between
 var float prev_spread = 30.0
-spread_factor = prev_spread < 20 ? 1.3 : 1.0
+var bool spread_boost_active = false
+spread_boost_active := prev_spread < 18 ? true : prev_spread > 22 ? false : spread_boost_active
+spread_factor = spread_boost_active ? 1.3 : 1.0
 
 // 最终 lookback = 统计基础 × 反馈因子，保守地不低于 stat_required
 auto_lookback_base = math.max(stat_required, stat_required * spread_factor)
@@ -327,6 +339,8 @@ f_tf_seconds(_tf) =>
     _seconds = timeframe.in_seconds(_tf)
     na(_seconds) ? chart_tf_seconds : _seconds
 
+// 返回 [状态, 数据可用性]；低周期在盘中覆盖范围外会返回空数组，状态会静默退化为 0
+// Returns [status, available]; lower-TF data outside intrabar coverage degrades status to 0 silently
 f_mtf_status(_tf) =>
     _tf_seconds = f_tf_seconds(_tf)
     array<int> _statuses = request.security_lower_tf(
@@ -344,7 +358,9 @@ f_mtf_status(_tf) =>
         lookahead=barmerge.lookahead_on,
         calc_bars_count=MAX_REQUEST_BARS
     )
-    _tf_seconds < chart_tf_seconds ? f_array_last_status(_statuses) : _tf_seconds == chart_tf_seconds ? _current : nz(_htf_status, _current)
+    _status = _tf_seconds < chart_tf_seconds ? f_array_last_status(_statuses) : _tf_seconds == chart_tf_seconds ? _current : nz(_htf_status, _current)
+    _available = _tf_seconds < chart_tf_seconds ? array.size(_statuses) > 0 : _tf_seconds == chart_tf_seconds ? true : not na(_htf_status)
+    [_status, _available]
 
 f_tf_display(_tf) =>
     if str.contains(_tf, "D") or str.contains(_tf, "W") or str.contains(_tf, "M")
@@ -366,9 +382,18 @@ mtf_tf2_display = f_tf_display(active_tf2)
 mtf_tf3_display = f_tf_display(active_tf3)
 current_tf_display = f_tf_display(timeframe.period)
 
-status_tf1 = enable_mtf ? f_mtf_status(active_tf1) : 0
-status_tf2 = enable_mtf ? f_mtf_status(active_tf2) : 0
-status_tf3 = enable_mtf ? f_mtf_status(active_tf3) : 0
+[mtf_status_tf1, mtf_avail_tf1] = f_mtf_status(active_tf1)
+[mtf_status_tf2, mtf_avail_tf2] = f_mtf_status(active_tf2)
+[mtf_status_tf3, mtf_avail_tf3] = f_mtf_status(active_tf3)
+status_tf1 = enable_mtf ? mtf_status_tf1 : 0
+status_tf2 = enable_mtf ? mtf_status_tf2 : 0
+status_tf3 = enable_mtf ? mtf_status_tf3 : 0
+// 数据可用性仅用于仪表盘显示，不影响共振触发与统计记录
+// Availability is display-only; resonance math and stats recording are unchanged
+mtf_data_ok_tf1 = not enable_mtf or mtf_avail_tf1
+mtf_data_ok_tf2 = not enable_mtf or mtf_avail_tf2
+mtf_data_ok_tf3 = not enable_mtf or mtf_avail_tf3
+mtf_data_warning = not (mtf_data_ok_tf1 and mtf_data_ok_tf2 and mtf_data_ok_tf3)
 status_current = f_status(rsi, rsi_p10, rsi_p90)
 
 tf1_is_current = mtf_tf1_display == current_tf_display
@@ -397,34 +422,63 @@ overbought_resonance = overbought_weighted >= 4 or (valid_tf_count <= 3 and over
 // ────────────────────────────────────────
 
 type SignalStats
-    int count = 0
+    float count = 0.0
     float total_return = 0.0
-    int wins = 0
+    float wins = 0.0
+    int last_update_bar = 0
+    int last_sample_bar = na
+    int lifetime_count = 0
 
-method update(SignalStats this, bool triggered, float ret) =>
-    if triggered
-        this.count += 1
-        this.total_return += ret
-        if ret > 0
-            this.wins += 1
+// 惰性指数衰减：读取/更新时按距上次更新的K线数计算 0.5^(Δbars/半衰期)
+// 比值类指标（均值、胜率）对衰减不变，衰减只影响有效样本数（胜率置信度）
+method get_decay_factor(SignalStats this) =>
+    stats_half_life_bars <= 0 ? 1.0 : math.pow(0.5, float(bar_index - this.last_update_bar) / stats_half_life_bars)
+
+method get_count(SignalStats this) =>
+    this.count * this.get_decay_factor()
+
+// 终身样本数不衰减：样本充分性检查使用它
+// 信号间隔为 s 时有效样本数的稳态上限为 1/(1-0.5^(s/半衰期))，若用有效样本数判断，稀有信号桶将永远无法达到最小样本数
+// Lifetime sample count never decays: sample-sufficiency checks use it
+// With signal spacing s the effective count is capped at 1/(1-0.5^(s/half_life)); gating on the effective count would make rare buckets permanently fail Min Samples
+method get_lifetime_count(SignalStats this) =>
+    this.lifetime_count
+
+method update(SignalStats this, bool triggered, float ret, bool enforce_spacing) =>
+    // 独立采样：距本桶上次采样不足前瞻K线数时跳过，避免前瞻收益区间重叠
+    _spacing_ok = not enforce_spacing or na(this.last_sample_bar) or bar_index - this.last_sample_bar >= stats_forward_bars
+    if triggered and _spacing_ok
+        _decay = this.get_decay_factor()
+        this.count := this.count * _decay + 1
+        this.total_return := this.total_return * _decay + ret
+        this.wins := this.wins * _decay + (ret > 0 ? 1.0 : 0.0)
+        this.last_update_bar := bar_index
+        this.last_sample_bar := bar_index
+        this.lifetime_count := this.lifetime_count + 1
 
 method get_avg(SignalStats this) =>
     this.count > 0 ? this.total_return / this.count : 0.0
 
 method get_winrate(SignalStats this) =>
-    this.count > 0 ? float(this.wins) / this.count * 100 : 0.0
+    this.count > 0 ? this.wins / this.count * 100 : 0.0
 
 method get_reliability(SignalStats this) =>
-    this.count >= 20 ? "✓" : this.count >= 5 ? "⚠️" : "❌"
+    _eff_count = this.get_count()
+    _eff_count >= 20 ? "✓" : _eff_count >= 5 ? "⚠️" : "❌"
 
-method get_adjusted_winrate(SignalStats this) =>
-    if this.count < 5
+method get_adjusted_winrate_vs(SignalStats this, float prior) =>
+    // 样本充分性按终身样本数判断；衰减后的有效样本数只决定置信度（有效样本越少越贴近先验）
+    // Sample sufficiency uses the lifetime count; the decayed effective count only sets the confidence (fewer effective samples -> closer to the prior)
+    _eff_count = this.get_count()
+    if this.lifetime_count < 5
         na
     else
-        prior = 50.0
-        confidence = math.min(1.0, float(this.count) / 20.0)
+        confidence = math.min(1.0, _eff_count / 20.0)
         raw_rate = this.get_winrate()
         prior * (1 - confidence) + raw_rate * confidence
+
+method get_adjusted_winrate(SignalStats this) =>
+    this.get_adjusted_winrate_vs(50.0)
 
 STATS_SIGNAL_MTF = 0
 STATS_SIGNAL_DIV = 1
@@ -445,6 +499,7 @@ STATS_RANKING_BUCKETS_PER_SIGNAL = STATS_GRADE_COUNT * STATS_DIR_COUNT
 var array<SignalStats> signal_type_stats = array.new<SignalStats>(0)
 var array<SignalStats> grade_stats = array.new<SignalStats>(0)
 var array<SignalStats> ranking_stats = array.new<SignalStats>(0)
+var array<SignalStats> baseline_stats = array.new<SignalStats>(0)
 
 if array.size(signal_type_stats) == 0
     for i = 0 to STATS_SIGNAL_BUCKETS - 1
@@ -453,6 +508,8 @@ if array.size(signal_type_stats) == 0
         array.push(grade_stats, SignalStats.new())
     for i = 0 to STATS_RANKING_BUCKETS - 1
         array.push(ranking_stats, SignalStats.new())
+    for i = 0 to STATS_DIR_COUNT - 1
+        array.push(baseline_stats, SignalStats.new())
 
 f_dir_bucket_index(_is_buy) =>
     _is_buy ? STATS_DIR_BUY : STATS_DIR_SELL
@@ -477,7 +534,16 @@ f_ranking_bucket_index(_is_buy, _signal_idx, _grade) =>
 
 f_update_stats_bucket(array<SignalStats> _stats, int _idx, bool _triggered, float _ret) =>
     _bucket = array.get(_stats, _idx)
-    _bucket.update(_triggered, _ret)
+    _bucket.update(_triggered, _ret, stats_independent_samples)
+
+// 方向基准胜率：基准桶每根可计算K线都记录无条件前瞻收益，估计该方向的基础胜率
+f_stats_baseline_rate(_is_buy) =>
+    _baseline = array.get(baseline_stats, f_dir_bucket_index(_is_buy))
+    _baseline.count > 0 ? _baseline.get_winrate() : 50.0
+
+// 调整胜率的先验：Edge vs Baseline 模式收缩到方向基准，旧版模式收缩到50%
+f_stats_display_prior(_is_buy) =>
+    stats_gate_mode == "Edge vs Baseline" ? f_stats_baseline_rate(_is_buy) : 50.0
 
 f_ranking_signal_number(_idx) =>
     _idx < 8 ? 1 : _idx < 16 ? 2 : _idx < 24 ? 3 : 4
@@ -504,11 +570,11 @@ f_signal_type_dashboard_color(_signal_idx, _is_buy, _bull, _bear) =>
 f_grade_dashboard_color(_grade_idx) =>
     _grade_idx == 0 ? #FFD700 : _grade_idx == 1 ? #4CAF50 : _grade_idx == 2 ? #FF9800 : #9E9E9E
 
-f_stats_wr_text(SignalStats _stats) =>
-    _stats.count >= 5 ? str.format("{0,number,#}%", _stats.get_adjusted_winrate()) : "--"
+f_stats_wr_text(SignalStats _stats, bool _is_buy) =>
+    _stats.get_count() >= 5 ? str.format("{0,number,#}%", _stats.get_adjusted_winrate_vs(f_stats_display_prior(_is_buy))) : "--"
 
-f_stats_avg_wr_text(SignalStats _stats) =>
-    _stats.count >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", _stats.get_avg(), _stats.get_adjusted_winrate()) : "--|--"
+f_stats_avg_wr_text(SignalStats _stats, bool _is_buy) =>
+    _stats.get_count() >= 5 ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", _stats.get_avg(), _stats.get_adjusted_winrate_vs(f_stats_display_prior(_is_buy))) : "--|--"
 
 
 // ────────────────────────────────────────
@@ -678,6 +744,8 @@ var int last_norm_buy_bar = na
 var int last_norm_sell_bar = na
 var int last_buy_level = 0
 var int last_sell_level = 0
+var int last_buy_signal_bar = na
+var int last_sell_signal_bar = na
 
 // ────────────────────────────────────────
 // CONSOLIDATED SIGNALS
@@ -700,16 +768,25 @@ bool raw_sig_sell_div = enable_divergence and bearish_divergence and was_extreme
 bool raw_sig_sell_extreme = extreme_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div
 bool raw_sig_sell_normal = normal_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div and not raw_sig_sell_extreme
 
-int pending_buy_level = raw_sig_buy_mtf ? 4 : raw_sig_buy_div ? 3 : raw_sig_buy_extreme ? 2 : raw_sig_buy_normal ? 1 : 0
-bool buy_upgrade_exempt = pending_buy_level > last_buy_level
-
-int pending_sell_level = raw_sig_sell_mtf ? 4 : raw_sig_sell_div ? 3 : raw_sig_sell_extreme ? 2 : raw_sig_sell_normal ? 1 : 0
-bool sell_upgrade_exempt = pending_sell_level > last_sell_level
-
 int cooldown_mtf = 1
 int cooldown_div = 1
 int cooldown_ext = 1
 int cooldown_norm = cooldown_bars
+
+// 升级豁免只比较仍在冷却期内的上一信号；冷却期已过的旧信号等级按 0 处理
+// 等级为 0（无信号在冷却中）时不豁免，否则普通信号会绕过自身冷却期
+// Upgrade exemption only compares against a still-cooling-down previous signal; expired levels count as 0
+// No exemption when the effective level is 0 (nothing cooling), otherwise normal signals would bypass their own cooldown
+int last_buy_level_cooldown = last_buy_level == 4 ? cooldown_mtf : last_buy_level == 3 ? cooldown_div : last_buy_level == 2 ? cooldown_ext : cooldown_norm
+int effective_last_buy_level = na(last_buy_signal_bar) or bar_index - last_buy_signal_bar > last_buy_level_cooldown ? 0 : last_buy_level
+int last_sell_level_cooldown = last_sell_level == 4 ? cooldown_mtf : last_sell_level == 3 ? cooldown_div : last_sell_level == 2 ? cooldown_ext : cooldown_norm
+int effective_last_sell_level = na(last_sell_signal_bar) or bar_index - last_sell_signal_bar > last_sell_level_cooldown ? 0 : last_sell_level
+
+int pending_buy_level = raw_sig_buy_mtf ? 4 : raw_sig_buy_div ? 3 : raw_sig_buy_extreme ? 2 : raw_sig_buy_normal ? 1 : 0
+bool buy_upgrade_exempt = effective_last_buy_level > 0 and pending_buy_level > effective_last_buy_level
+
+int pending_sell_level = raw_sig_sell_mtf ? 4 : raw_sig_sell_div ? 3 : raw_sig_sell_extreme ? 2 : raw_sig_sell_normal ? 1 : 0
+bool sell_upgrade_exempt = effective_last_sell_level > 0 and pending_sell_level > effective_last_sell_level
 
 bool sig_buy_mtf = enable_signal_cooldown ? (raw_sig_buy_mtf and (buy_upgrade_exempt or na(last_mtf_buy_bar) or bar_index - last_mtf_buy_bar >= cooldown_mtf)) : raw_sig_buy_mtf
 bool sig_buy_div = enable_signal_cooldown ? (raw_sig_buy_div and (buy_upgrade_exempt or na(last_div_buy_bar) or bar_index - last_div_buy_bar >= cooldown_div)) : raw_sig_buy_div
@@ -723,28 +800,36 @@ bool sig_sell_normal = enable_signal_cooldown ? (raw_sig_sell_normal and (sell_u
 
 if sig_buy_mtf
     last_mtf_buy_bar := bar_index
+    last_buy_signal_bar := bar_index
     last_buy_level := 4
 if sig_buy_div
     last_div_buy_bar := bar_index
+    last_buy_signal_bar := bar_index
     last_buy_level := 3
 if sig_buy_extreme
     last_ext_buy_bar := bar_index
+    last_buy_signal_bar := bar_index
     last_buy_level := 2
 if sig_buy_normal
     last_norm_buy_bar := bar_index
+    last_buy_signal_bar := bar_index
     last_buy_level := 1
 
 if sig_sell_mtf
     last_mtf_sell_bar := bar_index
+    last_sell_signal_bar := bar_index
     last_sell_level := 4
 if sig_sell_div
     last_div_sell_bar := bar_index
+    last_sell_signal_bar := bar_index
     last_sell_level := 3
 if sig_sell_extreme
     last_ext_sell_bar := bar_index
+    last_sell_signal_bar := bar_index
     last_sell_level := 2
 if sig_sell_normal
     last_norm_sell_bar := bar_index
+    last_sell_signal_bar := bar_index
     last_sell_level := 1
 
 bool sig_div_bull_only = enable_divergence and bullish_divergence and not was_extreme_oversold
@@ -886,6 +971,12 @@ if enable_stats and bar_index > stats_forward_bars
     // Short Entry: 原有逻辑，做空收益
     forward_return_short = (close[stats_forward_bars] - close) / close[stats_forward_bars] * 100
 
+    // 方向基准桶：每根可计算K线都记录无条件前瞻收益（同样衰减，不做独立采样间隔）
+    baseline_buy_bucket = array.get(baseline_stats, STATS_DIR_BUY)
+    baseline_buy_bucket.update(true, forward_return_long, false)
+    baseline_sell_bucket = array.get(baseline_stats, STATS_DIR_SELL)
+    baseline_sell_bucket.update(true, forward_return_short, false)
+
     f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(true, STATS_SIGNAL_MTF), sig_buy_mtf[stats_forward_bars], forward_return_long)
     f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(false, STATS_SIGNAL_MTF), sig_sell_mtf[stats_forward_bars], forward_return_short)
     f_update_stats_bucket(signal_type_stats, f_signal_type_bucket_index(true, STATS_SIGNAL_DIV), sig_buy_div[stats_forward_bars], forward_return_long)
@@ -922,7 +1013,7 @@ if enable_stats and bar_index > stats_forward_bars
 f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
     array.get(ranking_stats, f_ranking_bucket_index(_is_buy, f_signal_kind_index(_is_mtf, _is_div, _is_ext), _grade))
 
-f_get_type_stats(_is_buy, _is_mtf, _is_div, _is_ext) =>
+f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext) =>
     array.get(signal_type_stats, f_signal_type_bucket_index(_is_buy, f_signal_kind_index(_is_mtf, _is_div, _is_ext)))
 
 f_get_grade_stats(_is_buy, _grade) =>
@@ -930,11 +1021,12 @@ f_get_grade_stats(_is_buy, _grade) =>
 
 f_get_filter_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
     if stats_mode == "Signal Type"
-        f_get_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
+        f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
     else if stats_mode == "Grade"
         f_get_grade_stats(_is_buy, _grade)
     else
         f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+// @harness: stats-helpers
 
 f_get_signal_type_label(_is_mtf, _is_div, _is_ext) =>
     _is_mtf ? "MTF" : _is_div ? "DIV" : _is_ext ? "EXT" : "NORM"
@@ -946,17 +1038,22 @@ f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade) =>
      str.format("{0}[{1}]", _type_label, _grade)
 
 // 检查信号是否通过统计过滤
-f_passes_stats_filter(_stats) =>
+// Edge vs Baseline: 先验收缩到方向基准胜率，门槛 = 基准 + (最小调整胜率 - 50)
+// Absolute (Legacy): 先验50%，门槛 = 最小调整胜率（旧版行为）
+f_passes_stats_filter(_stats, _is_buy) =>
     if not enable_stats_filter or not enable_stats
         true
     else
-        _count = _stats.count
-        _adj_wr = _stats.get_adjusted_winrate()
-        _has_enough_samples = _count >= stats_min_samples
-        _has_good_winrate = not na(_adj_wr) and _adj_wr >= stats_min_winrate
+        _edge_mode = stats_gate_mode == "Edge vs Baseline"
+        _baseline = f_stats_baseline_rate(_is_buy)
+        _prior = _edge_mode ? _baseline : 50.0
+        _required = _edge_mode ? _baseline + (stats_min_winrate - 50.0) : stats_min_winrate
+        _adj_wr = _stats.get_adjusted_winrate_vs(_prior)
+        _has_enough_samples = _stats.get_lifetime_count() >= stats_min_samples
+        _has_good_winrate = not na(_adj_wr) and _adj_wr >= _required
         _has_enough_samples and _has_good_winrate
 
-// 根据 stats_mode 选择实际用于生产过滤的统计桶
+// 计算各信号的过滤状态
 buy_mtf_stats = f_get_filter_stats(true, true, false, false, buy_quality_grade)
 buy_div_stats = f_get_filter_stats(true, false, true, false, buy_quality_grade)
 buy_ext_stats = f_get_filter_stats(true, false, false, true, buy_quality_grade)
@@ -968,15 +1065,15 @@ sell_ext_stats = f_get_filter_stats(false, false, false, true, sell_quality_grad
 sell_norm_stats = f_get_filter_stats(false, false, false, false, sell_quality_grade)
 
 // 过滤结果
-filter_buy_mtf = f_passes_stats_filter(buy_mtf_stats)
-filter_buy_div = f_passes_stats_filter(buy_div_stats)
-filter_buy_ext = f_passes_stats_filter(buy_ext_stats)
-filter_buy_norm = f_passes_stats_filter(buy_norm_stats)
+filter_buy_mtf = f_passes_stats_filter(buy_mtf_stats, true)
+filter_buy_div = f_passes_stats_filter(buy_div_stats, true)
+filter_buy_ext = f_passes_stats_filter(buy_ext_stats, true)
+filter_buy_norm = f_passes_stats_filter(buy_norm_stats, true)
 
-filter_sell_mtf = f_passes_stats_filter(sell_mtf_stats)
-filter_sell_div = f_passes_stats_filter(sell_div_stats)
-filter_sell_ext = f_passes_stats_filter(sell_ext_stats)
-filter_sell_norm = f_passes_stats_filter(sell_norm_stats)
+filter_sell_mtf = f_passes_stats_filter(sell_mtf_stats, false)
+filter_sell_div = f_passes_stats_filter(sell_div_stats, false)
+filter_sell_ext = f_passes_stats_filter(sell_ext_stats, false)
+filter_sell_norm = f_passes_stats_filter(sell_norm_stats, false)
 
 // 根据过滤模式决定显示的信号
 // Hard: 只显示通过的信号
@@ -1146,8 +1243,9 @@ status_display_color = rsi_zscore < -normal_threshold ? color_bull : rsi_zscore 
 // DASHBOARD
 // ────────────────────────────────────────
 
-f_status_text(_status) =>
-    _status == 1 ? "🟢" : _status == -1 ? "🔴" : "⚪"
+f_status_text(_status, _available) =>
+    not _available ? "–" : _status == 1 ? "🟢" : _status == -1 ? "🔴" : "⚪"
+// @harness: gate-helper
 
 f_harness_gate_snapshot() =>
     string _source = "Idle"
@@ -1185,9 +1283,9 @@ f_harness_gate_snapshot() =>
             _source := f_get_filter_source_label(false, false, false, sell_quality_grade)
 
     if _source != "Idle"
-        _count := _stats.count
+        _count := math.round(_stats.get_count())
         _avg := _stats.get_avg()
-        _adj := nz(_stats.get_adjusted_winrate(), 0.0)
+        _adj := nz(_stats.get_adjusted_winrate_vs(f_stats_display_prior(_use_buy)), 0.0)
 
     [_source, _count, _avg, _adj]
 
@@ -1216,9 +1314,11 @@ if show_dashboard
     div_text = bullish_divergence ? "🟢 BULL" : bearish_divergence ? "🔴 BEAR" : "—"
     div_color = bullish_divergence ? #00BCD4 : bearish_divergence ? #FF9800 : color.gray
 
-    resonance_text = oversold_resonance ? str.format("🟢 {0}/{1}", oversold_count, valid_tf_count) :
+    resonance_base = oversold_resonance ? str.format("🟢 {0}/{1}", oversold_count, valid_tf_count) :
                      overbought_resonance ? str.format("🔴 {0}/{1}", overbought_count, valid_tf_count) :
                      str.format("⚪ {0}/{1}", math.max(oversold_count, overbought_count), valid_tf_count)
+    // 任一周期数据不可用时附加警告 / append warning when any TF data is unavailable
+    resonance_text = mtf_data_warning ? resonance_base + " ⚠️" : resonance_base
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     mobile_rows = 3
@@ -1276,6 +1376,7 @@ if show_dashboard
             table.cell(dashboard, 1, row, status_text_full, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
+            // @harness: dashboard-rows
             harness_side_display = harness_trade_side == "Long Only" ? "Long" : harness_trade_side == "Short Only" ? "Short" : "Both"
             harness_mode_display = harness_use_production ? "Production" : "Baseline"
             harness_tester_display = harness_trade_side == "Long Only" ? "Read All = Long" : harness_trade_side == "Short Only" ? "Read All = Short" : "Read All = Both"
@@ -1321,7 +1422,7 @@ if show_dashboard
             if dashboard_mode == "Full"
                 if enable_mtf
                     table.cell(dashboard, 0, row, str.format("MTF {0}|{1}|{2}", mtf_tf1_display, mtf_tf2_display, mtf_tf3_display), text_color=color.gray, text_size=txt_size_body)
-                    table.cell(dashboard, 1, row, str.format("{0}|{1}|{2}", f_status_text(status_tf1), f_status_text(status_tf2), f_status_text(status_tf3)), text_color=color.white, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.format("{0}|{1}|{2}", f_status_text(status_tf1, mtf_data_ok_tf1), f_status_text(status_tf2, mtf_data_ok_tf2), f_status_text(status_tf3, mtf_data_ok_tf3)), text_color=color.white, text_size=txt_size_body)
                     row += 1
 
                     table.cell(dashboard, 0, row, "Resonance", text_color=color.gray, text_size=txt_size_body)
@@ -1337,7 +1438,7 @@ if show_dashboard
                 if enable_stats
                     stats_title = stats_mode == "Ranking" ? "── RANKING ──" : stats_mode == "Grade" ? "── GRADE STATS ──" : "── SIGNAL STATS ──"
                     table.cell(dashboard, 0, row, stats_title, text_color=color.gray, text_size=txt_size_body)
-                    table.cell(dashboard, 1, row, str.format("({0}b)", stats_forward_bars), text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.format("({0}b) Base⬆{1,number,#}%|⬇{2,number,#}%", stats_forward_bars, f_stats_baseline_rate(true), f_stats_baseline_rate(false)), text_color=color.gray, text_size=txt_size_body)
                     row += 1
 
                     if stats_mode == "Signal Type"
@@ -1345,8 +1446,8 @@ if show_dashboard
                             for dir_idx = 0 to STATS_DIR_COUNT - 1
                                 is_buy = dir_idx == STATS_DIR_BUY
                                 sig_stats = array.get(signal_type_stats, f_signal_type_bucket_index(is_buy, sig_idx))
-                                sig_wr = f_stats_wr_text(sig_stats)
-                                table.cell(dashboard, 0, row, str.format("{0}({1}){2}", f_signal_type_dashboard_label(sig_idx, is_buy), sig_stats.count, sig_stats.get_reliability()), text_color=f_signal_type_dashboard_color(sig_idx, is_buy, color_bull, color_bear), text_size=txt_size_body)
+                                sig_wr = f_stats_wr_text(sig_stats, is_buy)
+                                table.cell(dashboard, 0, row, str.format("{0}({1}){2}", f_signal_type_dashboard_label(sig_idx, is_buy), math.round(sig_stats.get_count()), sig_stats.get_reliability()), text_color=f_signal_type_dashboard_color(sig_idx, is_buy, color_bull, color_bear), text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", sig_stats.get_avg(), sig_wr), text_color=is_buy ? color_bull : color_bear, text_size=txt_size_body)
                                 row += 1
 
@@ -1356,8 +1457,8 @@ if show_dashboard
                                 is_buy = dir_idx == STATS_DIR_BUY
                                 grade_label = f_grade_value(grade_idx)
                                 grade_bucket = array.get(grade_stats, grade_idx * STATS_DIR_COUNT + dir_idx)
-                                grade_display = f_stats_avg_wr_text(grade_bucket)
-                                table.cell(dashboard, 0, row, str.format("[{0}]{1}({2}){3}", grade_label, is_buy ? "📈" : "📉", grade_bucket.count, grade_bucket.get_reliability()), text_color=f_grade_dashboard_color(grade_idx), text_size=txt_size_body)
+                                grade_display = f_stats_avg_wr_text(grade_bucket, is_buy)
+                                table.cell(dashboard, 0, row, str.format("[{0}]{1}({2}){3}", grade_label, is_buy ? "📈" : "📉", math.round(grade_bucket.get_count()), grade_bucket.get_reliability()), text_color=f_grade_dashboard_color(grade_idx), text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, grade_display, text_color=is_buy ? color_bull : color_bear, text_size=txt_size_body)
                                 row += 1
 
@@ -1367,7 +1468,8 @@ if show_dashboard
 
                         for i = 0 to STATS_RANKING_BUCKETS - 1
                             rank_stats = array.get(ranking_stats, i)
-                            array.set(ranking_wr, i, rank_stats.count >= 5 ? rank_stats.get_adjusted_winrate() : 0)
+                            rank_is_buy = f_ranking_direction_number(i) == 1
+                            array.set(ranking_wr, i, rank_stats.get_count() >= 5 ? rank_stats.get_adjusted_winrate_vs(f_stats_display_prior(rank_is_buy)) : 0)
                             array.set(ranking_idx, i, i)
 
                         // 创建索引数组用于排序
@@ -1391,8 +1493,8 @@ if show_dashboard
                                 grd = f_grade_value(f_ranking_grade_index(idx))
                                 dir = f_ranking_direction_number(idx)
                                 ret = rank_stats.get_avg()
-                                cnt = rank_stats.count
-                                rel = cnt >= 20 ? "✓" : cnt >= 5 ? "⚠️" : "❌"
+                                cnt = math.round(rank_stats.get_count())
+                                rel = rank_stats.get_reliability()
                                 dir_text = dir == 1 ? "📈" : "📉"
                                 dir_clr = f_dir_color(dir, color_bull, color_bear)
 
@@ -1448,8 +1550,8 @@ if enable_smart_alert
     string alert_filter_status = (enable_stats_filter and enable_stats) ? (current_signal_passes_filter ? "✓" : "⚠️") : ""
 
     current_buy_level = f_signal_level(alert_buy_mtf, alert_buy_div, alert_buy_ext, filtered_buy_normal)
-    previous_buy_level = f_signal_level(alert_buy_mtf[1], alert_buy_div[1], alert_buy_ext[1], show_normal_signals[1] and alert_buy_norm[1])
-    should_alert_buy = alert_has_buy and current_buy_level > previous_buy_level and current_buy_level > buy_alert_level_sent
+    prev_buy_level = f_signal_level(alert_buy_mtf[1], alert_buy_div[1], alert_buy_ext[1], show_normal_signals[1] and alert_buy_norm[1])
+    should_alert_buy = alert_has_buy and current_buy_level > prev_buy_level and current_buy_level > buy_alert_level_sent and (not alert_on_close or barstate.isconfirmed)
 
     if should_alert_buy
         msg = str.format("{0}: 🟢 BUY → {1} ", syminfo.ticker, alert_buy_icon)
@@ -1472,8 +1574,8 @@ if enable_smart_alert
         buy_alert_level_sent := current_buy_level
 
     current_sell_level = f_signal_level(alert_sell_mtf, alert_sell_div, alert_sell_ext, filtered_sell_normal)
-    previous_sell_level = f_signal_level(alert_sell_mtf[1], alert_sell_div[1], alert_sell_ext[1], show_normal_signals[1] and alert_sell_norm[1])
-    should_alert_sell = alert_has_sell and current_sell_level > previous_sell_level and current_sell_level > sell_alert_level_sent
+    prev_sell_level = f_signal_level(alert_sell_mtf[1], alert_sell_div[1], alert_sell_ext[1], show_normal_signals[1] and alert_sell_norm[1])
+    should_alert_sell = alert_has_sell and current_sell_level > prev_sell_level and current_sell_level > sell_alert_level_sent and (not alert_on_close or barstate.isconfirmed)
 
     if should_alert_sell
         msg = str.format("{0}: 🔴 SELL → {1} ", syminfo.ticker, alert_sell_icon)
@@ -1512,14 +1614,33 @@ strategy_signal_dir = strategy_buy_signal and not strategy_sell_signal ? 1 : str
 allow_long_entries = harness_trade_side == "Long Only" or harness_trade_side == "Both"
 allow_short_entries = harness_trade_side == "Short Only" or harness_trade_side == "Both"
 
+var float harness_long_sl_price = na
+var float harness_long_tp_price = na
+var float harness_short_sl_price = na
+var float harness_short_tp_price = na
+
 if strategy_signal_dir == 1
     if strategy.position_size < 0
         strategy.close("Short")
     if allow_long_entries and strategy.position_size <= 0
         strategy.entry("Long", strategy.long)
+        harness_long_sl_price := buy_sl_price
+        harness_long_tp_price := buy_tp_price
 
 if strategy_signal_dir == -1
     if strategy.position_size > 0
         strategy.close("Long")
     if allow_short_entries and strategy.position_size >= 0
         strategy.entry("Short", strategy.short)
+        harness_short_sl_price := sell_sl_price
+        harness_short_tp_price := sell_tp_price
+
+if harness_use_risk_exits
+    if strategy.position_size > 0 and (not na(harness_long_sl_price) or not na(harness_long_tp_price))
+        strategy.exit("Long Exit", from_entry="Long", stop=harness_long_sl_price, limit=harness_long_tp_price, comment="ATR Exit")
+    if strategy.position_size < 0 and (not na(harness_short_sl_price) or not na(harness_short_tp_price))
+        strategy.exit("Short Exit", from_entry="Short", stop=harness_short_sl_price, limit=harness_short_tp_price, comment="ATR Exit")
+
+if harness_max_holding_bars > 0 and strategy.opentrades > 0
+    if bar_index - strategy.opentrades.entry_bar_index(strategy.opentrades - 1) >= harness_max_holding_bars
+        strategy.close(strategy.position_size > 0 ? "Long" : "Short", comment="Time Exit")

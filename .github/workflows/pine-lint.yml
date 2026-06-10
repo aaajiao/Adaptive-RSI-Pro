@@ -7,11 +7,13 @@ on:
       - '.pine-lint.yml'
       - 'tools/pine_linter/**'
       - 'tools/generate_strategy_harness.py'
+      - 'tests/**'
   pull_request:
     paths:
       - '**.pine'
       - '.pine-lint.yml'
       - 'tools/**'
+      - 'tests/**'
 
 jobs:
   lint:
@@ -32,7 +34,10 @@ jobs:
 
       - name: Check generated strategy harness
         run: python tools/generate_strategy_harness.py --check
-      
+
+      - name: Run generator tests
+        run: python3 -m unittest discover -s tests -v
+
       - name: Run Pine Linter
         id: lint
         run: |

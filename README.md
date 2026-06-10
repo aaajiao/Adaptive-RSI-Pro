@@ -6,7 +6,7 @@
 [![Pine Script](https://img.shields.io/badge/Pine%20Script-v6-brightgreen)](https://www.tradingview.com/pine-script-reference/v6/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Pine Script v6** | **v7.3**
+**Pine Script v6** | **v7.4**
 
 Dynamic thresholds + multi-timeframe analysis + divergence detection + stats filtering + smart alerts
 
@@ -102,6 +102,7 @@ Each signal carries a quality grade based on multi-factor scoring:
 - Automatic fractal timeframe selection or manual selection of three timeframes
 - Weighted resonance detection, with the highest timeframe counting double
 - `🌟` resonance signals are the top-priority signals
+- Dashboard data-availability indicator: timeframes without usable data show `–` in the MTF row, and the `Resonance` row appends `⚠️` (display-only; resonance math and stats recording are unchanged)
 
 ### 4. Divergence Detection
 - Volatility-adaptive behavior for Low Vol / Normal / High Vol / Crypto
@@ -123,10 +124,15 @@ Each signal carries a quality grade based on multi-factor scoring:
 ### 7. Signal Statistics and Filtering
 - Stats modes: `Signal Type`, `Grade`, and `Ranking`
 - Uses Bayesian adjustment to reduce small-sample bias before filtering by sample count and adjusted win rate
+- **Time decay** (`Stats Half-Life Bars`, default 1500): sample weights decay exponentially with bar distance, fading out samples from old market regimes; `0` disables decay (legacy equal-weight accumulation). Decay only affects win-rate confidence — the `Min Samples` gate counts undecayed lifetime samples, so rare signal buckets are not permanently locked out
+- **Independent sampling** (`Independent Samples`, default on): each stats bucket waits at least `Forward Bars` between recorded samples so overlapping forward-return windows do not inflate sample counts; off = legacy overlapping behavior
+- **Gate mode** (`Gate Mode`, default `Edge vs Baseline`): the win-rate gate is measured against each direction's unconditional baseline win rate — `(Min Adjusted WinRate − 50)` becomes the required edge in percentage points — and the Bayesian prior shrinks toward that baseline; this avoids sell buckets being systematically rejected on trending assets. `Absolute (Legacy)` keeps the old fixed absolute threshold
 - Three filter modes:
   - `Alert Only`: chart signals stay visible, alerts are filtered
   - `Soft`: failed signals are downgraded visually
   - `Hard`: failed signals are hidden
+
+> **Upgrade note (v7.4)**: the three stats-engine upgrades above default **on** and change which signals pass the gate compared with v7.3. Setting `Stats Half-Life Bars = 0`, turning `Independent Samples` **off**, and setting `Gate Mode = Absolute (Legacy)` restores the legacy v7.3 stats-engine arithmetic. Other v7.4 signal-level changes — the spread-factor hysteresis band and the cooldown upgrade-level reset — have no revert switch, so the recorded signal stream, and therefore gate decisions, may still differ from v7.3.
 
 ### 8. Smart Alert
 - A single alert aggregates all signal types
@@ -134,6 +140,7 @@ Each signal carries a quality grade based on multi-factor scoring:
 - Alert icons match the script output: `🌟MTF共振` / `💎背离` / `🔥极端` / `❄️极端` / `⬆️超卖` / `⬇️超买`
 - Can append `✓确认`, `↩反转`, and `⚡实时背离` when conditions apply
 - Optional ATR-based risk hints for stop-loss and take-profit suggestions
+- `Alert on Bar Close` (`alert_on_close`, default off): alerts fire only on confirmed bars, avoiding intrabar signals that flash and disappear before close (repaint), at the cost of delivery delayed to bar close
 
 ### 9. Strategy Harness
 - Separate file: [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine)
@@ -142,6 +149,10 @@ Each signal carries a quality grade based on multi-factor scoring:
 - `Backtest Mode`
   - `Baseline`: raw production signals
   - `Production`: signals that pass the production alert gate/filter
+- Optional risk exits (both default off):
+  - `Use ATR SL/TP Exits` (`harness_use_risk_exits`): exits via the same ATR-based SL/TP prices the alerts advertise, snapshotted at entry
+  - `Max Holding Bars` (`harness_max_holding_bars`, `0` = off): force-closes a position after holding N bars (Time Exit)
+- Default costs are commission `0.05%` and slippage `2` ticks; override them in TradingView `Strategy Tester` → `Properties` without editing code
 - `Production` is a gated-signal backtest, not an exact intrabar `alert()` delivery simulation
 - Full guide: [docs/STRATEGY_REPORT.md](/Users/aaajiao/o_projects/RSI_stock/docs/STRATEGY_REPORT.md)
 
@@ -194,6 +205,7 @@ Each signal carries a quality grade based on multi-factor scoring:
 1. Right-click the indicator and choose `Add Alert`.
 2. Set the condition to **Any alert() function call**.
 3. If you want ATR hints in alerts, enable `Include Risk Hints in Alerts`.
+4. If you want alerts only on confirmed bars (no intrabar repaint), enable `Alert on Bar Close`.
 
 ### 3. Suggested Presets
 
@@ -231,16 +243,37 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 
 ---
 
+## Known Limitations
+
+- **History-dependent statistics**: all signal statistics are computed from the chart history TradingView actually loads, so gate decisions can differ across subscription plans, symbols, and even sessions on the same symbol.
+- **Sample-overlap bias**: `Independent Samples` mitigates overlapping forward-return windows but cannot fully eliminate sample-overlap bias.
+- **Lower-TF MTF coverage**: lower-timeframe MTF data only covers roughly the most recent `MAX_REQUEST_BARS` (1400) chart bars, so MTF resonance signals are sparse in deep history.
+- **Intrabar repaint**: intrabar signals can appear and disappear before the bar closes unless `Alert on Bar Close` is enabled.
+- **Percentile labels are approximations**: the z-score-to-percentile labels (such as `≈P2`) assume a normal distribution and are display approximations, not exact ranks.
+- **Harness scope**: the strategy harness is a gated-signal backtest, not an exact intrabar `alert()` delivery simulation.
+
+---
+
 ## Current Version
 
-### v7.3
+### v7.4
 - Keeps the public `v7.2` signal model as the main baseline
-- Retains only minimal correctness fixes:
+- Stats engine upgrades (all default **on**; see the upgrade note in feature 7 for how to revert to legacy behavior):
+  - time decay of sample weights via `Stats Half-Life Bars`
+  - independent sampling to prevent overlapping forward-return windows
+  - `Edge vs Baseline` gate mode that requires an edge over each direction's baseline win rate
+- `Alert on Bar Close` option for bar-close alert confirmation
+- Spread-factor hysteresis: the lookback feedback factor now uses a hysteresis band (engage below 18, release above 22) instead of flip-flopping around a single threshold
+- Stale upgrade-level reset: the cooldown upgrade exemption only compares against a still-cooling-down previous signal; expired signal levels count as 0
+- MTF data-availability indicator in the dashboard (`–` per timeframe plus `⚠️` on the `Resonance` row)
+- Strategy harness: optional ATR SL/TP exits and max-holding-bars time exit (both default off)
+- Retains the `v7.3` correctness fixes:
   - `lookback` floor stays above the statistical lower bound
   - weekly protection uses confirmed weekly data
   - lower-timeframe MTF uses proper lower-TF aggregation
 - Keeps [adaptive_rsi_strategy_harness.pine](/Users/aaajiao/o_projects/RSI_stock/adaptive_rsi_strategy_harness.pine) generated from the production indicator for Strategy Tester validation
-- Stores signal statistics in indexed buckets instead of duplicated per-bucket variables
+
+> **After upgrading**: re-validate on TradingView by pasting both scripts into Pine Editor and confirming compile/runtime behavior on at least `GOOGL 1D`, `AAPL 1D`, and `BTCUSDT 4H`.
 
 ### v7.2
 - Tiered cooldown with upgrade exemption
