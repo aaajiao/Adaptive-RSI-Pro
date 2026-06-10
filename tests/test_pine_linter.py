@@ -345,6 +345,48 @@ class TestNAM001ConstantCase(unittest.TestCase):
         )
         self.assertEqual([], run_rule("NAM001", src))
 
+    def test_const_qualified_lowercase_fires(self):
+        # An explicit Pine v6 `const` qualifier declares constant intent,
+        # so the binding is flagged even though its plain lowercase name
+        # would pass the naming-style heuristic for unqualified bindings.
+        src = fixture(
+            """
+            const int weekly_request_bars = 120
+            """
+        )
+        issues = run_rule("NAM001", src)
+        self.assertEqual(1, len(issues))
+        self.assertEqual("NAM001", issues[0].rule_id)
+        self.assertEqual(1, issues[0].line)
+        self.assertEqual("WEEKLY_REQUEST_BARS", issues[0].suggestion)
+
+    def test_const_qualified_screaming_snake_is_clean(self):
+        src = fixture(
+            """
+            const int WEEKLY_REQUEST_BARS = 120
+            const string PLOT_TITLE = "ARSI Pro"
+            """
+        )
+        self.assertEqual([], run_rule("NAM001", src))
+
+    def test_const_bypass_keeps_unqualified_and_var_handling(self):
+        # The const bypass is scoped to `const`-qualified bindings only:
+        # unqualified lowercase bindings and var/varip mutable state must
+        # stay clean exactly as before.
+        src = fixture(
+            """
+            const float min_edge = 1.5
+            realtime_lookback = 20
+            int cooldown_mtf = 1
+            var float prev_spread = 30.0
+            varip int buy_alert_level_sent = 0
+            """
+        )
+        issues = run_rule("NAM001", src)
+        self.assertEqual(1, len(issues))
+        self.assertEqual(1, issues[0].line)
+        self.assertEqual("MIN_EDGE", issues[0].suggestion)
+
 
 class TestNAM002FunctionPrefix(unittest.TestCase):
     def test_unprefixed_function_fires(self):

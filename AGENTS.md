@@ -62,8 +62,16 @@ RSI_stock/
   - **Edge-vs-baseline gate**: `stats_gate_mode = "Edge vs Baseline"` (default)
     records per-direction unconditional baseline buckets; the Bayesian prior
     shrinks toward the direction baseline and the required win rate becomes
-    `baseline + (Min Adjusted WinRate − 50)`. `"Absolute (Legacy)"` restores
-    the old fixed-threshold/50% prior behavior.
+    `baseline + (Min Adjusted WinRate − 50)`, clamped to `[25%, 90%]`
+    (`f_stats_required_winrate`) so extreme baselines can't make the gate
+    unsatisfiable or trivially low. The dashboard stats header surfaces the
+    effective requirement per direction as `Base→Req`, and in this mode the
+    `Ranking` leaderboard sorts by edge over each bucket's own direction
+    baseline (gate-consistent) and appends the edge in `pp`; buckets with
+    fewer than 5 effective samples are hidden via an explicit has-data flag,
+    while negative-edge buckets stay visible and naturally rank last.
+    `"Absolute (Legacy)"` restores the old fixed-threshold/50% prior behavior
+    and the original sort by adjusted win rate.
 - Other v7.4 behavior changes:
   - **`alert_on_close`**: optional input — alerts fire only on confirmed bars
     (anti-repaint) at the cost of delivery delay; off = legacy intrabar alerts.
@@ -74,8 +82,9 @@ RSI_stock/
     band on the previous bar's `P95−P5` spread (engage 1.3 below 18, release
     above 22) to stop flip-flopping near the threshold.
   - **Upgrade-level reset**: the cooldown upgrade exemption only compares
-    against a still-cooling previous signal (expired levels count as 0), and
-    the `varip` alert level-sent trackers reset on every new bar.
+    against a still-cooling previous signal (expired levels count as 0). (The
+    per-bar `barstate.isnew` reset of the `varip` alert level-sent trackers
+    already existed in v7.3 and is not a v7.4 change.)
 - `Stats Mode` still selects whether the gate reads Signal Type, Grade, or
   Ranking buckets.
 
@@ -95,8 +104,11 @@ RSI_stock/
 - Harness-only inputs:
   - `Trade Side`
   - `Backtest Mode = Baseline | Production`
-  - Risk exits: `Use ATR SL/TP Exits` (entry-snapshotted ATR stop/limit via
-    `strategy.exit`) and `Max Holding Bars` (time exit, `0` = off)
+  - Risk exits: `Use ATR SL/TP Exits` (SL/TP snapshotted at the signal bar's
+    close; `strategy.exit` is issued with the entry and bound via
+    `from_entry`, so the bracket protects from the entry fill bar) and
+    `Max Holding Bars` (time exit realizing exactly N held bars — close order
+    placed at the close of held bar N−1, fills at the next open; `0` = off)
 - `Baseline` trades raw `v7.2` signals; `Production` trades signals that pass
   the production alert gate/filter.
 - It is a gated-signal backtest, not an exact intrabar `alert()` delivery
@@ -111,17 +123,17 @@ RSI_stock/
 | Spread hysteresis | `adaptive_rsi.pine:160-192` | Boost state machine + `prev_spread` feedback update |
 | Weekly protection | `adaptive_rsi.pine:234-263` | Confirmed weekly trend filter |
 | MTF analysis | `adaptive_rsi.pine:276-407` | TF selection, lower-TF aggregation, availability flags (330-385) |
-| Statistics types | `adaptive_rsi.pine:408-556` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate |
-| Signal detection | `adaptive_rsi.pine:689-727` | Raw signals and cooldown state |
-| Consolidated signals | `adaptive_rsi.pine:728-822` | Priority merge, upgrade exemption with expired-level reset |
-| Statistics engine | `adaptive_rsi.pine:936-983` | Forward-return bookkeeping, baseline sampling, independent sampling |
-| Stats filter | `adaptive_rsi.pine:984-1125` | Edge-vs-baseline / legacy gate, stats-mode-aware buckets, hidden-state detection |
-| Dashboard | `adaptive_rsi.pine:1210-1421` | Main indicator UI incl. MTF availability warning |
-| Alerts | `adaptive_rsi.pine:1422-1505` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
+| Statistics types | `adaptive_rsi.pine:408-565` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate, `f_stats_required_winrate` clamp |
+| Signal detection | `adaptive_rsi.pine:710-746` | Raw signals and cooldown state |
+| Consolidated signals | `adaptive_rsi.pine:748-843` | Priority merge, upgrade exemption with expired-level reset |
+| Statistics engine | `adaptive_rsi.pine:958-1004` | Forward-return bookkeeping, baseline sampling, independent sampling |
+| Stats filter | `adaptive_rsi.pine:1006-1144` | Edge-vs-baseline / legacy gate, stats-mode-aware buckets, hidden-state detection |
+| Dashboard | `adaptive_rsi.pine:1230-1458` | Main indicator UI incl. MTF availability warning, `Base→Req` header, edge-sorted ranking |
+| Alerts | `adaptive_rsi.pine:1460-1543` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
 | Harness inputs | `adaptive_rsi_strategy_harness.pine:80-86` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
 | Harness risk direction | `adaptive_rsi_strategy_harness.pine:98-103` | `strategy.risk.allow_entry_in` wiring |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1367-1384` | `Harness`, `Tester`, `Production Gate` |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1588-1634` | Entry/close rules, ATR SL/TP exits, time exit |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1387-1405` | `Harness`, `Tester`, `Production Gate` |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1630-1691` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
 | Generator anchors | `tools/generate_strategy_harness.py` | Anchor names, harness-owned snippets, `--check` mode |
 | Tooling tests | `tests/` | Generator golden/anchor tests, linter rule tests |
 

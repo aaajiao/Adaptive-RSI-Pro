@@ -24,12 +24,12 @@
 
 `Production` 是过滤后信号的执行口径。它不模拟盘中 `alert()` 投递、alert 调度或 smart alert 的精确投递次数；它用于评估过滤路径，不用于和 alert 日志逐条对齐。
 
-从 `v7.4` 起，正式统计引擎默认开启时间衰减、独立采样和 `Edge vs Baseline` 门槛模式，因此相同参数下 `Production` 结果会与 `v7.3` 不同。设置 `Stats Half-Life Bars = 0`、关闭 `Independent Samples`、并将 `Gate Mode` 设为 `Absolute (Legacy)` 只能恢复旧版统计引擎的计算方式；v7.4 在信号层面的其他改动（spread 因子滞回、冷却升级等级重置）没有回退开关，`Production` 结果仍可能与 `v7.3` 不同。
+从 `v7.4` 起，正式统计引擎默认开启时间衰减、独立采样和 `Edge vs Baseline` 门槛模式（有效门槛 = 方向基准 + 要求优势，钳制在 25%~90% 之间，并在指标 Dashboard 的 `Base→Req` 标题行中显示），因此相同参数下 `Production` 结果会与 `v7.3` 不同。设置 `Stats Half-Life Bars = 0`、关闭 `Independent Samples`、并将 `Gate Mode` 设为 `Absolute (Legacy)` 只能恢复旧版统计引擎的计算方式；v7.4 在信号层面的其他改动（spread 因子滞回、冷却升级等级重置）没有回退开关，`Production` 结果仍可能与 `v7.3` 不同。
 
 ### 风险退出（v7.4，均默认关闭）
 
-- `Use ATR SL/TP Exits`（`harness_use_risk_exits`）：按警报展示的 ATR 止损/止盈价格退出（入场时快照价格）；关闭 = 仅按反向信号平仓（原有回测行为）
-- `Max Holding Bars`（`harness_max_holding_bars`，`0` = 关闭）：持仓达到 N 根 K 线后强制平仓（`Time Exit`）
+- `Use ATR SL/TP Exits`（`harness_use_risk_exits`）：按警报展示的 ATR 止损/止盈价格退出。价格在信号 K 线收盘时快照，入场单在下一根 K 线开盘成交；`strategy.exit` 与入场单一起下单并通过 `from_entry` 绑定，因此入场成交当根 K 线即受止损/止盈保护。持仓期间同 ID 退出单持续刷新，反手/再入场后始终挂着最新快照。关闭 = 仅按反向信号平仓（原有回测行为）
+- `Max Holding Bars`（`harness_max_holding_bars`，`0` = 关闭）：持仓恰好 N 根 K 线后强制平仓（`Time Exit`）——平仓单在第 N−1 根持仓 K 线收盘时下达，下一根 K 线开盘成交
 
 ### 成本
 

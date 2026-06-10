@@ -104,7 +104,7 @@ HARNESS_INPUT_BLOCK = """
 grp_harness = "═══ Strategy Report / 策略回测 ═══"
 harness_trade_side = input.string("Long Only", "Trade Side / 交易方向", options=["Long Only", "Short Only", "Both"], group=grp_harness, tooltip="Long Only: 仅做多，卖出信号只平多\\nShort Only: 仅做空，买入信号只平空\\nBoth: 双向切换，买卖信号会反手")
 harness_backtest_mode = input.string("Production", "Backtest Mode / 回测模式", options=["Baseline", "Production"], group=grp_harness, tooltip="Baseline: raw v7.2 signals, no stats filter\\nProduction: gate-passing production alert signals; not exact intrabar alert delivery\\nBaseline: 使用 7.2 原始信号，不加统计过滤\\nProduction: 使用通过正式警报 gate/过滤的信号，不精确模拟盘中 alert 投递")
-harness_use_risk_exits = input.bool(false, "Use ATR SL/TP Exits / 启用ATR止损止盈", group=grp_harness, tooltip="On: trades exit via the same ATR-based SL/TP prices the alerts advertise, snapshotted at entry\\nOff: trades exit only on opposite signals (legacy harness behavior)\\n开启：按警报展示的ATR止损/止盈价格退出（入场时快照价格）\\n关闭：仅按反向信号平仓（原有回测行为）")
+harness_use_risk_exits = input.bool(false, "Use ATR SL/TP Exits / 启用ATR止损止盈", group=grp_harness, tooltip="On: trades exit via the same ATR-based SL/TP prices the alerts advertise; prices are snapshotted at the signal bar's close (the entry order fills at the next bar's open)\\nOff: trades exit only on opposite signals (legacy harness behavior)\\n开启：按警报展示的ATR止损/止盈价格退出；价格在信号K线收盘时快照（入场单在下一根K线开盘成交）\\n关闭：仅按反向信号平仓（原有回测行为）")
 harness_max_holding_bars = input.int(0, "Max Holding Bars / 最大持仓K线数", minval=0, group=grp_harness, tooltip="0 = off\\n>0: force-close the position after holding N bars (Time Exit)\\n0 = 关闭\\n大于0：持仓达到N根K线后强制平仓（时间退出）")
 """
 
@@ -213,6 +213,11 @@ var float harness_long_tp_price = na
 var float harness_short_sl_price = na
 var float harness_short_tp_price = na
 
+// SL/TP prices are snapshotted at the signal bar's close; the entry order fills at the
+// next bar's open. strategy.exit is issued right after strategy.entry (bound via
+// from_entry) so the SL/TP bracket is already active on the fill bar itself.
+// SL/TP价格在信号K线收盘时快照；入场单在下一根K线开盘成交。strategy.exit 紧跟
+// strategy.entry 下单（通过 from_entry 绑定），确保成交当根K线即受止损/止盈保护。
 if strategy_signal_dir == 1
     if strategy.position_size < 0
         strategy.close("Short")
@@ -220,6 +225,8 @@ if strategy_signal_dir == 1
         strategy.entry("Long", strategy.long)
         harness_long_sl_price := buy_sl_price
         harness_long_tp_price := buy_tp_price
+        if harness_use_risk_exits and (not na(harness_long_sl_price) or not na(harness_long_tp_price))
+            strategy.exit("Long Exit", from_entry="Long", stop=harness_long_sl_price, limit=harness_long_tp_price, comment="ATR Exit")
 
 if strategy_signal_dir == -1
     if strategy.position_size > 0
@@ -228,15 +235,27 @@ if strategy_signal_dir == -1
         strategy.entry("Short", strategy.short)
         harness_short_sl_price := sell_sl_price
         harness_short_tp_price := sell_tp_price
+        if harness_use_risk_exits and (not na(harness_short_sl_price) or not na(harness_short_tp_price))
+            strategy.exit("Short Exit", from_entry="Short", stop=harness_short_sl_price, limit=harness_short_tp_price, comment="ATR Exit")
 
+// While a position is open, keep refreshing the same-id exit (modifies the existing
+// order, no duplicates) so open positions always carry the latest SL/TP snapshot,
+// including after re-entries.
+// 持仓期间持续刷新同ID退出单（修改现有订单，不会重复下单），确保已开仓位始终
+// 挂着最新快照的止损/止盈，反手/再入场后也会更新。
 if harness_use_risk_exits
     if strategy.position_size > 0 and (not na(harness_long_sl_price) or not na(harness_long_tp_price))
         strategy.exit("Long Exit", from_entry="Long", stop=harness_long_sl_price, limit=harness_long_tp_price, comment="ATR Exit")
     if strategy.position_size < 0 and (not na(harness_short_sl_price) or not na(harness_short_tp_price))
         strategy.exit("Short Exit", from_entry="Short", stop=harness_short_sl_price, limit=harness_short_tp_price, comment="ATR Exit")
 
+// Time exit: strategy.close fills at the NEXT bar's open, so trigger at the close of
+// held bar N-1 to realize exactly N held bars (N=1: the close order is placed on the
+// fill bar itself and fills at the next open, so the position is held for 1 bar).
+// 时间退出：strategy.close 在下一根K线开盘成交，因此在第 N-1 根持仓K线收盘时触发，
+// 实际持仓恰好 N 根K线（N=1：成交当根K线收盘下平仓单，下一根开盘成交，持仓1根）。
 if harness_max_holding_bars > 0 and strategy.opentrades > 0
-    if bar_index - strategy.opentrades.entry_bar_index(strategy.opentrades - 1) >= harness_max_holding_bars
+    if bar_index - strategy.opentrades.entry_bar_index(strategy.opentrades - 1) >= harness_max_holding_bars - 1
         strategy.close(strategy.position_size > 0 ? "Long" : "Short", comment="Time Exit")
 """
 

@@ -75,14 +75,14 @@ stats_independent_samples = input.bool(true, "Independent Samples / 独立采样
 enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤", group=grp_stats, tooltip="基于历史统计数据过滤低质量信号\n根据样本数和胜率自动过滤\n---\nFilters low-quality signals using historical statistics\nBased on sample count and win rate")
 stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="信号组合需要的最小样本数\n≥20为统计可靠\n按未衰减的累计样本数判断，时间衰减不影响该门槛\n---\nMinimum samples required per signal bucket\n≥20 is statistically reliable\nChecked against the undecayed lifetime sample count; time decay does not affect this gate")
 stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值\nEdge vs Baseline 模式下：(本值 - 50) 被解读为相对方向基准胜率的最小优势（百分点）\n---\nMinimum Bayesian-adjusted win rate per signal bucket\n55% is the recommended value\nIn Edge vs Baseline mode, (value - 50) is the required edge in percentage points over the direction baseline")
-stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对每个方向的无条件基准胜率（要求超额优势），贝叶斯先验也收缩到基准胜率\n可避免趋势市场中卖出桶因口径问题被系统性拒绝\nAbsolute (Legacy): 旧版固定绝对胜率门槛\n---\nEdge vs Baseline: the win-rate gate is relative to each direction's unconditional baseline win rate (requires an edge); the Bayesian prior shrinks toward the baseline\nAvoids sell buckets being systematically rejected on trending assets\nAbsolute (Legacy): legacy fixed absolute threshold")
+stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对每个方向的无条件基准胜率（要求超额优势），贝叶斯先验也收缩到基准胜率\n可避免趋势市场中卖出桶因口径问题被系统性拒绝\n有效门槛钳制在25%~90%之间，防止极端基准下门槛不可满足或过低\nAbsolute (Legacy): 旧版固定绝对胜率门槛\n---\nEdge vs Baseline: the win-rate gate is relative to each direction's unconditional baseline win rate (requires an edge); the Bayesian prior shrinks toward the baseline\nAvoids sell buckets being systematically rejected on trending assets\nThe effective requirement is clamped to 25-90% so extreme baselines can't make the gate unsatisfiable or trivially low\nAbsolute (Legacy): legacy fixed absolute threshold")
 stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
 // @harness: inputs
 
 grp_harness = "═══ Strategy Report / 策略回测 ═══"
 harness_trade_side = input.string("Long Only", "Trade Side / 交易方向", options=["Long Only", "Short Only", "Both"], group=grp_harness, tooltip="Long Only: 仅做多，卖出信号只平多\nShort Only: 仅做空，买入信号只平空\nBoth: 双向切换，买卖信号会反手")
 harness_backtest_mode = input.string("Production", "Backtest Mode / 回测模式", options=["Baseline", "Production"], group=grp_harness, tooltip="Baseline: raw v7.2 signals, no stats filter\nProduction: gate-passing production alert signals; not exact intrabar alert delivery\nBaseline: 使用 7.2 原始信号，不加统计过滤\nProduction: 使用通过正式警报 gate/过滤的信号，不精确模拟盘中 alert 投递")
-harness_use_risk_exits = input.bool(false, "Use ATR SL/TP Exits / 启用ATR止损止盈", group=grp_harness, tooltip="On: trades exit via the same ATR-based SL/TP prices the alerts advertise, snapshotted at entry\nOff: trades exit only on opposite signals (legacy harness behavior)\n开启：按警报展示的ATR止损/止盈价格退出（入场时快照价格）\n关闭：仅按反向信号平仓（原有回测行为）")
+harness_use_risk_exits = input.bool(false, "Use ATR SL/TP Exits / 启用ATR止损止盈", group=grp_harness, tooltip="On: trades exit via the same ATR-based SL/TP prices the alerts advertise; prices are snapshotted at the signal bar's close (the entry order fills at the next bar's open)\nOff: trades exit only on opposite signals (legacy harness behavior)\n开启：按警报展示的ATR止损/止盈价格退出；价格在信号K线收盘时快照（入场单在下一根K线开盘成交）\n关闭：仅按反向信号平仓（原有回测行为）")
 harness_max_holding_bars = input.int(0, "Max Holding Bars / 最大持仓K线数", minval=0, group=grp_harness, tooltip="0 = off\n>0: force-close the position after holding N bars (Time Exit)\n0 = 关闭\n大于0：持仓达到N根K线后强制平仓（时间退出）")
 
 grp_divergence = "═══ Divergence Settings / 背离设置 ═══"
@@ -544,6 +544,15 @@ f_stats_baseline_rate(_is_buy) =>
 // 调整胜率的先验：Edge vs Baseline 模式收缩到方向基准，旧版模式收缩到50%
 f_stats_display_prior(_is_buy) =>
     stats_gate_mode == "Edge vs Baseline" ? f_stats_baseline_rate(_is_buy) : 50.0
+
+// 有效胜率门槛：Edge vs Baseline 模式 = 方向基准 + 要求优势，并钳制在 [25%, 90%]；旧版模式 = 固定绝对门槛
+// 上限90%：调整胜率 = 先验 + 置信度×(原始-先验)，永远不会超过 max(基准, 原始胜率)，基准>95%时未钳制的门槛>100%在数学上不可满足，买入信号会被系统性拒绝
+// 下限25%：基准接近0时未钳制的门槛≈优势值本身，个位数绝对胜率也会通过并获得质量勾号；25%远低于上升趋势中卖出方向的典型基准（30-45%），不会破坏相对（优势）门槛方法
+// Effective win-rate requirement: Edge vs Baseline mode = direction baseline + required edge, clamped to [25%, 90%]; legacy mode = the fixed absolute threshold
+// 90% cap: adjusted = prior + confidence*(raw - prior) can never exceed max(baseline, raw), so an unclamped requirement above 100% (baseline > 95%) is mathematically unsatisfiable and buy signals get systematically rejected
+// 25% floor: with a near-zero baseline the unclamped requirement is just the edge itself, letting single-digit absolute win rates pass with a quality checkmark; 25% sits well below typical sell-side baselines on uptrends (30-45%), so the relative (edge) methodology is preserved
+f_stats_required_winrate(_is_buy) =>
+    stats_gate_mode == "Edge vs Baseline" ? math.max(math.min(f_stats_baseline_rate(_is_buy) + (stats_min_winrate - 50.0), 90.0), 25.0) : stats_min_winrate
 
 f_ranking_signal_number(_idx) =>
     _idx < 8 ? 1 : _idx < 16 ? 2 : _idx < 24 ? 3 : 4
@@ -1038,16 +1047,15 @@ f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade) =>
      str.format("{0}[{1}]", _type_label, _grade)
 
 // 检查信号是否通过统计过滤
-// Edge vs Baseline: 先验收缩到方向基准胜率，门槛 = 基准 + (最小调整胜率 - 50)
+// Edge vs Baseline: 先验收缩到方向基准胜率，门槛 = 基准 + (最小调整胜率 - 50)，钳制在 [25%, 90%]（见 f_stats_required_winrate）
 // Absolute (Legacy): 先验50%，门槛 = 最小调整胜率（旧版行为）
 f_passes_stats_filter(_stats, _is_buy) =>
     if not enable_stats_filter or not enable_stats
         true
     else
         _edge_mode = stats_gate_mode == "Edge vs Baseline"
-        _baseline = f_stats_baseline_rate(_is_buy)
-        _prior = _edge_mode ? _baseline : 50.0
-        _required = _edge_mode ? _baseline + (stats_min_winrate - 50.0) : stats_min_winrate
+        _prior = _edge_mode ? f_stats_baseline_rate(_is_buy) : 50.0
+        _required = f_stats_required_winrate(_is_buy)
         _adj_wr = _stats.get_adjusted_winrate_vs(_prior)
         _has_enough_samples = _stats.get_lifetime_count() >= stats_min_samples
         _has_good_winrate = not na(_adj_wr) and _adj_wr >= _required
@@ -1438,7 +1446,8 @@ if show_dashboard
                 if enable_stats
                     stats_title = stats_mode == "Ranking" ? "── RANKING ──" : stats_mode == "Grade" ? "── GRADE STATS ──" : "── SIGNAL STATS ──"
                     table.cell(dashboard, 0, row, stats_title, text_color=color.gray, text_size=txt_size_body)
-                    table.cell(dashboard, 1, row, str.format("({0}b) Base⬆{1,number,#}%|⬇{2,number,#}%", stats_forward_bars, f_stats_baseline_rate(true), f_stats_baseline_rate(false)), text_color=color.gray, text_size=txt_size_body)
+                    // 每个方向显示 基准→有效门槛（含Edge模式的[25%,90%]钳制），让钳制后的实际要求可见 / per direction: baseline→effective requirement (incl. the [25%,90%] Edge-mode clamp) so the actual gate level is visible
+                    table.cell(dashboard, 1, row, str.format("({0}b) Base→Req ⬆{1,number,#}→{2,number,#}%|⬇{3,number,#}→{4,number,#}%", stats_forward_bars, f_stats_baseline_rate(true), f_stats_required_winrate(true), f_stats_baseline_rate(false), f_stats_required_winrate(false)), text_color=color.gray, text_size=txt_size_body)
                     row += 1
 
                     if stats_mode == "Signal Type"
@@ -1464,12 +1473,25 @@ if show_dashboard
 
                     else if stats_mode == "Ranking"
                         var ranking_wr = array.new_float(STATS_RANKING_BUCKETS, 0.0)
+                        var ranking_sort_key = array.new_float(STATS_RANKING_BUCKETS, 0.0)
+                        var ranking_has_data = array.new_bool(STATS_RANKING_BUCKETS, false)
                         var ranking_idx = array.new_int(STATS_RANKING_BUCKETS)
 
+                        // Edge 模式排序键 = 调整胜率 - 该桶自身方向的基准胜率（优势）
+                        // 调整胜率收缩向各方向不同的基准，直接比较会让排行榜按方向基准而非信号质量排序（与门槛逻辑矛盾）
+                        // Legacy 模式保持原排序（按调整胜率）；无数据桶用极小排序键沉底
+                        // Edge mode sort key = adjusted win rate - the bucket's own direction baseline (its edge)
+                        // Adjusted rates shrink toward per-direction baselines, so comparing them directly ranks by direction baseline instead of signal quality (contradicting the gate)
+                        // Legacy mode keeps the original sort (by adjusted win rate); buckets without data sink with a sentinel key
                         for i = 0 to STATS_RANKING_BUCKETS - 1
                             rank_stats = array.get(ranking_stats, i)
                             rank_is_buy = f_ranking_direction_number(i) == 1
-                            array.set(ranking_wr, i, rank_stats.get_count() >= 5 ? rank_stats.get_adjusted_winrate_vs(f_stats_display_prior(rank_is_buy)) : 0)
+                            rank_has_data = rank_stats.get_count() >= 5
+                            rank_adj = rank_has_data ? rank_stats.get_adjusted_winrate_vs(f_stats_display_prior(rank_is_buy)) : 0
+                            rank_key = not rank_has_data ? -999.0 : stats_gate_mode == "Edge vs Baseline" ? rank_adj - f_stats_baseline_rate(rank_is_buy) : rank_adj
+                            array.set(ranking_wr, i, rank_adj)
+                            array.set(ranking_sort_key, i, rank_key)
+                            array.set(ranking_has_data, i, rank_has_data)
                             array.set(ranking_idx, i, i)
 
                         // 创建索引数组用于排序
@@ -1477,7 +1499,7 @@ if show_dashboard
                             for j = 0 to STATS_RANKING_BUCKETS - 2 - i
                                 idx_j = array.get(ranking_idx, j)
                                 idx_j1 = array.get(ranking_idx, j + 1)
-                                if array.get(ranking_wr, idx_j) < array.get(ranking_wr, idx_j1)
+                                if array.get(ranking_sort_key, idx_j) < array.get(ranking_sort_key, idx_j1)
                                     array.set(ranking_idx, j, idx_j1)
                                     array.set(ranking_idx, j + 1, idx_j)
 
@@ -1487,7 +1509,9 @@ if show_dashboard
                                 break
                             idx = array.get(ranking_idx, i)
                             wr = array.get(ranking_wr, idx)
-                            if wr > 0  // 只显示有数据的
+                            // 显式有数据判定（有效样本数≥5），不再以胜率符号判断；Edge 模式下负优势桶仍会显示并自然排在最后
+                            // Explicit has-data check (effective count >= 5) instead of the win-rate sign; in Edge mode negative-edge buckets are still shown and naturally rank last
+                            if array.get(ranking_has_data, idx)
                                 rank_stats = array.get(ranking_stats, idx)
                                 sig = f_ranking_signal_number(idx)
                                 grd = f_grade_value(f_ranking_grade_index(idx))
@@ -1497,9 +1521,11 @@ if show_dashboard
                                 rel = rank_stats.get_reliability()
                                 dir_text = dir == 1 ? "📈" : "📉"
                                 dir_clr = f_dir_color(dir, color_bull, color_bear)
+                                edge_pp = array.get(ranking_sort_key, idx)
 
                                 label_text = str.format("{0}[{1}]{2}({3}){4}", f_sig_emoji(sig), grd, dir_text, cnt, rel)
-                                value_text = str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", ret, wr)
+                                // Edge 模式附加显示相对基准的优势（百分点）/ Edge mode appends the edge over the direction baseline in percentage points
+                                value_text = stats_gate_mode == "Edge vs Baseline" ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%({2,number,+#.1;-#.1}pp)", ret, wr, edge_pp) : str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", ret, wr)
 
                                 table.cell(dashboard, 0, row, label_text, text_color=dir_clr, text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, value_text, text_color=dir_clr, text_size=txt_size_body)
@@ -1619,6 +1645,11 @@ var float harness_long_tp_price = na
 var float harness_short_sl_price = na
 var float harness_short_tp_price = na
 
+// SL/TP prices are snapshotted at the signal bar's close; the entry order fills at the
+// next bar's open. strategy.exit is issued right after strategy.entry (bound via
+// from_entry) so the SL/TP bracket is already active on the fill bar itself.
+// SL/TP价格在信号K线收盘时快照；入场单在下一根K线开盘成交。strategy.exit 紧跟
+// strategy.entry 下单（通过 from_entry 绑定），确保成交当根K线即受止损/止盈保护。
 if strategy_signal_dir == 1
     if strategy.position_size < 0
         strategy.close("Short")
@@ -1626,6 +1657,8 @@ if strategy_signal_dir == 1
         strategy.entry("Long", strategy.long)
         harness_long_sl_price := buy_sl_price
         harness_long_tp_price := buy_tp_price
+        if harness_use_risk_exits and (not na(harness_long_sl_price) or not na(harness_long_tp_price))
+            strategy.exit("Long Exit", from_entry="Long", stop=harness_long_sl_price, limit=harness_long_tp_price, comment="ATR Exit")
 
 if strategy_signal_dir == -1
     if strategy.position_size > 0
@@ -1634,13 +1667,25 @@ if strategy_signal_dir == -1
         strategy.entry("Short", strategy.short)
         harness_short_sl_price := sell_sl_price
         harness_short_tp_price := sell_tp_price
+        if harness_use_risk_exits and (not na(harness_short_sl_price) or not na(harness_short_tp_price))
+            strategy.exit("Short Exit", from_entry="Short", stop=harness_short_sl_price, limit=harness_short_tp_price, comment="ATR Exit")
 
+// While a position is open, keep refreshing the same-id exit (modifies the existing
+// order, no duplicates) so open positions always carry the latest SL/TP snapshot,
+// including after re-entries.
+// 持仓期间持续刷新同ID退出单（修改现有订单，不会重复下单），确保已开仓位始终
+// 挂着最新快照的止损/止盈，反手/再入场后也会更新。
 if harness_use_risk_exits
     if strategy.position_size > 0 and (not na(harness_long_sl_price) or not na(harness_long_tp_price))
         strategy.exit("Long Exit", from_entry="Long", stop=harness_long_sl_price, limit=harness_long_tp_price, comment="ATR Exit")
     if strategy.position_size < 0 and (not na(harness_short_sl_price) or not na(harness_short_tp_price))
         strategy.exit("Short Exit", from_entry="Short", stop=harness_short_sl_price, limit=harness_short_tp_price, comment="ATR Exit")
 
+// Time exit: strategy.close fills at the NEXT bar's open, so trigger at the close of
+// held bar N-1 to realize exactly N held bars (N=1: the close order is placed on the
+// fill bar itself and fills at the next open, so the position is held for 1 bar).
+// 时间退出：strategy.close 在下一根K线开盘成交，因此在第 N-1 根持仓K线收盘时触发，
+// 实际持仓恰好 N 根K线（N=1：成交当根K线收盘下平仓单，下一根开盘成交，持仓1根）。
 if harness_max_holding_bars > 0 and strategy.opentrades > 0
-    if bar_index - strategy.opentrades.entry_bar_index(strategy.opentrades - 1) >= harness_max_holding_bars
+    if bar_index - strategy.opentrades.entry_bar_index(strategy.opentrades - 1) >= harness_max_holding_bars - 1
         strategy.close(strategy.position_size > 0 ? "Long" : "Short", comment="Time Exit")

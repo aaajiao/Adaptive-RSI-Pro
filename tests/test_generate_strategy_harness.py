@@ -127,6 +127,60 @@ class GenerationContentTest(unittest.TestCase):
         with self.assertRaisesRegex(gen.GenerationError, "execution"):
             gen.generate(mutated)
 
+    def test_risk_exit_brackets_each_entry_on_the_signal_bar(self) -> None:
+        # Contract: strategy.exit is issued immediately after each strategy.entry
+        # (bound via from_entry, guarded for na snapshots and the risk-exit toggle)
+        # so SL/TP are already active on the entry fill bar itself.
+        for side, sl_var, tp_var, snapshot_sl, snapshot_tp in (
+            ("Long", "harness_long_sl_price", "harness_long_tp_price", "buy_sl_price", "buy_tp_price"),
+            ("Short", "harness_short_sl_price", "harness_short_tp_price", "sell_sl_price", "sell_tp_price"),
+        ):
+            with self.subTest(side=side):
+                self.assertRegex(
+                    self.generated,
+                    re.compile(
+                        rf'strategy\.entry\("{side}", strategy\.{side.lower()}\)\n'
+                        rf"[ \t]+{sl_var} := {snapshot_sl}\n"
+                        rf"[ \t]+{tp_var} := {snapshot_tp}\n"
+                        rf"[ \t]+if harness_use_risk_exits and \(not na\({sl_var}\) or not na\({tp_var}\)\)\n"
+                        rf'[ \t]+strategy\.exit\("{side} Exit", from_entry="{side}", '
+                        rf'stop={sl_var}, limit={tp_var}, comment="ATR Exit"\)'
+                    ),
+                )
+
+    def test_risk_exit_is_refreshed_while_position_is_open(self) -> None:
+        # Entry-time placement + open-position refresh: exactly two strategy.exit
+        # calls per side, all gated behind harness_use_risk_exits (default off =
+        # verified no-op).
+        self.assertEqual(self.generated.count('strategy.exit("Long Exit", from_entry="Long"'), 2)
+        self.assertEqual(self.generated.count('strategy.exit("Short Exit", from_entry="Short"'), 2)
+        self.assertEqual(self.generated.count("strategy.exit("), 4)
+        self.assertRegex(
+            self.generated,
+            re.compile(
+                r"(?m)^if harness_use_risk_exits$\n"
+                r"[ \t]+if strategy\.position_size > 0 and \(not na\(harness_long_sl_price\) or not na\(harness_long_tp_price\)\)\n"
+                r'[ \t]+strategy\.exit\("Long Exit", from_entry="Long"'
+            ),
+        )
+
+    def test_max_holding_bars_realizes_exactly_n_bars(self) -> None:
+        # Contract: strategy.close fills at the NEXT bar's open, so the time exit
+        # triggers at held bar N-1 to realize exactly N held bars. Default 0 skips
+        # the block entirely via the > 0 gate.
+        self.assertIn(
+            "if harness_max_holding_bars > 0 and strategy.opentrades > 0",
+            self.generated,
+        )
+        self.assertIn(
+            "bar_index - strategy.opentrades.entry_bar_index(strategy.opentrades - 1) >= harness_max_holding_bars - 1",
+            self.generated,
+        )
+        self.assertNotRegex(
+            self.generated,
+            re.compile(r">= harness_max_holding_bars$", re.MULTILINE),
+        )
+
 
 class CliCheckTest(unittest.TestCase):
     def run_main(self, argv: list[str]) -> int:

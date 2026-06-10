@@ -24,12 +24,12 @@ The harness is generated from the production indicator by [tools/generate_strate
 
 `Production` is a gated-signal execution view. It does not model intrabar `alert()` delivery, alert scheduling, or exact smart-alert delivery counts; use it to evaluate the filter path, not alert-log parity.
 
-Since `v7.4` the production stats engine defaults to time decay, independent sampling, and the `Edge vs Baseline` gate mode, so `Production` results differ from `v7.3` with the same inputs. Setting `Stats Half-Life Bars = 0`, turning `Independent Samples` off, and setting `Gate Mode = Absolute (Legacy)` restores the legacy stats-engine arithmetic only; other `v7.4` signal-level changes (spread-factor hysteresis, cooldown upgrade-level reset) have no revert switch, so `Production` results may still differ from `v7.3`.
+Since `v7.4` the production stats engine defaults to time decay, independent sampling, and the `Edge vs Baseline` gate mode (effective requirement = direction baseline + required edge, clamped to 25–90% and shown in the indicator dashboard's `Base→Req` header), so `Production` results differ from `v7.3` with the same inputs. Setting `Stats Half-Life Bars = 0`, turning `Independent Samples` off, and setting `Gate Mode = Absolute (Legacy)` restores the legacy stats-engine arithmetic only; other `v7.4` signal-level changes (spread-factor hysteresis, cooldown upgrade-level reset) have no revert switch, so `Production` results may still differ from `v7.3`.
 
 ### Risk Exits (v7.4, both default off)
 
-- `Use ATR SL/TP Exits` (`harness_use_risk_exits`): trades exit via the same ATR-based SL/TP prices the alerts advertise, snapshotted at entry; off = exits only on opposite signals (legacy harness behavior)
-- `Max Holding Bars` (`harness_max_holding_bars`, `0` = off): force-closes the position after holding N bars (`Time Exit`)
+- `Use ATR SL/TP Exits` (`harness_use_risk_exits`): trades exit via the same ATR-based SL/TP prices the alerts advertise. Prices are snapshotted at the signal bar's close, while the entry order fills at the next bar's open; `strategy.exit` is issued together with the entry and bound to it via `from_entry`, so the SL/TP bracket already protects the trade on the entry fill bar itself. While the position stays open, the same-ID exit keeps refreshing, so reversals/re-entries always carry the latest snapshot. Off = exits only on opposite signals (legacy harness behavior)
+- `Max Holding Bars` (`harness_max_holding_bars`, `0` = off): force-closes the position after exactly N held bars (`Time Exit`) — the close order is placed at the close of held bar N−1 and fills at the next bar's open
 
 ### Costs
 

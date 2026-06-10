@@ -543,11 +543,13 @@ class NAM001_ConstantCase(BaseRule):
     # initializer. `var`/`varip` declarations are persistent *mutable* state
     # in Pine, never constants, so they are explicitly excluded (the previous
     # pattern required `var`, which inverted the rule and flagged mutable
-    # state such as `var float prev_spread = 30.0`).
+    # state such as `var float prev_spread = 30.0`). An explicit `const`
+    # qualifier is captured separately: such a binding is unambiguously a
+    # constant regardless of how its name is styled.
     CONSTANT_PATTERN = re.compile(
         r"^(?!(?:var|varip|import|export|method|type)\b)"
-        r"(?:(?:const\s+)?(?:int|float|string|bool|color)\s+)?"
-        r"([A-Za-z][A-Za-z0-9_]*)\s*=[ \t]*(.+?)[ \t]*$",
+        r"(?:(?P<const>const\s+)?(?:int|float|string|bool|color)\s+)?"
+        r"(?P<name>[A-Za-z][A-Za-z0-9_]*)\s*=[ \t]*(?P<value>.+?)[ \t]*$",
         re.MULTILINE,
     )
 
@@ -579,8 +581,12 @@ class NAM001_ConstantCase(BaseRule):
         reassigned_names = set(self.REASSIGN_PATTERN.findall(code_content))
 
         for match in self.CONSTANT_PATTERN.finditer(content):
-            var_name = match.group(1)
-            value = match.group(2)
+            var_name = match.group("name")
+            value = match.group("value")
+            # A Pine v6 `const`-qualified binding declares constant intent
+            # explicitly, so it bypasses the naming-style heuristic below
+            # and is always held to SCREAMING_SNAKE_CASE.
+            is_const_qualified = match.group("const") is not None
 
             if var_name.isupper():
                 continue
@@ -588,7 +594,7 @@ class NAM001_ConstantCase(BaseRule):
                 continue
             if not self.CONST_VALUE_PATTERN.match(value):
                 continue
-            if not self._is_constant_styled(var_name):
+            if not is_const_qualified and not self._is_constant_styled(var_name):
                 continue
 
             line_num = self._get_line_number(content, match.start())

@@ -126,7 +126,8 @@ Each signal carries a quality grade based on multi-factor scoring:
 - Uses Bayesian adjustment to reduce small-sample bias before filtering by sample count and adjusted win rate
 - **Time decay** (`Stats Half-Life Bars`, default 1500): sample weights decay exponentially with bar distance, fading out samples from old market regimes; `0` disables decay (legacy equal-weight accumulation). Decay only affects win-rate confidence — the `Min Samples` gate counts undecayed lifetime samples, so rare signal buckets are not permanently locked out
 - **Independent sampling** (`Independent Samples`, default on): each stats bucket waits at least `Forward Bars` between recorded samples so overlapping forward-return windows do not inflate sample counts; off = legacy overlapping behavior
-- **Gate mode** (`Gate Mode`, default `Edge vs Baseline`): the win-rate gate is measured against each direction's unconditional baseline win rate — `(Min Adjusted WinRate − 50)` becomes the required edge in percentage points — and the Bayesian prior shrinks toward that baseline; this avoids sell buckets being systematically rejected on trending assets. `Absolute (Legacy)` keeps the old fixed absolute threshold
+- **Gate mode** (`Gate Mode`, default `Edge vs Baseline`): the win-rate gate is measured against each direction's unconditional baseline win rate — `(Min Adjusted WinRate − 50)` becomes the required edge in percentage points — and the Bayesian prior shrinks toward that baseline; this avoids sell buckets being systematically rejected on trending assets. The effective requirement (`baseline + edge`) is clamped to 25–90% so extreme baselines cannot make the gate unsatisfiable or trivially low, and the dashboard stats header surfaces it per direction as `Base→Req` (baseline → effective requirement). `Absolute (Legacy)` keeps the old fixed absolute threshold
+- **Ranking leaderboard (Edge mode)**: with `Gate Mode = Edge vs Baseline`, the `Ranking` dashboard sorts buckets by their edge over the bucket's own direction baseline (adjusted win rate − direction baseline), consistent with the gate, and appends that edge in percentage points (e.g. `+4.5%|85%(+23.1pp)`). Buckets with fewer than 5 effective samples are not shown; negative-edge buckets stay visible and naturally rank last. `Absolute (Legacy)` keeps the original sort by adjusted win rate
 - Three filter modes:
   - `Alert Only`: chart signals stay visible, alerts are filtered
   - `Soft`: failed signals are downgraded visually
@@ -150,8 +151,8 @@ Each signal carries a quality grade based on multi-factor scoring:
   - `Baseline`: raw production signals
   - `Production`: signals that pass the production alert gate/filter
 - Optional risk exits (both default off):
-  - `Use ATR SL/TP Exits` (`harness_use_risk_exits`): exits via the same ATR-based SL/TP prices the alerts advertise, snapshotted at entry
-  - `Max Holding Bars` (`harness_max_holding_bars`, `0` = off): force-closes a position after holding N bars (Time Exit)
+  - `Use ATR SL/TP Exits` (`harness_use_risk_exits`): exits via the same ATR-based SL/TP prices the alerts advertise; prices are snapshotted at the signal bar's close (the entry order fills at the next bar's open), and `strategy.exit` is issued with the entry and bound to it via `from_entry`, so the SL/TP bracket already protects the trade on the entry fill bar itself
+  - `Max Holding Bars` (`harness_max_holding_bars`, `0` = off): force-closes a position after exactly N held bars (Time Exit) — the close order is placed at the close of held bar N−1 and fills at the next bar's open
 - Default costs are commission `0.05%` and slippage `2` ticks; override them in TradingView `Strategy Tester` → `Properties` without editing code
 - `Production` is a gated-signal backtest, not an exact intrabar `alert()` delivery simulation
 - Full guide: [docs/STRATEGY_REPORT.md](/Users/aaajiao/o_projects/RSI_stock/docs/STRATEGY_REPORT.md)
@@ -177,11 +178,13 @@ Each signal carries a quality grade based on multi-factor scoring:
 │ Resonance    🟢 3/4                    │
 │ Divergence Auto  🟢 BULL (5/60)        │
 ├────────────────────────────────────────┤
-│ Ranking      (20b)                     │
-│ 🌟[A]📈(12)✓  +4.5%|85%                │
-│ 💎[A]📈(8)✓   +4.2%|82%                │
+│ Ranking  (20b) Base→Req ⬆62→67%|⬇38→43%│
+│ 🌟[A]📈(12)✓  +4.5%|85%(+23.1pp)       │
+│ 💎[A]📈(8)✓   +4.2%|82%(+20.2pp)       │
 └────────────────────────────────────────┘
 ```
+
+> The stats header shows `Base→Req` (baseline → effective requirement) per direction in both gate modes — in `Edge vs Baseline` mode `Req` is `baseline + edge` (clamped to 25–90%), while in `Absolute (Legacy)` mode `Req` is the fixed `Min Adjusted WinRate` threshold. Ranking rows append the bucket's edge over its own direction baseline in percentage points only in `Edge vs Baseline` mode; `Absolute (Legacy)` omits the `pp` suffix.
 
 ### Mobile Mode
 ```text
@@ -261,12 +264,12 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 - Stats engine upgrades (all default **on**; see the upgrade note in feature 7 for how to revert to legacy behavior):
   - time decay of sample weights via `Stats Half-Life Bars`
   - independent sampling to prevent overlapping forward-return windows
-  - `Edge vs Baseline` gate mode that requires an edge over each direction's baseline win rate
+  - `Edge vs Baseline` gate mode that requires an edge over each direction's baseline win rate; the effective requirement is clamped to 25–90% and surfaced in the dashboard `Base→Req` header, and in this mode the `Ranking` leaderboard sorts by edge over each bucket's own direction baseline
 - `Alert on Bar Close` option for bar-close alert confirmation
 - Spread-factor hysteresis: the lookback feedback factor now uses a hysteresis band (engage below 18, release above 22) instead of flip-flopping around a single threshold
 - Stale upgrade-level reset: the cooldown upgrade exemption only compares against a still-cooling-down previous signal; expired signal levels count as 0
 - MTF data-availability indicator in the dashboard (`–` per timeframe plus `⚠️` on the `Resonance` row)
-- Strategy harness: optional ATR SL/TP exits and max-holding-bars time exit (both default off)
+- Strategy harness: optional ATR SL/TP exits and max-holding-bars time exit (both default off); SL/TP are snapshotted at the signal bar's close and the exit bracket protects the trade from the entry fill bar, and `Max Holding Bars = N` realizes exactly N held bars
 - Retains the `v7.3` correctness fixes:
   - `lookback` floor stays above the statistical lower bound
   - weekly protection uses confirmed weekly data
@@ -286,11 +289,11 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 
 ## Code Quality
 
-This project uses a custom **Pine Script Static Analyzer** and a generated strategy harness check for local and CI validation.
+This project uses a custom **Pine Script Static Analyzer**, a generated strategy harness check, and a Python `unittest` suite for the tooling, for local and CI validation.
 
 ### GitHub CI
 
-GitHub Actions runs lint and harness-generation checks automatically when changes touch `.pine`, `.pine-lint.yml`, or project tooling.
+GitHub Actions runs the harness-generation check, the unittest suite, and the linter automatically on every push/PR that touches `.pine` files, the lint config, `tools/`, or `tests/`.
 
 [![Pine Script Lint](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml/badge.svg)](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml)
 
@@ -300,6 +303,7 @@ GitHub Actions runs lint and harness-generation checks automatically when change
 python3 tools/generate_strategy_harness.py --check
 python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi.pine
 python3 tools/pine_linter/cli.py --config .pine-lint.yml adaptive_rsi_strategy_harness.pine
+python3 -m unittest discover -s tests -v
 python3 tools/pine_linter/cli.py --config .pine-lint.yml --format markdown --output lint-report.md adaptive_rsi.pine adaptive_rsi_strategy_harness.pine
 ```
 
