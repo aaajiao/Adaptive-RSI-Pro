@@ -81,7 +81,7 @@ ANCHOR_MENTION_RE = re.compile(r"^.*@harness.*$", re.MULTILINE)
 # ────────────────────────────────────────
 
 HARNESS_HEADER = (
-    "// Adaptive RSI Pro v7.4 Strategy Report - v7.2 baseline behavior + stats engine upgrades & toolchain hardening"
+    "// Adaptive RSI Pro v7.5 Strategy Report - v7.2 baseline behavior + stats engine upgrades (win-rate & payoff edge)"
 )
 
 INDICATOR_DECLARATION_RE = re.compile(
@@ -133,6 +133,7 @@ f_harness_gate_snapshot() =>
     int _count = 0
     float _avg = 0.0
     float _adj = 0.0
+    float _payoff = 0.0
     bool _use_buy = harness_trade_side == "Long Only" ? true : harness_trade_side == "Short Only" ? false : signal_direction != -1
     SignalStats _stats = SignalStats.new()
 
@@ -167,15 +168,18 @@ f_harness_gate_snapshot() =>
         _count := math.round(_stats.get_count())
         _avg := _stats.get_avg()
         _adj := nz(_stats.get_adjusted_winrate_vs(f_stats_display_prior(_use_buy)), 0.0)
+        _payoff := nz(f_stats_payoff_edge(_stats, _use_buy), 0.0)
 
-    [_source, _count, _avg, _adj]
+    [_source, _count, _avg, _adj, _payoff]
 """
 
 HARNESS_DASHBOARD_ROWS = """            harness_side_display = harness_trade_side == "Long Only" ? "Long" : harness_trade_side == "Short Only" ? "Short" : "Both"
             harness_mode_display = harness_use_production ? "Production" : "Baseline"
             harness_tester_display = harness_trade_side == "Long Only" ? "Read All = Long" : harness_trade_side == "Short Only" ? "Read All = Short" : "Read All = Both"
-            [harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj] = f_harness_gate_snapshot()
-            harness_gate_display = harness_gate_source == "Idle" ? "Idle" : str.format("{0}({1}) {2,number,+#.1;-#.1}%|{3,number,#}%", harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj)
+            [harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj, harness_gate_payoff] = f_harness_gate_snapshot()
+            // Edge 模式追加收缩后收益优势（与新版收益优势门槛一致）；Legacy 模式保持原格式 / Edge mode appends the shrunk payoff edge (matching the payoff gate); legacy mode keeps the original format
+            harness_gate_payoff_display = stats_gate_mode == "Edge vs Baseline" ? str.format("|{0,number,+#.1;-#.1}%", harness_gate_payoff) : ""
+            harness_gate_display = harness_gate_source == "Idle" ? "Idle" : str.format("{0}({1}) {2,number,+#.1;-#.1}%|{3,number,#}%", harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj) + harness_gate_payoff_display
 
             table.cell(dashboard, 0, row, "Harness", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, str.format("{0} | {1}", harness_side_display, harness_mode_display), text_color=color.white, text_size=txt_size_body)

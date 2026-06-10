@@ -1,4 +1,4 @@
-// Adaptive RSI Pro v7.4 Strategy Report - v7.2 baseline behavior + stats engine upgrades & toolchain hardening
+// Adaptive RSI Pro v7.5 Strategy Report - v7.2 baseline behavior + stats engine upgrades (win-rate & payoff edge)
 // MIT License - https://github.com/aaajiao/Adaptive-RSI-Pro
 //
 // 信号图例 / Signal Legend:
@@ -76,6 +76,8 @@ enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤
 stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="信号组合需要的最小样本数\n≥20为统计可靠\n按未衰减的累计样本数判断，时间衰减不影响该门槛\n---\nMinimum samples required per signal bucket\n≥20 is statistically reliable\nChecked against the undecayed lifetime sample count; time decay does not affect this gate")
 stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值\nEdge vs Baseline 模式下：(本值 - 50) 被解读为相对方向基准胜率的最小优势（百分点）\n---\nMinimum Bayesian-adjusted win rate per signal bucket\n55% is the recommended value\nIn Edge vs Baseline mode, (value - 50) is the required edge in percentage points over the direction baseline")
 stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对每个方向的无条件基准胜率（要求超额优势），贝叶斯先验也收缩到基准胜率\n可避免趋势市场中卖出桶因口径问题被系统性拒绝\n有效门槛钳制在25%~90%之间，防止极端基准下门槛不可满足或过低\nAbsolute (Legacy): 旧版固定绝对胜率门槛\n---\nEdge vs Baseline: the win-rate gate is relative to each direction's unconditional baseline win rate (requires an edge); the Bayesian prior shrinks toward the baseline\nAvoids sell buckets being systematically rejected on trending assets\nThe effective requirement is clamped to 25-90% so extreme baselines can't make the gate unsatisfiable or trivially low\nAbsolute (Legacy): legacy fixed absolute threshold")
+stats_payoff_mode = input.string("Either Edge", "Payoff Gate / 收益优势门槛", options=["Off", "Either Edge", "Both Edges"], group=grp_stats, tooltip="在 Edge vs Baseline 模式下为质量判定增加第二条基于收益的路径\nOff: 仅胜率优势（v7.4 行为）\nEither Edge: 胜率优势或收益优势任一通过即可（默认）\nBoth Edges: 两条路径都必须通过\n趋势市中均值回归信号比漂移基准赢得更少但赢时赢得更大，本门槛让这类桶可凭收益优势通过\n最小样本数门槛在所有模式下仍必须满足\n仅在 Gate Mode = Edge vs Baseline 时生效\n---\nAdds a second, payoff-based quality path in Edge vs Baseline mode\nOff: win-rate edge only (v7.4 behavior)\nEither Edge: pass if the win-rate edge path OR the payoff edge path passes (default)\nBoth Edges: both paths must pass\nOn trending assets mean-reversion buckets win less often than the drifted baseline but win bigger when they win; this lets such buckets qualify on payoff\nThe Min Samples gate is still required in every mode\nOnly active when Gate Mode = Edge vs Baseline")
+stats_min_payoff_edge = input.float(0.4, "Min Payoff Edge % / 最小收益优势", minval=0.0, maxval=10.0, step=0.1, group=grp_stats, tooltip="收益优势路径的通过门槛（前瞻窗口收益百分比）\n收缩后收益优势 = 置信度 ×（桶平均前瞻收益 − 方向基准平均前瞻收益）≥ 本值时通过\n漂移已通过基准扣除，本值只需对抗噪声，0.3~0.5 为建议区间\n---\nThreshold for the payoff edge path, in forward-window % terms\nPasses when shrunk payoff edge = confidence × (bucket avg forward return − direction baseline avg) >= this value\nDrift is already subtracted via the baseline, so this only competes against noise; 0.3-0.5 recommended")
 stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
 // @harness: inputs
 
@@ -480,6 +482,16 @@ method get_adjusted_winrate_vs(SignalStats this, float prior) =>
 method get_adjusted_winrate(SignalStats this) =>
     this.get_adjusted_winrate_vs(50.0)
 
+method get_shrunk_payoff_edge_vs(SignalStats this, float baseline_avg) =>
+    // 收益优势与胜率路径采用同一反夸大收缩：原始优势（桶均值−基准均值）× 置信度，小样本/旧样本桶收敛到0优势
+    // Same anti-overclaim shrinkage as the win-rate path: raw edge (bucket avg − baseline avg) × confidence, so small/stale buckets converge to zero edge
+    _eff_count = this.get_count()
+    if this.lifetime_count < 5
+        na
+    else
+        confidence = math.min(1.0, _eff_count / 20.0)
+        confidence * (this.get_avg() - baseline_avg)
+
 STATS_SIGNAL_MTF = 0
 STATS_SIGNAL_DIV = 1
 STATS_SIGNAL_EXT = 2
@@ -545,6 +557,17 @@ f_stats_baseline_rate(_is_buy) =>
 f_stats_display_prior(_is_buy) =>
     stats_gate_mode == "Edge vs Baseline" ? f_stats_baseline_rate(_is_buy) : 50.0
 
+// 方向基准平均前瞻收益：无条件漂移基线，收益优势相对它计算（扣除漂移后只剩择时贡献）
+// Direction baseline average forward return: the unconditional drift baseline; payoff edge is measured against it (subtracting drift isolates the timing contribution)
+f_stats_baseline_avg(_is_buy) =>
+    _baseline = array.get(baseline_stats, f_dir_bucket_index(_is_buy))
+    _baseline.get_avg()
+
+// 收缩后收益优势：置信度 ×（桶平均前瞻收益 − 方向基准平均前瞻收益），终身样本数<5时为na
+// Shrunk payoff edge: confidence × (bucket avg forward return − direction baseline avg); na while the bucket's lifetime count is < 5
+f_stats_payoff_edge(_stats, _is_buy) =>
+    _stats.get_shrunk_payoff_edge_vs(f_stats_baseline_avg(_is_buy))
+
 // 有效胜率门槛：Edge vs Baseline 模式 = 方向基准 + 要求优势，并钳制在 [25%, 90%]；旧版模式 = 固定绝对门槛
 // 上限90%：调整胜率 = 先验 + 置信度×(原始-先验)，永远不会超过 max(基准, 原始胜率)，基准>95%时未钳制的门槛>100%在数学上不可满足，买入信号会被系统性拒绝
 // 下限25%：基准接近0时未钳制的门槛≈优势值本身，个位数绝对胜率也会通过并获得质量勾号；25%远低于上升趋势中卖出方向的典型基准（30-45%），不会破坏相对（优势）门槛方法
@@ -553,6 +576,27 @@ f_stats_display_prior(_is_buy) =>
 // 25% floor: with a near-zero baseline the unclamped requirement is just the edge itself, letting single-digit absolute win rates pass with a quality checkmark; 25% sits well below typical sell-side baselines on uptrends (30-45%), so the relative (edge) methodology is preserved
 f_stats_required_winrate(_is_buy) =>
     stats_gate_mode == "Edge vs Baseline" ? math.max(math.min(f_stats_baseline_rate(_is_buy) + (stats_min_winrate - 50.0), 90.0), 25.0) : stats_min_winrate
+
+// 无择时优势检测（趋势市提示）：某方向的有数据桶（有效样本数≥5）至少有2个，且全部胜率优势<0、收缩后收益优势≤0
+// 说明该方向的信号既不比漂移基准赢得更频繁、赢时也没有赢得更大——更可能处于趋势市，均值回归择时无效
+// No-timing-edge detection (trending-market hint): a direction has >= 2 has-data buckets (effective count >= 5) and ALL of them show negative win-rate edge AND non-positive shrunk payoff edge
+// Signals in that direction neither win more often nor win bigger than the drift baseline — likely a trending regime where mean-reversion timing adds nothing
+f_stats_no_timing_edge(_is_buy) =>
+    array<SignalStats> _buckets = stats_mode == "Signal Type" ? signal_type_stats : stats_mode == "Grade" ? grade_stats : ranking_stats
+    _dir_idx = f_dir_bucket_index(_is_buy)
+    _base_rate = f_stats_baseline_rate(_is_buy)
+    int _data_buckets = 0
+    bool _all_lack_edge = true
+    for i = 0 to array.size(_buckets) - 1
+        if i % STATS_DIR_COUNT == _dir_idx
+            _bucket = array.get(_buckets, i)
+            if _bucket.get_count() >= 5
+                _data_buckets += 1
+                _wr_edge = _bucket.get_adjusted_winrate_vs(_base_rate) - _base_rate
+                _payoff_edge = f_stats_payoff_edge(_bucket, _is_buy)
+                if not (_wr_edge < 0 and _payoff_edge <= 0)
+                    _all_lack_edge := false
+    _data_buckets >= 2 and _all_lack_edge
 
 f_ranking_signal_number(_idx) =>
     _idx < 8 ? 1 : _idx < 16 ? 2 : _idx < 24 ? 3 : 4
@@ -1048,7 +1092,10 @@ f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade) =>
 
 // 检查信号是否通过统计过滤
 // Edge vs Baseline: 先验收缩到方向基准胜率，门槛 = 基准 + (最小调整胜率 - 50)，钳制在 [25%, 90%]（见 f_stats_required_winrate）
-// Absolute (Legacy): 先验50%，门槛 = 最小调整胜率（旧版行为）
+//   Payoff Gate ≠ Off 时增加收益优势路径：收缩后收益优势 ≥ 最小收益优势即通过（Either Edge = 任一路径，Both Edges = 两路径都过）
+// Absolute (Legacy): 先验50%，门槛 = 最小调整胜率（旧版行为）；收益优势路径不生效，保持纯 v7.3 语义
+// 最小样本数门槛（终身样本数）在所有模式下都必须满足——收益优势是质量判定的替代路径，不是样本充分性的替代
+// The Min Samples gate (lifetime count) is required in every mode — payoff edge is an alternative quality criterion, never an alternative to sample sufficiency
 f_passes_stats_filter(_stats, _is_buy) =>
     if not enable_stats_filter or not enable_stats
         true
@@ -1059,7 +1106,13 @@ f_passes_stats_filter(_stats, _is_buy) =>
         _adj_wr = _stats.get_adjusted_winrate_vs(_prior)
         _has_enough_samples = _stats.get_lifetime_count() >= stats_min_samples
         _has_good_winrate = not na(_adj_wr) and _adj_wr >= _required
-        _has_enough_samples and _has_good_winrate
+        // 收益优势路径仅在 Edge vs Baseline 模式下生效；Legacy 模式与 Payoff Gate = Off 均回到纯胜率判定
+        // The payoff path is only active in Edge vs Baseline mode; legacy mode and Payoff Gate = Off both fall back to the pure win-rate criterion
+        _payoff_edge = f_stats_payoff_edge(_stats, _is_buy)
+        _has_good_payoff = not na(_payoff_edge) and _payoff_edge >= stats_min_payoff_edge
+        _payoff_active = _edge_mode and stats_payoff_mode != "Off"
+        _quality_ok = not _payoff_active ? _has_good_winrate : stats_payoff_mode == "Either Edge" ? _has_good_winrate or _has_good_payoff : _has_good_winrate and _has_good_payoff
+        _has_enough_samples and _quality_ok
 
 // 计算各信号的过滤状态
 buy_mtf_stats = f_get_filter_stats(true, true, false, false, buy_quality_grade)
@@ -1260,6 +1313,7 @@ f_harness_gate_snapshot() =>
     int _count = 0
     float _avg = 0.0
     float _adj = 0.0
+    float _payoff = 0.0
     bool _use_buy = harness_trade_side == "Long Only" ? true : harness_trade_side == "Short Only" ? false : signal_direction != -1
     SignalStats _stats = SignalStats.new()
 
@@ -1294,8 +1348,9 @@ f_harness_gate_snapshot() =>
         _count := math.round(_stats.get_count())
         _avg := _stats.get_avg()
         _adj := nz(_stats.get_adjusted_winrate_vs(f_stats_display_prior(_use_buy)), 0.0)
+        _payoff := nz(f_stats_payoff_edge(_stats, _use_buy), 0.0)
 
-    [_source, _count, _avg, _adj]
+    [_source, _count, _avg, _adj, _payoff]
 
 if show_dashboard
     rsi_percentile = 0.0
@@ -1330,15 +1385,16 @@ if show_dashboard
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     mobile_rows = 3
-    full_rows = 11 + (enable_mtf ? 2 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0)
+    // enable_stats: 1 行标题 + 最多 8 行桶；Edge 模式再加最多 2 行制度提示（每方向至多1行） / stats: 1 header + up to 8 bucket rows; Edge mode adds up to 2 regime-hint rows (at most 1 per direction)
+    full_rows = 11 + (enable_mtf ? 2 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0) + (enable_stats and stats_gate_mode == "Edge vs Baseline" ? 2 : 0)
     total_rows = dashboard_mode == "Mobile" ? mobile_rows : full_rows
 
-    var table dashboard = table.new(position.top_right, 2, 24,
+    var table dashboard = table.new(position.top_right, 2, 26,
                                      bgcolor=color.new(#1a1a2e, dashboard_transparency),
                                      border_width=1, border_color=color.new(#4a4a6a, 50))
-    
+
     if barstate.islastconfirmedhistory or barstate.isrealtime
-        table.clear(dashboard, 0, 0, 1, 23)
+        table.clear(dashboard, 0, 0, 1, 25)
         row = 0
 
         if dashboard_mode == "Mobile"
@@ -1388,8 +1444,10 @@ if show_dashboard
             harness_side_display = harness_trade_side == "Long Only" ? "Long" : harness_trade_side == "Short Only" ? "Short" : "Both"
             harness_mode_display = harness_use_production ? "Production" : "Baseline"
             harness_tester_display = harness_trade_side == "Long Only" ? "Read All = Long" : harness_trade_side == "Short Only" ? "Read All = Short" : "Read All = Both"
-            [harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj] = f_harness_gate_snapshot()
-            harness_gate_display = harness_gate_source == "Idle" ? "Idle" : str.format("{0}({1}) {2,number,+#.1;-#.1}%|{3,number,#}%", harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj)
+            [harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj, harness_gate_payoff] = f_harness_gate_snapshot()
+            // Edge 模式追加收缩后收益优势（与新版收益优势门槛一致）；Legacy 模式保持原格式 / Edge mode appends the shrunk payoff edge (matching the payoff gate); legacy mode keeps the original format
+            harness_gate_payoff_display = stats_gate_mode == "Edge vs Baseline" ? str.format("|{0,number,+#.1;-#.1}%", harness_gate_payoff) : ""
+            harness_gate_display = harness_gate_source == "Idle" ? "Idle" : str.format("{0}({1}) {2,number,+#.1;-#.1}%|{3,number,#}%", harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj) + harness_gate_payoff_display
 
             table.cell(dashboard, 0, row, "Harness", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, str.format("{0} | {1}", harness_side_display, harness_mode_display), text_color=color.white, text_size=txt_size_body)
@@ -1449,6 +1507,18 @@ if show_dashboard
                     // 每个方向显示 基准→有效门槛（含Edge模式的[25%,90%]钳制），让钳制后的实际要求可见 / per direction: baseline→effective requirement (incl. the [25%,90%] Edge-mode clamp) so the actual gate level is visible
                     table.cell(dashboard, 1, row, str.format("({0}b) Base→Req\n⬆{1,number,#}→{2,number,#}%|⬇{3,number,#}→{4,number,#}%", stats_forward_bars, f_stats_baseline_rate(true), f_stats_required_winrate(true), f_stats_baseline_rate(false), f_stats_required_winrate(false)), text_color=color.gray, text_size=txt_size_body)
                     row += 1
+
+                    // 制度提示：该方向所有有数据桶既无胜率优势也无收益优势 → 无择时优势（趋势市特征），每个方向至多一行，仅 Edge 模式显示
+                    // Regime hint: every has-data bucket in this direction lacks both win-rate and payoff edge → no timing edge (trending-market signature); at most one row per direction, Edge mode only
+                    if stats_gate_mode == "Edge vs Baseline"
+                        if f_stats_no_timing_edge(true)
+                            table.cell(dashboard, 0, row, "⬆️ No timing edge", text_color=color.orange, text_size=txt_size_body)
+                            table.cell(dashboard, 1, row, "无择时优势·趋势市?", text_color=color.orange, text_size=txt_size_body)
+                            row += 1
+                        if f_stats_no_timing_edge(false)
+                            table.cell(dashboard, 0, row, "⬇️ No timing edge", text_color=color.orange, text_size=txt_size_body)
+                            table.cell(dashboard, 1, row, "无择时优势·趋势市?", text_color=color.orange, text_size=txt_size_body)
+                            row += 1
 
                     if stats_mode == "Signal Type"
                         for sig_idx = 0 to STATS_SIGNAL_COUNT - 1
@@ -1522,10 +1592,11 @@ if show_dashboard
                                 dir_text = dir == 1 ? "📈" : "📉"
                                 dir_clr = f_dir_color(dir, color_bull, color_bear)
                                 edge_pp = array.get(ranking_sort_key, idx)
+                                payoff_edge = f_stats_payoff_edge(rank_stats, dir == 1)
 
                                 label_text = str.format("{0}[{1}]{2}({3}){4}", f_sig_emoji(sig), grd, dir_text, cnt, rel)
-                                // Edge 模式第二行显示相对基准的优势（百分点），避免单行过宽 / Edge mode shows the edge over the direction baseline on a second line to keep the cell narrow
-                                value_text = stats_gate_mode == "Edge vs Baseline" ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%\n({2,number,+#.1;-#.1}pp)", ret, wr, edge_pp) : str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", ret, wr)
+                                // Edge 模式第二行紧凑显示 胜率优势pp|收缩后收益优势%，保持面板窄宽度；排序键仍是胜率优势 / Edge mode's second line compactly shows win-rate edge pp | shrunk payoff edge % to keep the panel narrow; the sort key stays the win-rate edge
+                                value_text = stats_gate_mode == "Edge vs Baseline" ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%\n({2,number,+#.1;-#.1}pp|{3,number,+#.1;-#.1}%)", ret, wr, edge_pp, payoff_edge) : str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", ret, wr)
 
                                 table.cell(dashboard, 0, row, label_text, text_color=dir_clr, text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, value_text, text_color=dir_clr, text_size=txt_size_body)

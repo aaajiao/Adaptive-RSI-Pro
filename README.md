@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Pine Script Lint](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml/badge.svg)](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml)
 
-**Pine Script v6** | **v7.4**
+**Pine Script v6** | **v7.5**
 
 An RSI that adapts its overbought/oversold thresholds to each asset's own statistics, scores every signal, tracks how those signals actually performed, and only alerts you when a signal type has a proven historical edge.
 
@@ -103,9 +103,9 @@ With `Stats Mode = Ranking` and the default `Edge vs Baseline` gate, the panel l
 │ ── RANKING ──        (20b) Base→Req        │
 │                      ⬆62→67%|⬇38→43%       │
 │ 🌟[A]📈(28)✓         +3.2%|71%             │
-│                      (+8.6pp)              │
+│                      (+8.6pp|+2.3%)        │
 │ 💎[B]📉(21)✓         +1.8%|46%             │
-│                      (+7.9pp)              │
+│                      (+7.9pp|+2.7%)        │
 └────────────────────────────────────────────┘
 ```
 
@@ -146,22 +146,22 @@ A typical panel in the default `Edge vs Baseline` mode:
 ── RANKING ──      (20b) Base→Req
                    ⬆62→67%|⬇38→43%
 🌟[A]📈(28)✓       +3.2%|71%
-                   (+8.6pp)
+                   (+8.6pp|+2.3%)
 💎[B]📉(21)✓       +1.8%|46%
-                   (+7.9pp)
-🔥[B]📈(35)✓       +2.1%|68%
-                   (+5.7pp)
+                   (+7.9pp|+2.7%)
+🔥[B]📈(35)✓       +1.6%|68%
+                   (+5.7pp|+0.7%)
 ⬆️[C]📉(9)⚠️       +0.6%|39%
-                   (+1.2pp)
-🔥[D]📈(12)⚠️      -0.8%|59%
-                   (-2.4pp)
+                   (+1.2pp|+0.7%)
+🔥[D]📈(12)⚠️      -0.8%|60%
+                   (-2.4pp|-1.0%)
 ```
 
 #### The header
 
 `(20b)` is the forward window: every sample measures what price did **20 bars** after a signal (`Forward Bars`, default 20).
 
-`⬆62→67%` reads as: the **buy-direction baseline** win rate is 62% — the probability that buying on *any* bar of this chart shows a gain 20 bars later — and a buy bucket needs an **adjusted win rate of 67%** to pass the alert gate. The requirement is `baseline + (Min Adjusted WinRate − 50)`, so with the default `Min Adjusted WinRate = 55` that is baseline + 5 percentage points, clamped to 25–90% so extreme baselines can never make the gate unsatisfiable or trivially easy. `⬇38→43%` is the same thing for the sell direction.
+`⬆62→67%` reads as: the **buy-direction baseline** win rate is 62% — the probability that buying on *any* bar of this chart shows a gain 20 bars later — and a buy bucket needs an **adjusted win rate of 67%** to pass the win-rate path of the alert gate (since v7.5, under the default `Payoff Gate = Either Edge`, a bucket can alternatively qualify through the payoff path — see [the stats engine](#the-stats-engine--gate)). The requirement is `baseline + (Min Adjusted WinRate − 50)`, so with the default `Min Adjusted WinRate = 55` that is baseline + 5 percentage points, clamped to 25–90% so extreme baselines can never make the gate unsatisfiable or trivially easy. `⬇38→43%` is the same thing for the sell direction.
 
 The `Base→Req` header appears in both gate modes; under `Absolute (Legacy)` the `Req` value is simply the fixed absolute threshold.
 
@@ -180,9 +180,11 @@ Right cell, first line — `+3.2%|71%`:
 - **Average forward return**. For `📉` (sell) rows the convention flips: the number measures how far price *fell* after the signal, so positive = the sell call was right.
 - **Adjusted win rate** — the raw win rate shrunk toward the bucket's own direction baseline (see [the stats engine](#the-stats-engine--gate)).
 
-Right cell, second line — `(+8.6pp)`:
+Right cell, second line — `(+8.6pp|+2.3%)`:
 
-- The bucket's **edge**: adjusted win rate − its own direction's baseline, in percentage points. This is the sort key. It only appears in `Edge vs Baseline` mode; under `Absolute (Legacy)` the cell is a single line and rows are sorted by absolute adjusted win rate instead.
+- **Win-rate edge**: adjusted win rate − its own direction's baseline, in percentage points. This is the sort key.
+- **Payoff edge**: the bucket's average forward return minus the direction baseline's average forward return, shrunk by the same confidence factor as the win rate (see [the stats engine](#the-stats-engine--gate)). Positive = this bucket's signals not only happen, they *pay* better than random entries.
+- The second line only appears in `Edge vs Baseline` mode; under `Absolute (Legacy)` the cell is a single line and rows are sorted by absolute adjusted win rate instead.
 
 #### The core reading rule: compare pp, not win rates
 
@@ -190,21 +192,41 @@ Think of the win rate as an exam score and the baseline as the class average for
 
 On a rising asset, randomly buying might win 62% of the time (tailwind), while randomly selling is right only 38% of the time (headwind). A 68% buy win rate and a 46% sell win rate are therefore **not directly comparable**. Run the numbers: out of 100 random buys you'd win 62; the `🔥[B]📈` bucket at 68% wins only 6 more (+5.7pp). Out of 100 random sells you'd be right 38 times; the `💎[B]📉` bucket at 46% is right 8 more times (+7.9pp). The "worse-looking" sell bucket actually carries more information.
 
-If the leaderboard ranked by absolute win rate, every buy bucket on an uptrending asset would crowd the top and every sell bucket would sink to the bottom — the board would be measuring "this stock is going up", not "which signal works". (This was a real flaw in v7.3, and the same accounting issue caused sell alerts to be systematically filtered out.) Edge sorting uses the same yardstick as the alert gate: the gate requires an edge of at least +5pp (by default) **and** a lifetime sample count ≥ `Min Samples` (default 20).
+If the leaderboard ranked by absolute win rate, every buy bucket on an uptrending asset would crowd the top and every sell bucket would sink to the bottom — the board would be measuring "this stock is going up", not "which signal works". (This was a real flaw in v7.3, and the same accounting issue caused sell alerts to be systematically filtered out.) Edge sorting uses the same yardstick as the alert gate: the gate requires a lifetime sample count ≥ `Min Samples` (default 20) **and** a quality edge — a win-rate edge of at least +5pp (by default) or, since v7.5 under the default `Payoff Gate = Either Edge`, a payoff edge ≥ `Min Payoff Edge %` instead.
+
+#### Win-rate edge vs payoff edge
+
+The two numbers on the second line answer different questions. **Win-rate edge** (`pp`) asks: does this signal win *more often* than a random entry? **Payoff edge** (`%`) asks: does it win *more money* per trade than a random entry? A bucket can fail one and pass the other.
+
+Worked example, on a chart with a 62% buy baseline whose random 20-bar entry averages +0.9%: a bucket sits at a 58% win rate — that is **−4pp**, it fails the win-rate path — but its average forward return is **+2.1%** against the baseline's +0.9%, a **+1.2% shrunk payoff edge** (at full confidence), which clears the default `Min Payoff Edge % = 0.4`. The bucket **wins less often, but wins bigger** — typical of mean-reversion entries on a trending asset, where the few deep-pullback fills capture outsized rebounds. With the default `Payoff Gate = Either Edge`, this bucket passes the gate.
+
+The converse is the caution: when **both** edges are negative — wins less often *and* pays worse than random — the bucket is truly dead. No reading of the numbers rescues it.
 
 #### What a negative pp means
 
-A negative edge means following that signal wins *less often than buying at random* — the signal systematically picks worse-than-average moments. This is easy to misread: in the mock panel, `🔥[D]📈` shows a 59% win rate, which looks fine against the naive 50% mark — but with a 62% baseline it is about 2.4pp **worse than blind buying** (the win rate is shown rounded; the panel's `(-2.4pp)` is the exact edge). Mechanically this happens, for example, when extreme-oversold signals tend to fire mid-collapse (catching a falling knife).
+A negative edge means following that signal wins *less often than buying at random* — the signal systematically picks worse-than-average moments. This is easy to misread: in the mock panel, `🔥[D]📈` shows a 60% win rate, which looks fine against the naive 50% mark — but with a 62% baseline it is 2.4pp **worse than blind buying** (the win rate is shown rounded; the panel's `(-2.4pp)` is the exact edge). Mechanically this happens, for example, when extreme-oversold signals tend to fire mid-collapse (catching a falling knife). Since v7.5 a negative pp is no longer a single-metric death sentence — check the payoff figure on the same line before discarding the bucket, because a wins-less-often-wins-bigger bucket can still carry a real payoff edge (here `🔥[D]📈` shows `-1.0%`, so both edges are negative and the bucket really is dead).
 
 This is also why bucketing matters: the same signal type at different grades can have opposite signs — `🔥[A]📈` might be +6pp while `🔥[D]📈` sits at −2.4pp.
 
 How to act on a negative-edge bucket:
 
-- The gate always blocks it (Edge mode requires +5pp), so it never alerts.
+- The win-rate path of the gate blocks it, so under the default `Either Edge` it only alerts if its payoff edge clears `Min Payoff Edge %` — i.e. a negative-pp alert is always a "wins less often, wins bigger" bucket. With `Payoff Gate = Off` or `Both Edges` it never alerts.
 - If it appears on the chart anyway (e.g. `Alert Only` mode), treat it as noise.
 - Don't trade it in reverse: the inverse trade is measured against the *opposite* direction's baseline, and after costs there is usually no edge left.
 - Because shrinkage pulls small samples toward the baseline, the true negative edge may be deeper than displayed.
 - Only when a bucket reaches `✓` reliability and stays negative is it a dependable "this path doesn't work" verdict.
+
+#### The "No timing edge" row
+
+When an entire *direction* goes dead, the panel says so explicitly. Right under the stats header, a row like
+
+```text
+⬆️ No timing edge  无择时优势·趋势市?
+```
+
+appears (in orange, one row per direction at most, `Edge vs Baseline` mode only) when that direction has at least **2 buckets with data** (effective count ≥ 5) and **all** of them show a negative win-rate edge **and** a non-positive payoff edge. In other words: nothing in that direction wins more often than random, and nothing wins bigger either.
+
+That pattern is the signature of a trending regime — on a strong uptrend, mean-reversion buy timing adds nothing over just being long (and vice versa for downtrends). How to act on it: don't counter-trend time entries in that direction on this symbol/timeframe; the alert gate will already be blocking those signals, so treat any that still appear on the chart as noise. The hint reads the same buckets the gate reads (the active `Stats Mode`), so switching `Stats Mode` can change whether it fires. Like everything in the stats panel, it describes loaded history — after a regime change it fades only as new samples accumulate.
 
 #### Two honest caveats
 
@@ -346,9 +368,11 @@ Alerts fire only for signals that pass the stats gate, in **every** filter mode 
 
 This is what makes the `✓` mark mean something. In plain terms:
 
-**What gets recorded.** Every signal occurrence is scored by its forward return — what price did `Forward Bars` later (default 20). Buy samples record the rise; sell samples record the *decline*, so positive always means "the signal was right". Samples land in buckets according to `Stats Mode`: by signal type, by grade, or by the full type × grade × direction cross (`Ranking`). Two unconditional baseline buckets (buy/sell) record the forward return of *every* bar, giving each direction its "random entry" benchmark.
+**What gets recorded.** Every signal occurrence is scored by its forward return — what price did `Forward Bars` later (default 20). Buy samples record the rise; sell samples record the *decline*, so positive always means "the signal was right". Samples land in buckets according to `Stats Mode`: by signal type, by grade, or by the full type × grade × direction cross (`Ranking`). Two unconditional baseline buckets (buy/sell) record the forward return of *every* bar, giving each direction its "random entry" benchmark — both a baseline **win rate** and a baseline **average return** (the drift).
 
 **Bayesian adjustment.** Raw win rates from a handful of samples lie. Each bucket's win rate is shrunk toward a prior: `adjusted = prior + confidence × (raw − prior)` with `confidence = min(1, effective_samples / 20)`. In `Edge vs Baseline` mode the prior is the bucket's own direction baseline; in `Absolute (Legacy)` mode it is 50%. Buckets with fewer than 5 lifetime samples report no adjusted rate at all.
+
+**Payoff edge.** The same anti-overclaim treatment applied to returns instead of win rates: `payoff edge = confidence × (bucket average forward return − direction baseline average return)`, with the same confidence factor and the same "no value below 5 lifetime samples" rule as the adjusted win rate. Subtracting the direction baseline removes the asset's drift, so what remains is the **timing contribution** of the signal in forward-window % terms; the shrinkage drags small or stale buckets toward zero edge so they can't brag.
 
 **Time decay.** `Stats Half-Life Bars` (default 1500, `0` = off) exponentially fades sample weight with age — 1500 bars is roughly 6 years on a daily chart or 9 months on 4H, covering a full cycle while letting old regimes fade. Decay only affects the *effective* count (and therefore confidence); the `Min Samples` gate always uses the undecayed lifetime count, so rare signal buckets are not permanently locked out.
 
@@ -356,13 +380,21 @@ This is what makes the `✓` mark mean something. In plain terms:
 
 **The gate.** A signal passes when both hold:
 
-1. Lifetime samples ≥ `Min Samples` (default 20), and
-2. Adjusted win rate ≥ the required level.
+1. Lifetime samples ≥ `Min Samples` (default 20) — required in **every** mode and combination; nothing below substitutes for sample sufficiency — and
+2. The quality criterion.
 
-The required level depends on `Gate Mode`:
+The quality criterion has two possible paths:
 
-- **`Edge vs Baseline`** (default): required = direction baseline + (`Min Adjusted WinRate` − 50). With the default 55 that is **baseline + 5pp**, clamped to **25–90%**. This exists because absolute thresholds systematically reject sell buckets on trending assets — a 45% sell win rate can be a genuinely strong edge when random selling wins only 38% (see [the leaderboard guide](#reading-the-ranking-leaderboard)).
-- **`Absolute (Legacy)`**: required = `Min Adjusted WinRate` as a fixed absolute threshold, prior = 50%.
+- **Win-rate path**: adjusted win rate ≥ the required level. The required level depends on `Gate Mode`:
+  - **`Edge vs Baseline`** (default): required = direction baseline + (`Min Adjusted WinRate` − 50). With the default 55 that is **baseline + 5pp**, clamped to **25–90%**. This exists because absolute thresholds systematically reject sell buckets on trending assets — a 45% sell win rate can be a genuinely strong edge when random selling wins only 38% (see [the leaderboard guide](#reading-the-ranking-leaderboard)).
+  - **`Absolute (Legacy)`**: required = `Min Adjusted WinRate` as a fixed absolute threshold, prior = 50%.
+- **Payoff path** (v7.5): payoff edge ≥ `Min Payoff Edge %` (default **0.4**, range 0–10, step 0.1). Because drift is already subtracted via the baseline, this threshold only has to beat estimation noise — 0.3–0.5 is the recommended band. The payoff path is **only active when `Gate Mode = Edge vs Baseline`**; under `Absolute (Legacy)` the gate is always pure win-rate.
+
+How the two paths combine is set by **`Payoff Gate`** (options `Off` / `Either Edge` / `Both Edges`, default **`Either Edge`**):
+
+- **`Off`** — win-rate path only: the exact v7.4 gate.
+- **`Either Edge`** (default) — pass if *either* path passes. This admits "wins less often, wins bigger" buckets — the typical shape of mean-reversion signals on trending assets — and is therefore a **behavior change versus v7.4**: some buckets that v7.4 blocked will now alert. Set `Payoff Gate = Off` to revert.
+- **`Both Edges`** — both paths must pass; stricter than v7.4.
 
 **Filter modes** decide what a failed gate does:
 
@@ -372,7 +404,9 @@ The required level depends on `Gate Mode`:
 | `Soft` | Failed signals downgraded visually | Filtered |
 | `Hard` | Failed signals hidden | Filtered |
 
-> **Restoring v7.3 stats behavior**: set `Stats Half-Life Bars = 0`, turn `Independent Samples` **off**, and set `Gate Mode = Absolute (Legacy)`. This restores the legacy stats-engine arithmetic exactly. Two v7.4 signal-level changes have **no revert switch** — the lookback spread-factor hysteresis band (engages below a spread of 18, releases above 22) and the cooldown stale-level reset — so the recorded signal stream, and therefore gate decisions, may still differ slightly from v7.3.
+> **Restoring v7.4 gate behavior**: set `Payoff Gate = Off`. The gate decision is then bit-identical to v7.4 (the ranking panel's payoff numbers and the "No timing edge" hint are display-only and remain visible in Edge mode).
+>
+> **Restoring v7.3 stats behavior**: set `Stats Half-Life Bars = 0`, turn `Independent Samples` **off**, and set `Gate Mode = Absolute (Legacy)` (which by itself deactivates the payoff path, whatever `Payoff Gate` says). This restores the legacy stats-engine arithmetic exactly. Two v7.4 signal-level changes have **no revert switch** — the lookback spread-factor hysteresis band (engages below a spread of 18, releases above 22) and the cooldown stale-level reset — so the recorded signal stream, and therefore gate decisions, may still differ slightly from v7.3.
 
 **Cooldown & upgrades.** High-priority signals (🌟/💎/🔥/❄️) use a 1-bar cooldown. Normal signals use `Cooldown Mode`: `Smart` (the default — 2–8 bars by volatility, shortened by one when the market is active) or `Fixed` (a fixed bar count, 5 by default). A higher-priority same-side signal bypasses cooldown — `⬆️ → 🔥 → 🌟` can fire on consecutive bars. The upgrade exemption only compares against a previous signal that is *still cooling down*; expired levels count as 0, so a normal signal can never use its own stale level to bypass its own cooldown.
 
@@ -382,7 +416,7 @@ The required level depends on `Gate Mode`:
 
 ### What it is — and is not
 
-`adaptive_rsi_strategy_harness.pine` is a `strategy()` wrapper **generated from the production indicator** (by `tools/generate_strategy_harness.py` — never hand-edited), so the signal engine is identical. It answers one question: how does the v7.4 signal engine behave inside TradingView's Strategy Tester?
+`adaptive_rsi_strategy_harness.pine` is a `strategy()` wrapper **generated from the production indicator** (by `tools/generate_strategy_harness.py` — never hand-edited), so the signal engine is identical. It answers one question: how does the v7.5 signal engine behave inside TradingView's Strategy Tester?
 
 It is a **gated-signal backtest**, not an exact intrabar `alert()` delivery simulation: it does not model alert scheduling or delivery counts. Use it to evaluate the signal and filter path, not alert-log parity.
 
@@ -411,7 +445,7 @@ The harness adds three rows to the dashboard:
 
 - `Harness` — current `Trade Side` and `Backtest Mode`
 - `Tester` — how to read `All`
-- `Production Gate` — the actual stats bucket selected by `Stats Mode` for the active signal, with its sample count, average return, and adjusted win rate, e.g. `EXT[A](12) +2.8%|67%` in `Ranking` mode (`TYPE:EXT` in `Signal Type` mode, `GRADE[A]` in `Grade` mode; `Idle` when no signal is active).
+- `Production Gate` — the actual stats bucket selected by `Stats Mode` for the active signal, with its sample count, average return, adjusted win rate and — in `Edge vs Baseline` mode — its shrunk payoff edge, e.g. `EXT[A](12) +2.8%|67%|+1.2%` in `Ranking` mode (`TYPE:EXT` in `Signal Type` mode, `GRADE[A]` in `Grade` mode; `Idle` when no signal is active; under `Absolute (Legacy)` the payoff suffix is omitted).
 
 ### Costs
 
