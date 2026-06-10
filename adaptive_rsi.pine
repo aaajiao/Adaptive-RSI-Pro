@@ -1366,7 +1366,7 @@ if show_dashboard
                     stats_title = stats_mode == "Ranking" ? "── RANKING ──" : stats_mode == "Grade" ? "── GRADE STATS ──" : "── SIGNAL STATS ──"
                     table.cell(dashboard, 0, row, stats_title, text_color=color.gray, text_size=txt_size_body)
                     // 每个方向显示 基准→有效门槛（含Edge模式的[25%,90%]钳制），让钳制后的实际要求可见 / per direction: baseline→effective requirement (incl. the [25%,90%] Edge-mode clamp) so the actual gate level is visible
-                    table.cell(dashboard, 1, row, str.format("({0}b) Base→Req ⬆{1,number,#}→{2,number,#}%|⬇{3,number,#}→{4,number,#}%", stats_forward_bars, f_stats_baseline_rate(true), f_stats_required_winrate(true), f_stats_baseline_rate(false), f_stats_required_winrate(false)), text_color=color.gray, text_size=txt_size_body)
+                    table.cell(dashboard, 1, row, str.format("({0}b) Base→Req\n⬆{1,number,#}→{2,number,#}%|⬇{3,number,#}→{4,number,#}%", stats_forward_bars, f_stats_baseline_rate(true), f_stats_required_winrate(true), f_stats_baseline_rate(false), f_stats_required_winrate(false)), text_color=color.gray, text_size=txt_size_body)
                     row += 1
 
                     if stats_mode == "Signal Type"
@@ -1443,8 +1443,8 @@ if show_dashboard
                                 edge_pp = array.get(ranking_sort_key, idx)
 
                                 label_text = str.format("{0}[{1}]{2}({3}){4}", f_sig_emoji(sig), grd, dir_text, cnt, rel)
-                                // Edge 模式附加显示相对基准的优势（百分点）/ Edge mode appends the edge over the direction baseline in percentage points
-                                value_text = stats_gate_mode == "Edge vs Baseline" ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%({2,number,+#.1;-#.1}pp)", ret, wr, edge_pp) : str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", ret, wr)
+                                // Edge 模式第二行显示相对基准的优势（百分点），避免单行过宽 / Edge mode shows the edge over the direction baseline on a second line to keep the cell narrow
+                                value_text = stats_gate_mode == "Edge vs Baseline" ? str.format("{0,number,+#.1;-#.1}%|{1,number,#}%\n({2,number,+#.1;-#.1}pp)", ret, wr, edge_pp) : str.format("{0,number,+#.1;-#.1}%|{1,number,#}%", ret, wr)
 
                                 table.cell(dashboard, 0, row, label_text, text_color=dir_clr, text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, value_text, text_color=dir_clr, text_size=txt_size_body)
