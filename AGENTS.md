@@ -109,7 +109,19 @@ RSI_stock/
     row (`f_stats_no_timing_edge`) renders after the stats header when ≥ 2
     has-data buckets (effective count ≥ 5) in that direction all have
     negative win-rate edge and non-positive payoff edge; `full_rows` gains
-    `+2` in Edge gate mode (indicator table capacity 22, harness 26).
+    `+2` in Edge gate mode (indicator table capacity 23, harness 27).
+- Post-v7.5 dashboard addition (display only): a **`Gate` row** renders after
+  `Status` whenever `enable_stats and enable_stats_filter`, showing the bucket
+  the stats gate consults for the current (prospective) signal and the verdict
+  — the explanation for the Signal row's `✓`/`⚠️`. `f_gate_signal_kind()`
+  mirrors the `signal_type_text` priority (pure divergence → not gateable);
+  bucket choice and the overall verdict reuse the production `*_stats` /
+  `filter_*` outputs so the row cannot drift from `f_passes_stats_filter`.
+  Insufficient lifetime samples render `n=x/y⏳` (gray); otherwise each
+  quality path shows `actual→required` plus `✓`/`✗` (payoff segment only when
+  the payoff path is active). `full_rows` gains `+1` when the stats filter is
+  on; the row flows into the harness, where it coexists with the
+  harness-owned `Production Gate` row (per-bar prospective vs trigger-only).
 - `Stats Mode` still selects whether the gate reads Signal Type, Grade, or
   Ranking buckets.
 
@@ -161,12 +173,12 @@ RSI_stock/
 | Consolidated signals | `adaptive_rsi.pine:792-887` | Priority merge, upgrade exemption with expired-level reset |
 | Statistics engine | `adaptive_rsi.pine:1002-1048` | Forward-return bookkeeping, baseline sampling, independent sampling |
 | Stats filter | `adaptive_rsi.pine:1050-1196` | Edge-vs-baseline / legacy gate, payoff-edge path, stats-mode-aware buckets, hidden-state detection |
-| Dashboard | `adaptive_rsi.pine:1283-1524` | Main indicator UI incl. MTF availability warning, `Base→Req` header, regime-hint rows, edge-sorted ranking with payoff column |
-| Alerts | `adaptive_rsi.pine:1527-1610` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
+| Dashboard | `adaptive_rsi.pine:1283-1579` | Main indicator UI incl. Gate row (helpers 1293-1309, render 1399-1432), MTF availability warning, `Base→Req` header, regime-hint rows, edge-sorted ranking with payoff column |
+| Alerts | `adaptive_rsi.pine:1582-1665` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
 | Harness inputs | `adaptive_rsi_strategy_harness.pine:82-88` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
 | Harness risk direction | `adaptive_rsi_strategy_harness.pine:100-105` | `strategy.risk.allow_entry_in` wiring |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1443-1462` | `Harness`, `Tester`, `Production Gate` (payoff suffix in Edge mode) |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1697-1762` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1499-1517` | `Harness`, `Tester`, `Production Gate` (payoff suffix in Edge mode) |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1753-1817` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
 | Generator anchors | `tools/generate_strategy_harness.py` | Anchor names, harness-owned snippets, `--check` mode |
 | Tooling tests | `tests/` | Generator golden/anchor tests, linter rule tests |
 

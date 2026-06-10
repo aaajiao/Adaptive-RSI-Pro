@@ -1285,6 +1285,27 @@ status_display_color = rsi_zscore < -normal_threshold ? color_bull : rsi_zscore 
 
 f_status_text(_status, _available) =>
     not _available ? "–" : _status == 1 ? "🟢" : _status == -1 ? "🔴" : "⚪"
+
+// Gate 行：当前（潜在）信号将查询的统计桶种类，优先级与 signal_type_text 一致
+// 1=MTF 2=Div 3=Ext 4=Norm；0=无可门控对象（中性，或纯背离↗️/↘️——它们不经过统计门槛）
+// Gate row: which bucket kind the stats gate consults for the current (prospective) signal; priority mirrors signal_type_text
+// 1=MTF 2=Div 3=Ext 4=Norm; 0 = nothing gateable (neutral, or pure divergence ↗️/↘️ which bypasses the stats gate)
+f_gate_signal_kind() =>
+    switch
+        sig_buy_mtf or sig_sell_mtf => 1
+        sig_buy_div or sig_sell_div => 2
+        sig_buy_extreme or extreme_buy_hidden or sig_sell_extreme or extreme_sell_hidden => 3
+        sig_buy_normal or normal_buy_hidden or sig_sell_normal or normal_sell_hidden => 4
+        sig_div_bull_only or sig_div_bear_only => 0
+        in_extreme_oversold or in_extreme_overbought => 3
+        in_normal_oversold or in_normal_overbought => 4
+        => 0
+
+// Gate 行桶标签：按 Stats Mode 拼装，与排行榜行同风格（类型emoji不分方向，方向由📈/📉表达）
+// Gate row bucket label assembled per Stats Mode, matching the leaderboard style (the type emoji is non-directional; 📈/📉 carries direction)
+f_gate_bucket_label(_kind, _grade, _is_buy) =>
+    _dir_text = _is_buy ? "📈" : "📉"
+    stats_mode == "Signal Type" ? f_sig_emoji(_kind) + _dir_text : stats_mode == "Grade" ? "[" + _grade + "]" + _dir_text : f_sig_emoji(_kind) + "[" + _grade + "]" + _dir_text
 // @harness: gate-helper
 
 if show_dashboard
@@ -1320,16 +1341,16 @@ if show_dashboard
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     mobile_rows = 3
-    // enable_stats: 1 行标题 + 最多 8 行桶；Edge 模式再加最多 2 行制度提示（每方向至多1行） / stats: 1 header + up to 8 bucket rows; Edge mode adds up to 2 regime-hint rows (at most 1 per direction)
-    full_rows = 8 + (enable_mtf ? 2 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0) + (enable_stats and stats_gate_mode == "Edge vs Baseline" ? 2 : 0)
+    // enable_stats: 1 行标题 + 最多 8 行桶；Edge 模式再加最多 2 行制度提示（每方向至多1行）；启用统计过滤再加 1 行 Gate / stats: 1 header + up to 8 bucket rows; Edge mode adds up to 2 regime-hint rows (at most 1 per direction); the stats filter adds 1 Gate row
+    full_rows = 8 + (enable_mtf ? 2 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0) + (enable_stats and stats_gate_mode == "Edge vs Baseline" ? 2 : 0) + (enable_stats and enable_stats_filter ? 1 : 0)
     total_rows = dashboard_mode == "Mobile" ? mobile_rows : full_rows
 
-    var table dashboard = table.new(position.top_right, 2, 22,
+    var table dashboard = table.new(position.top_right, 2, 23,
                                      bgcolor=color.new(#1a1a2e, dashboard_transparency),
                                      border_width=1, border_color=color.new(#4a4a6a, 50))
 
     if barstate.islast
-        table.clear(dashboard, 0, 0, 1, 21)
+        table.clear(dashboard, 0, 0, 1, 22)
         row = 0
 
         if dashboard_mode == "Mobile"
@@ -1374,6 +1395,40 @@ if show_dashboard
             table.cell(dashboard, 0, row, "Status", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, status_text_full, text_color=status_display_color, text_size=txt_size_body)
             row += 1
+
+            // Gate 行：统计门槛对当前（潜在）信号查询的桶与判定依据，解释 Signal 行 ✓/⚠️ 的来源
+            // 样本不足 → n=x/y⏳（数据不够，不是质量差）；样本足够 → 各质量路径显示 实际→门槛 及判定
+            // 桶选择与总判定直接复用生产过滤结果（*_stats / filter_*），不另行计算，避免与 f_passes_stats_filter 漂移
+            // Gate row: the bucket the stats gate consults for the current (prospective) signal and why it passes/fails — the source of the Signal row's ✓/⚠️
+            // Insufficient samples → n=x/y⏳ (not enough data, not proven bad); enough samples → each quality path shows actual→required plus its verdict
+            // Bucket choice and the overall verdict reuse the production filter outputs (*_stats / filter_*) instead of recomputing, so this row cannot drift from f_passes_stats_filter
+            if enable_stats and enable_stats_filter
+                gate_kind = f_gate_signal_kind()
+                gate_is_buy = signal_direction == 1
+                gate_grade = gate_is_buy ? buy_quality_grade : sell_quality_grade
+                string gate_display = "—"
+                color gate_color = color.gray
+                if gate_kind > 0
+                    gate_stats = gate_is_buy ? (gate_kind == 1 ? buy_mtf_stats : gate_kind == 2 ? buy_div_stats : gate_kind == 3 ? buy_ext_stats : buy_norm_stats) : (gate_kind == 1 ? sell_mtf_stats : gate_kind == 2 ? sell_div_stats : gate_kind == 3 ? sell_ext_stats : sell_norm_stats)
+                    gate_pass = gate_is_buy ? (gate_kind == 1 ? filter_buy_mtf : gate_kind == 2 ? filter_buy_div : gate_kind == 3 ? filter_buy_ext : filter_buy_norm) : (gate_kind == 1 ? filter_sell_mtf : gate_kind == 2 ? filter_sell_div : gate_kind == 3 ? filter_sell_ext : filter_sell_norm)
+                    gate_label = f_gate_bucket_label(gate_kind, gate_grade, gate_is_buy)
+                    gate_n = gate_stats.get_lifetime_count()
+                    if gate_n < stats_min_samples
+                        gate_display := str.format("{0} n={1}/{2}⏳", gate_label, gate_n, stats_min_samples)
+                        gate_color := #9E9E9E
+                    else
+                        gate_adj = nz(gate_stats.get_adjusted_winrate_vs(f_stats_display_prior(gate_is_buy)))
+                        gate_req = f_stats_required_winrate(gate_is_buy)
+                        gate_payoff_active = stats_gate_mode == "Edge vs Baseline" and stats_payoff_mode != "Off"
+                        gate_payoff = nz(f_stats_payoff_edge(gate_stats, gate_is_buy))
+                        gate_wr_mark = gate_adj >= gate_req ? "✓" : "✗"
+                        gate_payoff_mark = gate_payoff >= stats_min_payoff_edge ? "✓" : "✗"
+                        gate_payoff_text = gate_payoff_active ? str.format("|{0,number,+#.1;-#.1}→{1,number,#.#}%{2}", gate_payoff, stats_min_payoff_edge, gate_payoff_mark) : ""
+                        gate_display := str.format("{0} n={1}\n{2,number,#}→{3,number,#}%{4}", gate_label, gate_n, gate_adj, gate_req, gate_wr_mark) + gate_payoff_text
+                        gate_color := gate_pass ? #4CAF50 : #FF9800
+                table.cell(dashboard, 0, row, "Gate", text_color=color.gray, text_size=txt_size_body)
+                table.cell(dashboard, 1, row, gate_display, text_color=gate_color, text_size=txt_size_body)
+                row += 1
 
             // @harness: dashboard-rows
             weekly_rsi_display = na(weekly_rsi) ? "W.RSI:--" : str.format("W.RSI:{0,number,#}", weekly_rsi)
