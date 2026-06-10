@@ -13,6 +13,7 @@
 | **Strategy Report File** | `adaptive_rsi_strategy_harness.pine` (generated) |
 | **Platform** | TradingView |
 | **Indicator** | `Adaptive RSI Pro` / `ARSI Pro` |
+| **Docs** | `README.md` (English, canonical) + `docs/README_CN.md` (Chinese localization) |
 | **Tooling Tests** | `tests/` (stdlib `unittest`, Python 3) |
 
 ## Project Structure
@@ -23,9 +24,7 @@ RSI_stock/
 ├── adaptive_rsi_strategy_harness.pine
 ├── README.md
 ├── docs/
-│   ├── README_CN.md
-│   ├── STRATEGY_REPORT.md
-│   └── STRATEGY_REPORT_CN.md
+│   └── README_CN.md
 ├── AGENTS.md
 ├── LICENSE
 ├── .pine-lint.yml
@@ -113,6 +112,9 @@ RSI_stock/
   the production alert gate/filter.
 - It is a gated-signal backtest, not an exact intrabar `alert()` delivery
   simulation.
+- User-facing harness documentation lives in `README.md` § "Backtesting with
+  the Strategy Harness" and `docs/README_CN.md` § "用策略报告版回测" (there are
+  no separate strategy-report doc files).
 
 ## Where to Look
 
@@ -221,6 +223,12 @@ exactly once.
    appear exactly once. If `--check` fails because an anchor/marker broke, fix
    the generator — never patch the harness by hand.
 5. Preserve bilingual EN/CN user-facing text where already present.
-6. Run harness generation check, unittest suite, and local lint after edits.
-7. When touching MTF/HTF logic, verify manually on TradingView if possible.
-8. Do not reintroduce later experimental concepts unless the user explicitly asks for them.
+6. **Docs workflow**: the doc system is exactly two files — `README.md`
+   (English, canonical) and `docs/README_CN.md` (Chinese localization with
+   section parity). Doc edits land in English first, then are localized into
+   the CN file. Do not recreate per-topic doc files (the old
+   `docs/STRATEGY_REPORT*.md` were deleted; their content was absorbed into
+   the harness/backtesting sections of the two READMEs).
+7. Run harness generation check, unittest suite, and local lint after edits.
+8. When touching MTF/HTF logic, verify manually on TradingView if possible.
+9. Do not reintroduce later experimental concepts unless the user explicitly asks for them.
