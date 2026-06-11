@@ -100,9 +100,11 @@ RSI_stock/
   - **Gate wiring** (`f_passes_stats_filter`): the payoff path is active only
     when `stats_gate_mode == "Edge vs Baseline"` and `Payoff Gate != Off`;
     `Either Edge` ORs the win-rate and payoff paths, `Both Edges` ANDs them.
-    The `Min Samples` lifetime-count gate stays AND-ed in **all** modes —
-    payoff is an alternative quality criterion, never an alternative to
-    sample sufficiency. Legacy gate mode forces the payoff path off.
+    Payoff is an alternative quality criterion, never an alternative to
+    sample sufficiency: the `Min Samples` lifetime-count check gates the
+    quality paths in **all** modes (as released in v7.5 an insufficient
+    bucket always failed; post-v7.5 the `Unproven Buckets` policy decides
+    that case — see below). Legacy gate mode forces the payoff path off.
   - **Display** (Edge gate mode only): the `Ranking` second line is
     `(+8.6pp|+2.3%)` (win-rate edge pp | shrunk payoff edge %; sort key is
     still the win-rate edge); a per-direction "No timing edge" regime-hint
@@ -117,11 +119,41 @@ RSI_stock/
   mirrors the `signal_type_text` priority (pure divergence → not gateable);
   bucket choice and the overall verdict reuse the production `*_stats` /
   `filter_*` outputs so the row cannot drift from `f_passes_stats_filter`.
-  Insufficient lifetime samples render `n=x/y⏳` (gray); otherwise each
-  quality path shows `actual→required` plus `✓`/`✗` (payoff segment only when
-  the payoff path is active). `full_rows` gains `+1` when the stats filter is
+  Insufficient lifetime samples render `n=x/y⏳` plus the `Unproven Buckets`
+  verdict (`⏳✓` green / `⏳✗` gray); otherwise each quality path shows
+  `actual→required` plus `✓`/`✗` (payoff segment only when the payoff path
+  is active). `full_rows` gains `+1` when the stats filter is
   on; the row flows into the harness, where it coexists with the
   harness-owned `Production Gate` row (per-bar prospective vs trigger-only).
+- Post-v7.5 gate change — **unproven-bucket pass-through** (revert switch:
+  `Unproven Buckets = Block (Legacy)` restores the pre-change gate exactly):
+  - New input `stats_unproven_mode` — `"Unproven Buckets"`, options
+    `Pass | Block (Legacy)`, default `Pass` (a deliberate behavior change) —
+    sits between `Min Samples` and `Min Adjusted WinRate` in grp_stats.
+  - `f_passes_stats_filter` final expression became
+    `_has_enough_samples ? _quality_ok : stats_unproven_mode == "Pass"`:
+    with sufficient lifetime samples the quality paths decide as before; below
+    `Min Samples` the policy decides (Pass = let through, Block = legacy), so
+    `⚠️` now always means "proven bad", never "no data".
+  - Three-state marks: `signal_mark_text` and the alert `alert_filter_status`
+    render `⏳` when the bucket lacks samples (via
+    `current_signal_insufficient` / `f_stats_insufficient`, same
+    lifetime-count basis as the gate), `✓`/`⚠️` only with sufficient samples.
+    The Gate row's insufficient branch shows `n=x/y⏳✓` (green, passed under
+    Pass) or `⏳✗` (gray, blocked under Block), reusing the production
+    `gate_pass`. The harness `Production Gate` count gains a `⏳` suffix below
+    `Min Samples` (harness-owned snippet in the generator).
+  - Full v7.4-gate revert = `Payoff Gate = Off` **and**
+    `Unproven Buckets = Block (Legacy)` (both READMEs' revert notes updated).
+- Post-v7.5 display fix: `get_reliability()` and the bucket-row sample counts
+  (Signal Type / Grade / Ranking rows, plus the harness `Production Gate`
+  snapshot count in `f_harness_gate_snapshot()`) now use the undecayed
+  `lifetime_count` — `✓ ≥ stats_min_samples`, `⚠️ ≥ 5`, `❌ < 5` — the same
+  basis as the `Min Samples` gate and the Gate row's `n=`. The decayed
+  effective count is hard-capped at `1/(1-0.5^(spacing/half_life))` (≈ 20 only
+  when a bucket samples at least every ~111 bars at the default 1500-bar
+  half-life), so keying the mark on it left every sparse bucket permanently at
+  `⚠️`. Ranking's has-data visibility cut (effective ≥ 5) is unchanged.
 - `Stats Mode` still selects whether the gate reads Signal Type, Grade, or
   Ranking buckets.
 
@@ -163,22 +195,22 @@ RSI_stock/
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Input groups | `adaptive_rsi.pine:17-88` | All production inputs incl. stats/gate/payoff/alert toggles |
-| Dynamic lookback | `adaptive_rsi.pine:122-180` | Adaptive sample-depth logic |
-| Spread hysteresis | `adaptive_rsi.pine:162-194` | Boost state machine + `prev_spread` feedback update |
-| Weekly protection | `adaptive_rsi.pine:236-265` | Confirmed weekly trend filter |
-| MTF analysis | `adaptive_rsi.pine:278-409` | TF selection, lower-TF aggregation, availability flags (332-387) |
-| Statistics types | `adaptive_rsi.pine:410-587` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate, shrunk payoff edge, `f_stats_required_winrate` clamp, `f_stats_no_timing_edge` |
-| Signal detection | `adaptive_rsi.pine:754-790` | Raw signals and cooldown state |
-| Consolidated signals | `adaptive_rsi.pine:792-887` | Priority merge, upgrade exemption with expired-level reset |
-| Statistics engine | `adaptive_rsi.pine:1002-1048` | Forward-return bookkeeping, baseline sampling, independent sampling |
-| Stats filter | `adaptive_rsi.pine:1050-1196` | Edge-vs-baseline / legacy gate, payoff-edge path, stats-mode-aware buckets, hidden-state detection |
-| Dashboard | `adaptive_rsi.pine:1283-1579` | Main indicator UI incl. Gate row (helpers 1293-1309, render 1399-1432), MTF availability warning, `Base→Req` header, regime-hint rows, edge-sorted ranking with payoff column |
-| Alerts | `adaptive_rsi.pine:1582-1665` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
-| Harness inputs | `adaptive_rsi_strategy_harness.pine:82-88` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
-| Harness risk direction | `adaptive_rsi_strategy_harness.pine:100-105` | `strategy.risk.allow_entry_in` wiring |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1499-1517` | `Harness`, `Tester`, `Production Gate` (payoff suffix in Edge mode) |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1753-1817` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
+| Input groups | `adaptive_rsi.pine:17-89` | All production inputs incl. stats/gate/payoff/alert toggles |
+| Dynamic lookback | `adaptive_rsi.pine:123-181` | Adaptive sample-depth logic |
+| Spread hysteresis | `adaptive_rsi.pine:163-195` | Boost state machine + `prev_spread` feedback update |
+| Weekly protection | `adaptive_rsi.pine:237-266` | Confirmed weekly trend filter |
+| MTF analysis | `adaptive_rsi.pine:279-410` | TF selection, lower-TF aggregation, availability flags (333-388) |
+| Statistics types | `adaptive_rsi.pine:411-589` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate, shrunk payoff edge, `f_stats_required_winrate` clamp, `f_stats_no_timing_edge` |
+| Signal detection | `adaptive_rsi.pine:756-792` | Raw signals and cooldown state |
+| Consolidated signals | `adaptive_rsi.pine:794-889` | Priority merge, upgrade exemption with expired-level reset |
+| Statistics engine | `adaptive_rsi.pine:1004-1050` | Forward-return bookkeeping, baseline sampling, independent sampling |
+| Stats filter | `adaptive_rsi.pine:1051-1215` | Edge-vs-baseline / legacy gate, payoff-edge path, stats-mode-aware buckets, hidden-state detection |
+| Dashboard | `adaptive_rsi.pine:1301-1601` | Main indicator UI incl. Gate row (helpers 1312-1327, render 1418-1453), MTF availability warning, `Base→Req` header, regime-hint rows, edge-sorted ranking with payoff column |
+| Alerts | `adaptive_rsi.pine:1602-1688` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
+| Harness inputs | `adaptive_rsi_strategy_harness.pine:85-89` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
+| Harness risk direction | `adaptive_rsi_strategy_harness.pine:101-107` | `strategy.risk.allow_entry_in` wiring |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1520-1542` | `Harness`, `Tester`, `Production Gate` (payoff suffix in Edge mode) |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1777-1842` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
 | Generator anchors | `tools/generate_strategy_harness.py` | Anchor names, harness-owned snippets, `--check` mode |
 | Tooling tests | `tests/` | Generator golden/anchor tests, linter rule tests |
 
@@ -256,11 +288,13 @@ exactly once.
 3. Keep the raw signal model at the public `v7.2` baseline. The strict
    v7.2-freeze applied to v7.3 and was lifted by the user for v7.4/v7.5,
    which deliberately upgraded the stats engine (time decay, independent
-   sampling, edge-vs-baseline gate, payoff-edge path). Further signal-model
-   or stats-engine changes still need an explicit user request, and the
-   legacy revert switches (`stats_half_life_bars = 0`, `Independent Samples`
-   off, `Absolute (Legacy)` gate, `Payoff Gate = Off` for the v7.4 gate)
-   must keep restoring the old behavior.
+   sampling, edge-vs-baseline gate, payoff-edge path, unproven-bucket
+   pass-through). Further signal-model or stats-engine changes still need an
+   explicit user request, and the legacy revert switches
+   (`stats_half_life_bars = 0`, `Independent Samples` off,
+   `Absolute (Legacy)` gate, `Payoff Gate = Off` plus
+   `Unproven Buckets = Block (Legacy)` for the v7.4 gate) must keep restoring
+   the old behavior.
 4. Never delete or reword `// @harness: <name>` anchor comments in
    `adaptive_rsi.pine` without updating `tools/generate_strategy_harness.py`
    and `tests/test_generate_strategy_harness.py` to match; each anchor must

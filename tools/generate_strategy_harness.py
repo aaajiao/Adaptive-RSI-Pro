@@ -165,7 +165,7 @@ f_harness_gate_snapshot() =>
             _source := f_get_filter_source_label(false, false, false, sell_quality_grade)
 
     if _source != "Idle"
-        _count := math.round(_stats.get_count())
+        _count := _stats.get_lifetime_count()
         _avg := _stats.get_avg()
         _adj := nz(_stats.get_adjusted_winrate_vs(f_stats_display_prior(_use_buy)), 0.0)
         _payoff := nz(f_stats_payoff_edge(_stats, _use_buy), 0.0)
@@ -179,7 +179,9 @@ HARNESS_DASHBOARD_ROWS = """            harness_side_display = harness_trade_sid
             [harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj, harness_gate_payoff] = f_harness_gate_snapshot()
             // Edge 模式追加收缩后收益优势（与新版收益优势门槛一致）；Legacy 模式保持原格式 / Edge mode appends the shrunk payoff edge (matching the payoff gate); legacy mode keeps the original format
             harness_gate_payoff_display = stats_gate_mode == "Edge vs Baseline" ? str.format("|{0,number,+#.1;-#.1}%", harness_gate_payoff) : ""
-            harness_gate_display = harness_gate_source == "Idle" ? "Idle" : str.format("{0}({1}) {2,number,+#.1;-#.1}%|{3,number,#}%", harness_gate_source, harness_gate_count, harness_gate_avg, harness_gate_adj) + harness_gate_payoff_display
+            // 终身样本数不足 Min Samples 标 ⏳（与指标 Gate 行同口径）/ ⏳ marks a lifetime count below Min Samples (same convention as the indicator's Gate row)
+            harness_gate_unproven = harness_gate_count < stats_min_samples ? "⏳" : ""
+            harness_gate_display = harness_gate_source == "Idle" ? "Idle" : str.format("{0}({1}{2}) {3,number,+#.1;-#.1}%|{4,number,#}%", harness_gate_source, harness_gate_count, harness_gate_unproven, harness_gate_avg, harness_gate_adj) + harness_gate_payoff_display
 
             table.cell(dashboard, 0, row, "Harness", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, str.format("{0} | {1}", harness_side_display, harness_mode_display), text_color=color.white, text_size=txt_size_body)

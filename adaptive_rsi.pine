@@ -74,6 +74,7 @@ stats_half_life_bars = input.int(1500, "Stats Half-Life Bars / 统计半衰期K�
 stats_independent_samples = input.bool(true, "Independent Samples / 独立采样", group=grp_stats, tooltip="每个统计桶记录一个样本后，至少间隔前瞻K线数才记录下一个\n避免相邻信号的前瞻收益区间重叠而虚增样本数\n关闭 = 旧版重叠采样行为\n---\nEach bucket waits at least Forward Bars between recorded samples\nPrevents overlapping forward-return windows from inflating sample counts\nOff = legacy overlapping behavior")
 enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤", group=grp_stats, tooltip="基于历史统计数据过滤低质量信号\n根据样本数和胜率自动过滤\n---\nFilters low-quality signals using historical statistics\nBased on sample count and win rate")
 stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="信号组合需要的最小样本数\n≥20为统计可靠\n按未衰减的累计样本数判断，时间衰减不影响该门槛\n---\nMinimum samples required per signal bucket\n≥20 is statistically reliable\nChecked against the undecayed lifetime sample count; time decay does not affect this gate")
+stats_unproven_mode = input.string("Pass", "Unproven Buckets / 样本不足的桶", options=["Pass", "Block (Legacy)"], group=grp_stats, tooltip="统计桶终身样本数不足 Min Samples 时的处理方式\nPass: 放行（默认）——过滤器只拦截\"有足够样本且被证明无优势\"的桶；样本不足 = 未经证明，不是被证明差\nBlock (Legacy): 拦截（旧版行为）——细粒度桶（如 Ranking 模式 32 桶）在新图表上可能数年内全部信号被拦\nSignal 行与警报文本用 ⏳ 标记样本不足的信号（区别于 ⚠️ = 验证过且确实差）\n---\nWhat to do when a bucket's lifetime sample count is below Min Samples\nPass: let the signal through (default) — the filter only blocks buckets with enough samples AND no proven edge; insufficient data means unproven, not proven bad\nBlock (Legacy): block it (legacy behavior) — fine-grained buckets (e.g. 32 in Ranking mode) can keep every signal blocked for years on a fresh chart\nThe Signal row and alert text mark insufficient-sample signals with ⏳ (vs ⚠️ = proven bad)")
 stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值\nEdge vs Baseline 模式下：(本值 - 50) 被解读为相对方向基准胜率的最小优势（百分点）\n---\nMinimum Bayesian-adjusted win rate per signal bucket\n55% is the recommended value\nIn Edge vs Baseline mode, (value - 50) is the required edge in percentage points over the direction baseline")
 stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对每个方向的无条件基准胜率（要求超额优势），贝叶斯先验也收缩到基准胜率\n可避免趋势市场中卖出桶因口径问题被系统性拒绝\n有效门槛钳制在25%~90%之间，防止极端基准下门槛不可满足或过低\nAbsolute (Legacy): 旧版固定绝对胜率门槛\n---\nEdge vs Baseline: the win-rate gate is relative to each direction's unconditional baseline win rate (requires an edge); the Bayesian prior shrinks toward the baseline\nAvoids sell buckets being systematically rejected on trending assets\nThe effective requirement is clamped to 25-90% so extreme baselines can't make the gate unsatisfiable or trivially low\nAbsolute (Legacy): legacy fixed absolute threshold")
 stats_payoff_mode = input.string("Either Edge", "Payoff Gate / 收益优势门槛", options=["Off", "Either Edge", "Both Edges"], group=grp_stats, tooltip="在 Edge vs Baseline 模式下为质量判定增加第二条基于收益的路径\nOff: 仅胜率优势（v7.4 行为）\nEither Edge: 胜率优势或收益优势任一通过即可（默认）\nBoth Edges: 两条路径都必须通过\n趋势市中均值回归信号比漂移基准赢得更少但赢时赢得更大，本门槛让这类桶可凭收益优势通过\n最小样本数门槛在所有模式下仍必须满足\n仅在 Gate Mode = Edge vs Baseline 时生效\n---\nAdds a second, payoff-based quality path in Edge vs Baseline mode\nOff: win-rate edge only (v7.4 behavior)\nEither Edge: pass if the win-rate edge path OR the payoff edge path passes (default)\nBoth Edges: both paths must pass\nOn trending assets mean-reversion buckets win less often than the drifted baseline but win bigger when they win; this lets such buckets qualify on payoff\nThe Min Samples gate is still required in every mode\nOnly active when Gate Mode = Edge vs Baseline")
@@ -452,9 +453,10 @@ method get_avg(SignalStats this) =>
 method get_winrate(SignalStats this) =>
     this.count > 0 ? this.wins / this.count * 100 : 0.0
 
+// 可靠性标记按未衰减的终身样本数（与 Min Samples 门槛同口径）：有效样本数有稳态上限，稀疏桶若按有效样本数判断将永远到不了 ✓
+// Reliability mark uses the undecayed lifetime count (same basis as the Min Samples gate): the effective count has a steady-state cap, so sparse buckets could never reach ✓ on it
 method get_reliability(SignalStats this) =>
-    _eff_count = this.get_count()
-    _eff_count >= 20 ? "✓" : _eff_count >= 5 ? "⚠️" : "❌"
+    this.lifetime_count >= stats_min_samples ? "✓" : this.lifetime_count >= 5 ? "⚠️" : "❌"
 
 method get_adjusted_winrate_vs(SignalStats this, float prior) =>
     // 样本充分性按终身样本数判断；衰减后的有效样本数只决定置信度（有效样本越少越贴近先验）
@@ -1073,8 +1075,10 @@ f_get_filter_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
 // Edge vs Baseline: 先验收缩到方向基准胜率，门槛 = 基准 + (最小调整胜率 - 50)，钳制在 [25%, 90%]（见 f_stats_required_winrate）
 //   Payoff Gate ≠ Off 时增加收益优势路径：收缩后收益优势 ≥ 最小收益优势即通过（Either Edge = 任一路径，Both Edges = 两路径都过）
 // Absolute (Legacy): 先验50%，门槛 = 最小调整胜率（旧版行为）；收益优势路径不生效，保持纯 v7.3 语义
-// 最小样本数门槛（终身样本数）在所有模式下都必须满足——收益优势是质量判定的替代路径，不是样本充分性的替代
-// The Min Samples gate (lifetime count) is required in every mode — payoff edge is an alternative quality criterion, never an alternative to sample sufficiency
+// 样本不足（终身样本数 < Min Samples）时质量路径无从判定：Unproven Buckets = Pass 放行（未经证明 ≠ 被证明差），Block (Legacy) 拦截（旧版行为）
+// 样本足够时收益优势仍只是质量判定的替代路径，不是样本充分性的替代
+// With insufficient samples (lifetime count < Min Samples) the quality paths have no verdict: Unproven Buckets = Pass lets the signal through (unproven ≠ proven bad), Block (Legacy) blocks it (legacy behavior)
+// With sufficient samples the payoff edge remains an alternative quality criterion, never an alternative to sample sufficiency
 f_passes_stats_filter(_stats, _is_buy) =>
     if not enable_stats_filter or not enable_stats
         true
@@ -1091,7 +1095,7 @@ f_passes_stats_filter(_stats, _is_buy) =>
         _has_good_payoff = not na(_payoff_edge) and _payoff_edge >= stats_min_payoff_edge
         _payoff_active = _edge_mode and stats_payoff_mode != "Off"
         _quality_ok = not _payoff_active ? _has_good_winrate : stats_payoff_mode == "Either Edge" ? _has_good_winrate or _has_good_payoff : _has_good_winrate and _has_good_payoff
-        _has_enough_samples and _quality_ok
+        _has_enough_samples ? _quality_ok : stats_unproven_mode == "Pass"
 
 // 计算各信号的过滤状态
 buy_mtf_stats = f_get_filter_stats(true, true, false, false, buy_quality_grade)
@@ -1160,6 +1164,20 @@ current_signal_passes_filter = sig_buy_mtf ? filter_buy_mtf :
                                sig_sell_div ? filter_sell_div :
                                sig_sell_extreme ? filter_sell_ext :
                                sig_sell_normal ? filter_sell_norm : true
+
+// 当前信号的统计桶是否样本不足（⏳ 标记：未经证明，区别于 ⚠️ = 验证过且确实差）；与 f_passes_stats_filter 的样本门槛同口径
+// Whether the current signal's bucket lacks samples (the ⏳ mark: unproven, vs ⚠️ = proven bad); same basis as the sample gate in f_passes_stats_filter
+f_stats_insufficient(_stats) =>
+    _stats.get_lifetime_count() < stats_min_samples
+current_signal_insufficient = enable_stats and enable_stats_filter and (
+                               sig_buy_mtf ? f_stats_insufficient(buy_mtf_stats) :
+                               sig_buy_div ? f_stats_insufficient(buy_div_stats) :
+                               sig_buy_extreme ? f_stats_insufficient(buy_ext_stats) :
+                               sig_buy_normal ? f_stats_insufficient(buy_norm_stats) :
+                               sig_sell_mtf ? f_stats_insufficient(sell_mtf_stats) :
+                               sig_sell_div ? f_stats_insufficient(sell_div_stats) :
+                               sig_sell_extreme ? f_stats_insufficient(sell_ext_stats) :
+                               sig_sell_normal ? f_stats_insufficient(sell_norm_stats) : false)
 
 // ────────────────────────────────────────
 // 信号隐藏状态检测（用于统一显示）
@@ -1263,8 +1281,9 @@ bool buy_is_hidden = normal_buy_hidden or extreme_buy_hidden or hard_hidden_buy 
 bool sell_is_hidden = normal_sell_hidden or extreme_sell_hidden or hard_hidden_sell or (in_normal_overbought and not show_normal_signals)
 current_is_hidden = (signal_direction == 1 and buy_is_hidden) or (signal_direction == -1 and sell_is_hidden)
 
-// 信号标记（✓/⚠️/🚫/空）
-signal_mark_text = current_is_hidden ? "🚫" : is_signal_trigger and enable_stats_filter ? (current_signal_passes_filter ? "✓" : "⚠️") : ""
+// 信号标记（✓/⏳/⚠️/🚫/空）：⏳ = 样本不足、未经证明（按 Unproven Buckets 放行或拦截）；⚠️ = 样本足够且质量门槛未过（验证过、确实差）
+// Signal mark (✓/⏳/⚠️/🚫/empty): ⏳ = insufficient samples, unproven (passed or blocked per Unproven Buckets); ⚠️ = enough samples and the quality paths failed (proven bad)
+signal_mark_text = current_is_hidden ? "🚫" : is_signal_trigger and enable_stats_filter ? (current_signal_insufficient ? "⏳" : current_signal_passes_filter ? "✓" : "⚠️") : ""
 
 // 完整信号显示文本
 signal_full_display = signal_type_text + (signal_grade_text != "" ? "[" + signal_grade_text + "]" : "") + signal_mark_text
@@ -1396,11 +1415,11 @@ if show_dashboard
             table.cell(dashboard, 1, row, status_text_full, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
-            // Gate 行：统计门槛对当前（潜在）信号查询的桶与判定依据，解释 Signal 行 ✓/⚠️ 的来源
-            // 样本不足 → n=x/y⏳（数据不够，不是质量差）；样本足够 → 各质量路径显示 实际→门槛 及判定
+            // Gate 行：统计门槛对当前（潜在）信号查询的桶与判定依据，解释 Signal 行 ✓/⏳/⚠️ 的来源
+            // 样本不足 → n=x/y⏳ 加 Unproven Buckets 判定（数据不够，不是质量差）；样本足够 → 各质量路径显示 实际→门槛 及判定
             // 桶选择与总判定直接复用生产过滤结果（*_stats / filter_*），不另行计算，避免与 f_passes_stats_filter 漂移
-            // Gate row: the bucket the stats gate consults for the current (prospective) signal and why it passes/fails — the source of the Signal row's ✓/⚠️
-            // Insufficient samples → n=x/y⏳ (not enough data, not proven bad); enough samples → each quality path shows actual→required plus its verdict
+            // Gate row: the bucket the stats gate consults for the current (prospective) signal and why it passes/fails — the source of the Signal row's ✓/⏳/⚠️
+            // Insufficient samples → n=x/y⏳ plus the Unproven Buckets verdict (not enough data, not proven bad); enough samples → each quality path shows actual→required plus its verdict
             // Bucket choice and the overall verdict reuse the production filter outputs (*_stats / filter_*) instead of recomputing, so this row cannot drift from f_passes_stats_filter
             if enable_stats and enable_stats_filter
                 gate_kind = f_gate_signal_kind()
@@ -1414,8 +1433,10 @@ if show_dashboard
                     gate_label = f_gate_bucket_label(gate_kind, gate_grade, gate_is_buy)
                     gate_n = gate_stats.get_lifetime_count()
                     if gate_n < stats_min_samples
-                        gate_display := str.format("{0} n={1}/{2}⏳", gate_label, gate_n, stats_min_samples)
-                        gate_color := #9E9E9E
+                        // 样本不足：⏳ 后跟最终判定（Unproven Buckets = Pass 放行 ✓ 绿色 / Block 拦截 ✗ 灰色），判定值复用 gate_pass
+                        // Insufficient samples: ⏳ plus the resulting verdict (Unproven Buckets = Pass lets it through, ✓ green / Block stops it, ✗ gray), reusing gate_pass
+                        gate_display := str.format("{0} n={1}/{2}⏳{3}", gate_label, gate_n, stats_min_samples, gate_pass ? "✓" : "✗")
+                        gate_color := gate_pass ? #4CAF50 : #9E9E9E
                     else
                         gate_adj = nz(gate_stats.get_adjusted_winrate_vs(f_stats_display_prior(gate_is_buy)))
                         gate_req = f_stats_required_winrate(gate_is_buy)
@@ -1496,7 +1517,7 @@ if show_dashboard
                                 is_buy = dir_idx == STATS_DIR_BUY
                                 sig_stats = array.get(signal_type_stats, f_signal_type_bucket_index(is_buy, sig_idx))
                                 sig_wr = f_stats_wr_text(sig_stats, is_buy)
-                                table.cell(dashboard, 0, row, str.format("{0}({1}){2}", f_signal_type_dashboard_label(sig_idx, is_buy), math.round(sig_stats.get_count()), sig_stats.get_reliability()), text_color=f_signal_type_dashboard_color(sig_idx, is_buy, color_bull, color_bear), text_size=txt_size_body)
+                                table.cell(dashboard, 0, row, str.format("{0}({1}){2}", f_signal_type_dashboard_label(sig_idx, is_buy), sig_stats.get_lifetime_count(), sig_stats.get_reliability()), text_color=f_signal_type_dashboard_color(sig_idx, is_buy, color_bull, color_bear), text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, str.format("{0,number,+#.1;-#.1}%|{1}", sig_stats.get_avg(), sig_wr), text_color=is_buy ? color_bull : color_bear, text_size=txt_size_body)
                                 row += 1
 
@@ -1507,7 +1528,7 @@ if show_dashboard
                                 grade_label = f_grade_value(grade_idx)
                                 grade_bucket = array.get(grade_stats, grade_idx * STATS_DIR_COUNT + dir_idx)
                                 grade_display = f_stats_avg_wr_text(grade_bucket, is_buy)
-                                table.cell(dashboard, 0, row, str.format("[{0}]{1}({2}){3}", grade_label, is_buy ? "📈" : "📉", math.round(grade_bucket.get_count()), grade_bucket.get_reliability()), text_color=f_grade_dashboard_color(grade_idx), text_size=txt_size_body)
+                                table.cell(dashboard, 0, row, str.format("[{0}]{1}({2}){3}", grade_label, is_buy ? "📈" : "📉", grade_bucket.get_lifetime_count(), grade_bucket.get_reliability()), text_color=f_grade_dashboard_color(grade_idx), text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, grade_display, text_color=is_buy ? color_bull : color_bear, text_size=txt_size_body)
                                 row += 1
 
@@ -1557,7 +1578,7 @@ if show_dashboard
                                 grd = f_grade_value(f_ranking_grade_index(idx))
                                 dir = f_ranking_direction_number(idx)
                                 ret = rank_stats.get_avg()
-                                cnt = math.round(rank_stats.get_count())
+                                cnt = rank_stats.get_lifetime_count()
                                 rel = rank_stats.get_reliability()
                                 dir_text = dir == 1 ? "📈" : "📉"
                                 dir_clr = f_dir_color(dir, color_bull, color_bear)
@@ -1614,7 +1635,9 @@ if enable_smart_alert
         => ""
 
     // 过滤状态标记（仅在启用统计过滤时显示）
-    string alert_filter_status = (enable_stats_filter and enable_stats) ? (current_signal_passes_filter ? "✓" : "⚠️") : ""
+    // ⏳ = 样本不足放行的信号（Unproven Buckets = Pass 时会触发警报）；⚠️ 仅在 Alert Only/Soft 显示路径中出现
+    // ⏳ = insufficient-sample signal let through (alerts fire under Unproven Buckets = Pass); ⚠️ only appears via the Alert Only/Soft display paths
+    string alert_filter_status = (enable_stats_filter and enable_stats) ? (current_signal_insufficient ? "⏳" : current_signal_passes_filter ? "✓" : "⚠️") : ""
 
     current_buy_level = f_signal_level(alert_buy_mtf, alert_buy_div, alert_buy_ext, filtered_buy_normal)
     prev_buy_level = f_signal_level(alert_buy_mtf[1], alert_buy_div[1], alert_buy_ext[1], show_normal_signals[1] and alert_buy_norm[1])

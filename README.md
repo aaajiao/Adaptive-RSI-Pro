@@ -117,9 +117,9 @@ With `Stats Mode = Ranking` and the default `Edge vs Baseline` gate, the panel l
 |-----|---------------|
 | **Z-Score** | Current RSI Z-Score and its approximate percentile (`≈P2`). The percentile label assumes a normal distribution — a display approximation, not an exact rank. |
 | **Percentile** | The actual bucketed percentile of RSI in the lookback window (P5/P10/P25/P50/P75/P90/P95/P99), with the matching σ range. |
-| **Signal** | Active signal icon + quality grade + filter mark, e.g. `🔥[A]✓`. Between signals it shows persistent state text such as `🔥持续` (extreme zone continues) or `超卖区` (in the normal oversold zone). |
+| **Signal** | Active signal icon + quality grade + filter mark, e.g. `🔥[A]✓`. The mark is three-state: `✓` enough samples and the quality gate passed (proven good), `⚠️` enough samples and the gate failed (**proven bad**), `⏳` not enough samples for a verdict (passed through or blocked per `Unproven Buckets`). Between signals it shows persistent state text such as `🔥持续` (extreme zone continues) or `超卖区` (in the normal oversold zone). |
 | **Status** | Current zone: `🟢 EXTREME OVERSOLD`, `🟡 OVERSOLD`, `⚪ NEUTRAL`, `🟠 OVERBOUGHT`, `🔴 EXTREME OVERBOUGHT`. |
-| **Gate** | Only with the stats filter enabled. The exact stats bucket the gate consults for the current (or prospective) signal and the verdict — the "why" behind the Signal row's `✓`/`⚠️`. `🔥[A]📈 n=2/20⏳` (gray) = the bucket has 2 of the 20 required lifetime samples: **not enough data, unproven — not proven bad**. With enough samples each quality path shows `actual→required` plus its own mark, e.g. `63→67%✗\|+1.1→0.4%✓` (win-rate edge fails, payoff edge passes → gate passes under `Either Edge`); the cell is green when the gate passes, orange when it fails. `—` = nothing to gate (neutral bar, or a pure-divergence `↗️`/`↘️` marker, which bypasses the gate). |
+| **Gate** | Only with the stats filter enabled. The exact stats bucket the gate consults for the current (or prospective) signal and the verdict — the "why" behind the Signal row's `✓`/`⏳`/`⚠️`. `🔥[A]📈 n=2/20⏳✓` = the bucket has 2 of the 20 required lifetime samples: **not enough data, unproven — not proven bad**; the trailing mark shows what `Unproven Buckets` did with it (`⏳✓` green = passed through under `Pass`, `⏳✗` gray = blocked under `Block (Legacy)`). With enough samples each quality path shows `actual→required` plus its own mark, e.g. `63→67%✗\|+1.1→0.4%✓` (win-rate edge fails, payoff edge passes → gate passes under `Either Edge`); the cell is green when the gate passes, orange when it fails. `—` = nothing to gate (neutral bar, or a pure-divergence `↗️`/`↘️` marker, which bypasses the gate). |
 | **Protection** | Weekly trend filter state — `✓` both directions allowed, `BUY✓` / `SELL✓` one direction allowed, `⚠️` both blocked, `OFF` disabled — plus the weekly RSI value and a volume icon (`📊↑` surge, `📊↓` low, `📊` normal). |
 | **Lookback** | `[Auto]` or `[Custom]` mode; the current adaptive sample window and its allowed range, e.g. `456(150-800)`. A trailing `↑` after the number means the spread-feedback boost is engaged (narrow RSI distribution → longer window). The three icons are health checks — sample coverage, distribution width, statistical validity — each `✅` (ok) or `⚠️` (degraded). |
 | **Normal** | Normal-signal mode `[Smart]`/`[On]`/`[Off]` and the current dynamic threshold, e.g. `⬆️1.50σ ✓` (active) or `1.50σ ✗` (suppressed by Smart mode), `—` when off. |
@@ -175,8 +175,8 @@ Left cell — `🌟[A]📈(28)✓`:
 - **Signal type emoji**: `🌟` MTF resonance, `💎` divergence + extreme, `🔥` extreme, `⬆️` normal. In this column the type emoji is *not* directional — direction comes only from the next element.
 - **`[A]`** — quality grade A–D.
 - **`📈`/`📉`** — buy or sell bucket.
-- **`(28)`** — effective sample count, after time decay.
-- **Reliability mark**: `✓` ≥ 20 effective samples, `⚠️` ≥ 5.
+- **`(28)`** — lifetime sample count (undecayed — the same `n` the `Min Samples` gate and the `Gate` row use).
+- **Reliability mark**: keyed on the lifetime count — `✓` ≥ `Min Samples` (enough data for the gate to judge), `⚠️` ≥ 5 but below `Min Samples` (numbers shown but unproven), `❌` < 5 (no usable numbers; only visible in `Signal Type`/`Grade` modes, since Ranking hides such rows). Time decay does not touch this mark — the effective count has a hard steady-state cap (about `1/(1−0.5^(spacing/half-life))`), so judging the mark on it would leave sparse buckets stuck at `⚠️` forever.
 
 Right cell, first line — `+3.2%|71%`:
 
@@ -195,7 +195,7 @@ Think of the win rate as an exam score and the baseline as the class average for
 
 On a rising asset, randomly buying might win 62% of the time (tailwind), while randomly selling is right only 38% of the time (headwind). A 68% buy win rate and a 46% sell win rate are therefore **not directly comparable**. Run the numbers: out of 100 random buys you'd win 62; the `🔥[B]📈` bucket at 68% wins only 6 more (+5.7pp). Out of 100 random sells you'd be right 38 times; the `💎[B]📉` bucket at 46% is right 8 more times (+7.9pp). The "worse-looking" sell bucket actually carries more information.
 
-If the leaderboard ranked by absolute win rate, every buy bucket on an uptrending asset would crowd the top and every sell bucket would sink to the bottom — the board would be measuring "this stock is going up", not "which signal works". (This was a real flaw in v7.3, and the same accounting issue caused sell alerts to be systematically filtered out.) Edge sorting uses the same yardstick as the alert gate: the gate requires a lifetime sample count ≥ `Min Samples` (default 20) **and** a quality edge — a win-rate edge of at least +5pp (by default) or, since v7.5 under the default `Payoff Gate = Either Edge`, a payoff edge ≥ `Min Payoff Edge %` instead.
+If the leaderboard ranked by absolute win rate, every buy bucket on an uptrending asset would crowd the top and every sell bucket would sink to the bottom — the board would be measuring "this stock is going up", not "which signal works". (This was a real flaw in v7.3, and the same accounting issue caused sell alerts to be systematically filtered out.) Edge sorting uses the same yardstick as the alert gate: with a lifetime sample count ≥ `Min Samples` (default 20) the gate requires a quality edge — a win-rate edge of at least +5pp (by default) or, since v7.5 under the default `Payoff Gate = Either Edge`, a payoff edge ≥ `Min Payoff Edge %` instead; below `Min Samples` there is no verdict and `Unproven Buckets` decides (default `Pass`: the signal flows, marked `⏳`).
 
 #### Win-rate edge vs payoff edge
 
@@ -313,13 +313,13 @@ Every signal carries a grade from a multi-factor score:
 
 | Mark | Meaning | Notes |
 |------|---------|-------|
-| ✓ | Passed the stats filter | Appears in dashboard signal rows and alert messages |
-| ⚠️ | Failed the stats filter but still shown | Common in `Alert Only` or `Soft` mode |
+| ✓ | Enough samples, quality gate passed | Proven good — appears in dashboard signal rows and alert messages |
+| ⚠️ | Enough samples, quality gate failed | **Proven bad** — shown in `Alert Only` or `Soft` mode; never alerts |
+| ⏳ | Bucket lacks samples — no verdict | Unproven, not proven bad. Whether the signal still alerts depends on `Unproven Buckets` (`Pass` default: yes, marked `⏳`; `Block (Legacy)`: no). In the Gate row, `n=2/20⏳✓`/`⏳✗` shows the count and the resulting verdict |
 | 🚫 | Signal exists but is hidden | Caused by Smart normal-signal hiding, trend protection, or `Hard` filtering |
-| ⏳ | Gate bucket lacks samples | Gate row only — `n=2/20⏳` means 2 of the required 20 lifetime samples; the signal is unproven, not proven bad |
 | (none) | Not a trigger bar, or stats filtering disabled | E.g. persistent state text such as `🔥持续` |
 
-> Alerts fire only for signals that pass the stats filter — alert text shows `✓` or no mark, never `⚠️`.
+> Alerts fire only for signals that pass the stats filter — alert text shows `✓` (proven) or `⏳` (unproven, passed through under the default `Unproven Buckets = Pass`), never `⚠️`.
 
 ---
 
@@ -382,10 +382,10 @@ This is what makes the `✓` mark mean something. In plain terms:
 
 **Independent sampling.** `Independent Samples` (default on) makes each bucket wait at least `Forward Bars` between recorded samples, so overlapping forward-return windows can't inflate the sample count. Off restores the legacy overlapping behavior.
 
-**The gate.** A signal passes when both hold:
+**The gate.** With enough data the quality criterion decides; without enough data a policy decides:
 
-1. Lifetime samples ≥ `Min Samples` (default 20) — required in **every** mode and combination; nothing below substitutes for sample sufficiency — and
-2. The quality criterion.
+1. **Sample sufficiency**: lifetime samples ≥ `Min Samples` (default 20). When the bucket is *below* this, the quality paths have no verdict and **`Unproven Buckets`** decides instead: **`Pass`** (default) lets the signal through, marked `⏳` — insufficient data means *unproven, not proven bad* — while **`Block (Legacy)`** blocks it (the original behavior, under which fine-grained buckets — 32 in `Ranking` mode — can keep every signal on a fresh chart blocked for years). With `Pass`, the filter's job reduces to what it can actually justify: blocking signals **proven** not to work. The protection grows in as data accumulates; if you want the conservative behavior, set `Block (Legacy)`, or speed up sample accumulation by switching `Stats Mode` to `Signal Type` (8 buckets fill roughly 4× faster than 32).
+2. With sufficient samples, the **quality criterion** decides — `⚠️` therefore always means *proven bad*, never *no data*.
 
 The quality criterion has two possible paths:
 
@@ -408,9 +408,9 @@ How the two paths combine is set by **`Payoff Gate`** (options `Off` / `Either E
 | `Soft` | Failed signals downgraded visually | Filtered |
 | `Hard` | Failed signals hidden | Filtered |
 
-> **Restoring v7.4 gate behavior**: set `Payoff Gate = Off`. The gate decision is then bit-identical to v7.4 (the ranking panel's payoff numbers and the "No timing edge" hint are display-only and remain visible in Edge mode).
+> **Restoring v7.4 gate behavior**: set `Payoff Gate = Off` **and** `Unproven Buckets = Block (Legacy)`. The gate decision is then bit-identical to v7.4 (the ranking panel's payoff numbers and the "No timing edge" hint are display-only and remain visible in Edge mode).
 >
-> **Restoring v7.3 stats behavior**: set `Stats Half-Life Bars = 0`, turn `Independent Samples` **off**, and set `Gate Mode = Absolute (Legacy)` (which by itself deactivates the payoff path, whatever `Payoff Gate` says). This restores the legacy stats-engine arithmetic exactly. Two v7.4 signal-level changes have **no revert switch** — the lookback spread-factor hysteresis band (engages below a spread of 18, releases above 22) and the cooldown stale-level reset — so the recorded signal stream, and therefore gate decisions, may still differ slightly from v7.3.
+> **Restoring v7.3 stats behavior**: set `Stats Half-Life Bars = 0`, turn `Independent Samples` **off**, set `Unproven Buckets = Block (Legacy)`, and set `Gate Mode = Absolute (Legacy)` (which by itself deactivates the payoff path, whatever `Payoff Gate` says). This restores the legacy stats-engine arithmetic exactly. Two v7.4 signal-level changes have **no revert switch** — the lookback spread-factor hysteresis band (engages below a spread of 18, releases above 22) and the cooldown stale-level reset — so the recorded signal stream, and therefore gate decisions, may still differ slightly from v7.3.
 
 **Cooldown & upgrades.** High-priority signals (🌟/💎/🔥/❄️) use a 1-bar cooldown. Normal signals use `Cooldown Mode`: `Smart` (the default — 2–8 bars by volatility, shortened by one when the market is active) or `Fixed` (a fixed bar count, 5 by default). A higher-priority same-side signal bypasses cooldown — `⬆️ → 🔥 → 🌟` can fire on consecutive bars. The upgrade exemption only compares against a previous signal that is *still cooling down*; expired levels count as 0, so a normal signal can never use its own stale level to bypass its own cooldown.
 
@@ -449,7 +449,7 @@ The harness adds three rows to the dashboard:
 
 - `Harness` — current `Trade Side` and `Backtest Mode`
 - `Tester` — how to read `All`
-- `Production Gate` — the actual stats bucket selected by `Stats Mode` for the active signal, with its sample count, average return, adjusted win rate and — in `Edge vs Baseline` mode — its shrunk payoff edge, e.g. `EXT[A](12) +2.8%|67%|+1.2%` in `Ranking` mode (`TYPE:EXT` in `Signal Type` mode, `GRADE[A]` in `Grade` mode; `Idle` when no signal is active; under `Absolute (Legacy)` the payoff suffix is omitted).
+- `Production Gate` — the actual stats bucket selected by `Stats Mode` for the active signal, with its lifetime sample count (a trailing `⏳` marks a count below `Min Samples`), average return, adjusted win rate and — in `Edge vs Baseline` mode — its shrunk payoff edge, e.g. `EXT[A](12⏳) +2.8%|67%|+1.2%` in `Ranking` mode (`TYPE:EXT` in `Signal Type` mode, `GRADE[A]` in `Grade` mode; `Idle` when no signal is active; under `Absolute (Legacy)` the payoff suffix is omitted).
 
 The indicator's own `Gate` row also appears (inherited from the production dashboard). The two differ: `Gate` tracks the prospective signal on every bar, including persistent zone states, and shows the gate verdict against its thresholds; `Production Gate` only populates on actual trigger bars (`Idle` otherwise) and respects `Trade Side` when choosing the direction.
 
