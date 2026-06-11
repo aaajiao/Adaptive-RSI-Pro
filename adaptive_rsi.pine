@@ -454,9 +454,11 @@ method get_winrate(SignalStats this) =>
     this.count > 0 ? this.wins / this.count * 100 : 0.0
 
 // 可靠性标记按未衰减的终身样本数（与 Min Samples 门槛同口径）：有效样本数有稳态上限，稀疏桶若按有效样本数判断将永远到不了 ✓
+// 中间档用 ⏳（未经证明）而非 ⚠️——全面板词汇表统一：⚠️ 只表示"验证过、确实差"，⏳ 表示"样本不足、无结论"
 // Reliability mark uses the undecayed lifetime count (same basis as the Min Samples gate): the effective count has a steady-state cap, so sparse buckets could never reach ✓ on it
+// The middle tier is ⏳ (unproven), not ⚠️ — panel-wide vocabulary: ⚠️ exclusively means "proven bad", ⏳ means "not enough samples, no verdict"
 method get_reliability(SignalStats this) =>
-    this.lifetime_count >= stats_min_samples ? "✓" : this.lifetime_count >= 5 ? "⚠️" : "❌"
+    this.lifetime_count >= stats_min_samples ? "✓" : this.lifetime_count >= 5 ? "⏳" : "❌"
 
 method get_adjusted_winrate_vs(SignalStats this, float prior) =>
     // 样本充分性按终身样本数判断；衰减后的有效样本数只决定置信度（有效样本越少越贴近先验）

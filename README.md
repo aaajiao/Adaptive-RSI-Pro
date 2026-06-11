@@ -154,9 +154,9 @@ A typical panel in the default `Edge vs Baseline` mode:
                    (+7.9pp|+2.7%)
 🔥[B]📈(35)✓       +1.6%|68%
                    (+5.7pp|+0.7%)
-⬆️[C]📉(9)⚠️       +0.6%|39%
+⬆️[C]📉(9)⏳       +0.6%|39%
                    (+1.2pp|+0.7%)
-🔥[D]📈(12)⚠️      -0.8%|60%
+🔥[D]📈(12)⏳      -0.8%|60%
                    (-2.4pp|-1.0%)
 ```
 
@@ -176,7 +176,7 @@ Left cell — `🌟[A]📈(28)✓`:
 - **`[A]`** — quality grade A–D.
 - **`📈`/`📉`** — buy or sell bucket.
 - **`(28)`** — lifetime sample count (undecayed — the same `n` the `Min Samples` gate and the `Gate` row use).
-- **Reliability mark**: keyed on the lifetime count — `✓` ≥ `Min Samples` (enough data for the gate to judge), `⚠️` ≥ 5 but below `Min Samples` (numbers shown but unproven), `❌` < 5 (no usable numbers; only visible in `Signal Type`/`Grade` modes, since Ranking hides such rows). Time decay does not touch this mark — the effective count has a hard steady-state cap (about `1/(1−0.5^(spacing/half-life))`), so judging the mark on it would leave sparse buckets stuck at `⚠️` forever.
+- **Reliability mark**: keyed on the lifetime count — `✓` ≥ `Min Samples` (enough data for the gate to judge), `⏳` ≥ 5 but below `Min Samples` (numbers shown but unproven — expect this on most rows of a young chart; it is honest, not alarming), `❌` < 5 (no usable numbers; only visible in `Signal Type`/`Grade` modes, since Ranking hides such rows). The panel-wide vocabulary holds here too: `⚠️` is reserved for *proven bad* and never appears in this position. Time decay does not touch this mark — the effective count has a hard steady-state cap (about `1/(1−0.5^(spacing/half-life))`), so judging the mark on it would leave sparse buckets stuck below `✓` forever.
 
 Right cell, first line — `+3.2%|71%`:
 
@@ -315,7 +315,7 @@ Every signal carries a grade from a multi-factor score:
 |------|---------|-------|
 | ✓ | Enough samples, quality gate passed | Proven good — appears in dashboard signal rows and alert messages |
 | ⚠️ | Enough samples, quality gate failed | **Proven bad** — shown in `Alert Only` or `Soft` mode; never alerts |
-| ⏳ | Bucket lacks samples — no verdict | Unproven, not proven bad. Whether the signal still alerts depends on `Unproven Buckets` (`Pass` default: yes, marked `⏳`; `Block (Legacy)`: no). In the Gate row, `n=2/20⏳✓`/`⏳✗` shows the count and the resulting verdict |
+| ⏳ | Bucket lacks samples — no verdict | Unproven, not proven bad. Whether the signal still alerts depends on `Unproven Buckets` (`Pass` default: yes, marked `⏳`; `Block (Legacy)`: no). In the Gate row, `n=2/20⏳✓`/`⏳✗` shows the count and the resulting verdict; in stats/ranking rows it is the middle reliability tier (≥ 5 but below `Min Samples`) |
 | 🚫 | Signal exists but is hidden | Caused by Smart normal-signal hiding, trend protection, or `Hard` filtering |
 | (none) | Not a trigger bar, or stats filtering disabled | E.g. persistent state text such as `🔥持续` |
 
