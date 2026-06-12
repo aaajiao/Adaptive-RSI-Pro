@@ -156,6 +156,17 @@ RSI_stock/
   1500-bar half-life), so keying the mark on it left every sparse bucket
   permanently below `✓`. Ranking's has-data visibility cut (effective ≥ 5) is
   unchanged.
+- Post-v7.5 signal-model fix (user-approved deviation from the v7.2 baseline,
+  no revert switch — it is a correctness fix, like the v7.3 ones): the MTF
+  `tf*_is_current` dedupe now compares `f_tf_seconds(active_tf*)` against
+  `chart_tf_seconds` instead of display strings. On daily charts
+  `timeframe.period` returns `"1D"` while the auto TF3 string is `"D"`, so
+  the string compare never matched — the chart's own status was counted three
+  times (weight 1 as current + weight 2 as TF3), the resonance denominator
+  showed 4 instead of 3, and resonance triggered on "daily extreme + any one
+  lower TF" instead of the intended all-three-agree rule. Daily-chart 🌟
+  signals are now stricter/rarer; intraday round TFs (1h/4h) already matched
+  and are unchanged. The unused `current_tf_display` was removed.
 - `Stats Mode` still selects whether the gate reads Signal Type, Grade, or
   Ranking buckets.
 
@@ -201,18 +212,18 @@ RSI_stock/
 | Dynamic lookback | `adaptive_rsi.pine:123-181` | Adaptive sample-depth logic |
 | Spread hysteresis | `adaptive_rsi.pine:163-195` | Boost state machine + `prev_spread` feedback update |
 | Weekly protection | `adaptive_rsi.pine:237-266` | Confirmed weekly trend filter |
-| MTF analysis | `adaptive_rsi.pine:279-410` | TF selection, lower-TF aggregation, availability flags (333-388) |
-| Statistics types | `adaptive_rsi.pine:411-591` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate, shrunk payoff edge, `f_stats_required_winrate` clamp, `f_stats_no_timing_edge` |
-| Signal detection | `adaptive_rsi.pine:758-794` | Raw signals and cooldown state |
-| Consolidated signals | `adaptive_rsi.pine:796-891` | Priority merge, upgrade exemption with expired-level reset |
-| Statistics engine | `adaptive_rsi.pine:1006-1052` | Forward-return bookkeeping, baseline sampling, independent sampling |
-| Stats filter | `adaptive_rsi.pine:1053-1217` | Edge-vs-baseline / legacy gate, payoff-edge path, stats-mode-aware buckets, hidden-state detection |
-| Dashboard | `adaptive_rsi.pine:1303-1603` | Main indicator UI incl. Gate row (helpers 1314-1329, render 1420-1455), MTF availability warning, `Base→Req` header, regime-hint rows, edge-sorted ranking with payoff column |
-| Alerts | `adaptive_rsi.pine:1604-1690` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
+| MTF analysis | `adaptive_rsi.pine:279-411` | TF selection, lower-TF aggregation, availability flags (333-387), seconds-based current-TF dedupe (389-393) |
+| Statistics types | `adaptive_rsi.pine:412-592` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate, shrunk payoff edge, `f_stats_required_winrate` clamp, `f_stats_no_timing_edge` |
+| Signal detection | `adaptive_rsi.pine:759-795` | Raw signals and cooldown state |
+| Consolidated signals | `adaptive_rsi.pine:797-892` | Priority merge, upgrade exemption with expired-level reset |
+| Statistics engine | `adaptive_rsi.pine:1007-1053` | Forward-return bookkeeping, baseline sampling, independent sampling |
+| Stats filter | `adaptive_rsi.pine:1054-1218` | Edge-vs-baseline / legacy gate, payoff-edge path, stats-mode-aware buckets, hidden-state detection |
+| Dashboard | `adaptive_rsi.pine:1304-1604` | Main indicator UI incl. Gate row (helpers 1315-1330, render 1421-1456), MTF availability warning, `Base→Req` header, regime-hint rows, edge-sorted ranking with payoff column |
+| Alerts | `adaptive_rsi.pine:1605-1691` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
 | Harness inputs | `adaptive_rsi_strategy_harness.pine:85-89` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
 | Harness risk direction | `adaptive_rsi_strategy_harness.pine:101-107` | `strategy.risk.allow_entry_in` wiring |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1522-1544` | `Harness`, `Tester`, `Production Gate` (payoff suffix in Edge mode) |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1779-1844` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1523-1545` | `Harness`, `Tester`, `Production Gate` (payoff suffix in Edge mode) |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1780-1845` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
 | Generator anchors | `tools/generate_strategy_harness.py` | Anchor names, harness-owned snippets, `--check` mode |
 | Tooling tests | `tests/` | Generator golden/anchor tests, linter rule tests |
 
@@ -291,8 +302,10 @@ exactly once.
    v7.2-freeze applied to v7.3 and was lifted by the user for v7.4/v7.5,
    which deliberately upgraded the stats engine (time decay, independent
    sampling, edge-vs-baseline gate, payoff-edge path, unproven-bucket
-   pass-through). Further signal-model or stats-engine changes still need an
-   explicit user request, and the legacy revert switches
+   pass-through). The post-v7.5 MTF dedupe fix (seconds-based `tf*_is_current`,
+   user-requested) is a sanctioned correctness fix to the baseline, like the
+   v7.3 ones — it has no revert switch. Further signal-model or stats-engine
+   changes still need an explicit user request, and the legacy revert switches
    (`stats_half_life_bars = 0`, `Independent Samples` off,
    `Absolute (Legacy)` gate, `Payoff Gate = Off` plus
    `Unproven Buckets = Block (Legacy)` for the v7.4 gate) must keep restoring

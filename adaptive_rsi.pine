@@ -371,7 +371,6 @@ f_tf_display(_tf) =>
 mtf_tf1_display = f_tf_display(active_tf1)
 mtf_tf2_display = f_tf_display(active_tf2)
 mtf_tf3_display = f_tf_display(active_tf3)
-current_tf_display = f_tf_display(timeframe.period)
 
 [mtf_status_tf1, mtf_avail_tf1] = f_mtf_status(active_tf1)
 [mtf_status_tf2, mtf_avail_tf2] = f_mtf_status(active_tf2)
@@ -387,9 +386,11 @@ mtf_data_ok_tf3 = not enable_mtf or mtf_avail_tf3
 mtf_data_warning = not (mtf_data_ok_tf1 and mtf_data_ok_tf2 and mtf_data_ok_tf3)
 status_current = f_status(rsi, rsi_p10, rsi_p90)
 
-tf1_is_current = mtf_tf1_display == current_tf_display
-tf2_is_current = mtf_tf2_display == current_tf_display
-tf3_is_current = mtf_tf3_display == current_tf_display
+// 去重必须按秒数比较：日线图上 timeframe.period 返回 "1D" 而自动 TF3 是 "D"，字符串比较会失败，导致图表自身状态被重复计权、共振条件被放宽（日线+任一低周期 即触发，而非三周期全部一致）
+// Dedupe must compare seconds: on daily charts timeframe.period returns "1D" while the auto TF3 string is "D", so a string compare fails — the chart's own status gets double-weighted and resonance loosens (daily + any one lower TF instead of all three agreeing)
+tf1_is_current = f_tf_seconds(active_tf1) == chart_tf_seconds
+tf2_is_current = f_tf_seconds(active_tf2) == chart_tf_seconds
+tf3_is_current = f_tf_seconds(active_tf3) == chart_tf_seconds
 
 valid_tf_count = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 1)
 

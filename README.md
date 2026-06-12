@@ -98,8 +98,8 @@ With `Stats Mode = Ranking` and the default `Edge vs Baseline` gate, the panel l
 │ Lookback [Auto]      456↑(150-800) ✅✅✅   │
 │ Normal [Smart]       ⬆️1.50σ ✓             │
 ├────────────────────────────────────────────┤
-│ MTF 60|240|D         🟢|⚪|–               │
-│ Resonance            🟢 3/4 ⚠️             │
+│ MTF 1h|4h|D          🟢|–|🟢               │
+│ Resonance            ⚪ 2/3 ⚠️             │
 │ Divergence [Normal]  🟢 BULL (5/60)        │
 ├────────────────────────────────────────────┤
 │ ── RANKING ──        (20b) Base→Req        │
@@ -124,7 +124,7 @@ With `Stats Mode = Ranking` and the default `Edge vs Baseline` gate, the panel l
 | **Lookback** | `[Auto]` or `[Custom]` mode; the current adaptive sample window and its allowed range, e.g. `456(150-800)`. A trailing `↑` after the number means the spread-feedback boost is engaged (narrow RSI distribution → longer window). The three icons are health checks — sample coverage, distribution width, statistical validity — each `✅` (ok) or `⚠️` (degraded). |
 | **Normal** | Normal-signal mode `[Smart]`/`[On]`/`[Off]` and the current dynamic threshold, e.g. `⬆️1.50σ ✓` (active) or `1.50σ ✗` (suppressed by Smart mode), `—` when off. |
 | **MTF** | Per-timeframe RSI status: `🟢` oversold, `🔴` overbought, `⚪` neutral, `–` no usable data for that timeframe. |
-| **Resonance** | How many timeframes agree out of those with valid data, e.g. `🟢 3/4`. A trailing `⚠️` means at least one timeframe has no data (display-only warning; resonance math is unchanged). |
+| **Resonance** | How many timeframes agree out of those with valid data, e.g. `🟢 3/4`. When one of the configured timeframes is the chart's own timeframe (e.g. `D` on a daily chart) it is counted only once — the denominator becomes 3 and resonance then requires all three distinct timeframes to agree. A trailing `⚠️` means at least one timeframe has no data (display-only warning; resonance math is unchanged). |
 | **Divergence** | Active divergence mode (auto-selected or custom), `🟢 BULL` / `🔴 BEAR` / `—`, and the (lookback/range) parameters in use. |
 
 ### Mobile mode
