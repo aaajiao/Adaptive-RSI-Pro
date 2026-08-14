@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Pine Script Lint](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml/badge.svg)](https://github.com/aaajiao/Adaptive-RSI-Pro/actions/workflows/pine-lint.yml)
 
-**Pine Script v6** | **v7.5**
+**Pine Script v6** | **v7.6**
 
 一个把超买/超卖阈值适配到每只资产自身统计分布的 RSI：给每个信号打分，跟踪它们在已加载历史中的表现，再按可配置的样本与质量规则门控警报。
 
@@ -93,10 +93,9 @@
 │ Signal                🔥 EXT BUY                              │
 │                       [Score A] ✗                              │
 │ RSI Zone              🟢 EXTREME OVERSOLD                    │
-│ Stats Filter          🔥 EXT BUY [Score A]                    │
-│ n=34                  BLOCK · OR (0/2)                       │
-│                       WR 56.00%<61.10% ✗                    │
-│                       Avg edge +0.10%<+0.40% ✗             │
+│ Stats Filter                 BLOCK · OR (0/2)                │
+│ 🔥 EXT BUY → Type          WR edge −0.10pp ✗              │
+│ n=18 · target 14             Avg edge +0.10% ✗             │
 │ Market Context        Trend Moderate: Both allowed              │
 │                       W-RSI 45                                  │
 │                       Volume: Surge (1.8×)                    │
@@ -112,15 +111,15 @@
 │                       Pivot 10 · Max gap 120 bars              │
 ├──────────────────────────────────────────────────────────────┤
 │ ── WR-EDGE RANK ──    Avg edge min +0.4%                   │
-│ 20-bar forward        BUY WR 56.10→61.10%                    │
-│ OR gate               SELL WR 44.00→49.00%                   │
+│ Outcome +20 bars      BUY WR 56.10→61.10%                    │
+│ OR · Adaptive n 8–16  SELL WR 44.00→49.00%                   │
 │ Edge Summary          SELL: no supported edge                │
-│ 🌟 MTF BUY [Score B] PASS · OR (2/2)                        │
-│ n=28                  WR 71.00% · edge +8.60pp ✓           │
-│                       Avg +3.2% · edge +2.30% ✓            │
-│ 🔥 EXT BUY [Score A] BLOCK · OR (0/2)                       │
-│ n=34                  WR 56.00% · edge -0.10pp ✗           │
-│                       Avg +6.1% · edge +0.10% ✗            │
+│ 🌟 MTF               PASS · OR (2/2)                        │
+│ BUY [Score B]         WR edge +8.60pp ✓                       │
+│ n=18 · target 13      Avg edge +2.30% ✓                      │
+│ 🔥 EXT               BLOCK · OR (0/2)                       │
+│ BUY [Score A]         WR edge −0.10pp ✗                       │
+│ n=14 · target 12      Avg edge +0.10% ✗                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -133,7 +132,7 @@
 | **RSI Position** | 一行完成位置解读，不再重复显示两种近似百分位。`Z -2.15σ` 是当前 RSI 距均值的标准差距离；`History ≤P5` 是它在当前回看窗口内的经验排名区间。其他区间为 `P5–P10`、`P10–P25`、`P25–P50`、`P50–P75`、`P75–P90`、`P90–P95`、`>P95`。`History` 刻意写成区间，不冒充精确百分位。 |
 | **Signal** | 只显示当前 K 线上的事件。Full 模式第一行是图标 + 类型 + 方向，第二行是 `[Score A]` 和可能的门槛标记，如 `🔥 EXT BUY` / `[Score A] ✓`。Score 只是当前 setup score，不是历史 edge 结论，也不是交易许可。无事件时显示 `—`。 |
 | **RSI Zone** | 持续的 RSI 区域状态：`🟢 EXTREME OVERSOLD`、`🟡 OVERSOLD`、`⚪ NEUTRAL`、`🟠 OVERBOUGHT`、`🔴 EXTREME OVERBOUGHT`。它是上下文，不代表新信号。 |
-| **Stats Filter** | 只在当前真实信号事件出现时显示。左格分为 `Stats Filter` / 桶标签 / 终身 `n`，只有 `n` 这行可能带 `· stale`。右格先给最终动作和逻辑：`PASS|BLOCK · OR (k/2)`、`AND (k/2)`、`WR ONLY` 或 `ABS WR`，再分别列出胜率与平均结果路径；`k/2` 是两条证据路径中达标的数量。样本不足时改写 `ALLOW|BLOCK · UNPROVEN` / `Policy decision only` / `No quality verdict`，表示是策略而非 edge 估计在决定。纯背离写 `DISPLAY ONLY / No stats bucket / Not an alert signal`；无当前事件时整行省略。成熟统计格统一用白色，因为同一 cell 可能同时有 ✓/✗；`stale` 黄色，未成熟但放行为黄色，未成熟且拦截为灰色，filter off/仅显示为灰色。Signal 行仍可用总体动作颜色。 |
+| **Stats Filter** | 只在当前真实信号事件出现时显示。左格显示证据来源、桶标签，以及门槛实际使用的样本标签。已就绪 Edge 的右格用三个短行：`PASS|BLOCK · OR|AND (k/2)`、`WR edge …`、`Avg edge …`；waiting 和 stale 状态仍保持两行。默认 `Sample Policy = Adaptive` 且 `Stats Mode = Ranking` 时，左格三行 `Stats Filter` / `🔥 EXT BUY → Type` / 父桶样本标签表示精确的“类型 × score × 方向”桶尚未就绪，因此门槛改用同方向 Signal Type 父桶及其目标；箭头就是 fallback 标记。终身样本不足时写 `ALLOW|BLOCK · WAITING / No quality verdict`；Adaptive 证据陈旧时写 `ALLOW|BLOCK · STALE / Need fresh evidence`。动作来自 `Unproven Buckets`，不是 edge 估计。纯背离写 `DISPLAY ONLY / Not an alert signal`；无当前事件时整行省略。可判定格统一用白色，因为同一 cell 可能同时有 ✓/✗；按策略放行的 waiting/stale 为黄色，按策略拦截为灰色，Fixed legacy 的 stale 为黄色，filter off/仅显示为灰色。 |
 | **Market Context** | 用文字说明周线趋势保护（`Both allowed`、`BUY only`、`SELL only`、`Both blocked` 或 `Trend: Off`）、已确认周线 RSI，以及成交量评分状态（`Surge`、`Low`、`Normal` 或 `score off`）。白色表示双向可用或保护关闭，黄色表示只开放一个方向，红色表示双向拦截。这些是信号处理与评分上下文，不是入场指令。 |
 | **Lookback** | 左格把模式与允许窗口分层，如 `Lookback [Auto]` / `Allowed 59–400 bars`；`[Custom]` 使用固定窗口措辞。右格显示当前值和健康状态，如 `74 bars` / `Healthy`，问题时则直接用自然语言说明；多个问题可用第三行 cell 文本。 |
 | **Normal Signals** | `[Smart]`、`[On]` 或 `[Off]`；右格把运行状态与对称阈值分层，如 `Active` / `Threshold ±1.50σ`。 |
@@ -160,66 +159,101 @@
 
 ```text
 ── WR-EDGE RANK ──   Avg edge min +0.4%
-20-bar forward          BUY WR 56.10→61.10%
-OR gate                 SELL WR 44.00→49.00%
-🌟 MTF BUY [Score B]    PASS · OR (2/2)
-n=28                    WR 71.00% · edge +8.60pp ✓
-                        Avg +3.2% · edge +2.30% ✓
-🔥 EXT BUY [Score A]    BLOCK · OR (0/2)
-n=34                    WR 56.00% · edge -0.10pp ✗
-                        Avg +6.1% · edge +0.10% ✗
-💎 DIV SELL [Score B]   ALLOW · UNPROVEN POLICY
-n=9/20⏳                 No quality verdict before n=20
+Outcome +20 bars        BUY WR 56.10→61.10%
+OR · Adaptive n 8–16    SELL WR 44.00→49.00%
+🌟 MTF                    PASS · OR (2/2)
+BUY [Score B]              WR edge +8.60pp ✓
+n=18 · target 13          Avg edge +2.30% ✓
+🔥 EXT                    BLOCK · OR (0/2)
+BUY [Score A]              WR edge −0.10pp ✗
+n=14 · target 12          Avg edge +0.10% ✗
+💎 DIV                    WAIT · EXACT
+SELL [Score B]             Gate → Type
+n=9/13⏳                  n=18 · target 12
 ```
 
 #### 表头
 
-左侧表头 cell 依次是 `WR-EDGE RANK` / `20-bar forward` / `OR gate`；右侧是 `Avg edge min +0.4%` / BUY 胜率基准→最低要求 / SELL 胜率基准→最低要求。这是同一 table row 里的三行 cell 文本。
+左侧表头 cell 依次是 `WR-EDGE RANK` / `Outcome +20 bars` / `OR · Adaptive n 8–16`；右侧是 `Avg edge min +0.4%` / BUY 胜率基准→最低要求 / SELL 胜率基准→最低要求。这是同一 table row 里的三行 cell 文本。默认 `Evidence Reference = 20` 时，`Adaptive n 8–16` 就是实际动态目标范围。关闭 `Independent Samples` 后显示 `Adaptive guard n 20`；`Sample Policy = Fixed (Legacy)` 则显示 `Fixed target n 20`。
 
-`20-bar forward` 表示每个样本衡量信号后 **20 根 K 线**的方向归一化结果（`Forward Bars`，默认 20）。`BUY WR 56.10→61.10%` 表示买方向无条件基准胜率 56.10%，胜率路径最低要求 61.10%。要求 = `基准 + (Min Adjusted WinRate − 50)`，默认加 5 个百分点，再钳制在 25–90%。`SELL WR 44.00→49.00%` 同理。`Avg edge min +0.4%` 是独立的收益 edge 最低要求。
+`Outcome +20 bars` 表示每个样本衡量信号后 **20 根 K 线**的方向归一化结果（`Forward Bars`，默认 20）。它是结果观察窗口，不是样本数量要求。`BUY WR 56.10→61.10%` 表示买方向无条件基准胜率 56.10%，胜率路径最低要求 61.10%。要求 = `基准 + (Min Adjusted WinRate − 50)`，默认加 5 个百分点，再钳制在 25–90%。`SELL WR 44.00→49.00%` 同理。`Avg edge min +0.4%` 是独立的收益 edge 最低要求。
 
-表头最后一行直接写当前规则：`OR gate` 对应 `Either Edge`，`AND gate` 对应 `Both Edges`，关闭收益门槛时写 `WR-only gate`。`Enable Stats Filter` 关闭时则直接写 `Filter off`，右侧表头仍保留配置阈值作为参考。
+表头最后一行直接写当前规则：`OR` 对应 `Either Edge`，`AND` 对应 `Both Edges`，关闭收益门槛时写 `WR only`。`Enable Stats Filter` 关闭时则直接写 `Filter off`，右侧表头仍保留配置阈值作为参考。
 
 `Absolute (Legacy)` 下标题改为 `WIN-RATE RANK`，左格写 `Absolute WR gate`，右格写 `Minimum WR 55.00%`。该模式使用固定绝对胜率门槛，不显示基准推导值。
 
 #### 逐行拆解
 
-左格——`🔥 EXT BUY [Score A]` / `n=34`：
+左格——`🔥 EXT` / `BUY [Score A]` / `n=14 · target 12`：
 
-- **类型和方向直接写明**：`MTF`、`DIV`、`EXT` 或 `NORMAL`，后接 `BUY` 或 `SELL`。图标只是视觉速记，例如卖出极端为 `❄️ EXT SELL`，卖出普通为 `⬇️ NORMAL SELL`。
-- **`[Score A]`** 是当前 setup score 的 A–D 档位，不是该桶的历史 edge 结论，也不是交易许可。
-- **`n=28`** 是不衰减的终身样本数，表示已达到 `Min Samples`。它只说明样本成熟度，不代表质量判定通过。
-- **`n=9/20⏳`** 表示终身样本 9 个、要求 20 个。`⏳` 是唯一的样本成熟度标记；成熟桶只显示 `n=...`，不再附加勾号。时间衰减不改变这个显示数字或成熟门槛。
-- **`n=28 · stale`** 可能出现在 `Signal Type` 或 `Grade`：终身样本已成熟，但衰减后的有效权重低于 5。`stale` 只留在左侧样本标签上；Ranking 会隐藏有效权重低于 5 的桶。
+- **类型和方向分行写明**：第一行是 `MTF`、`DIV`、`EXT` 或 `NORMAL`，第二行以 `BUY` 或 `SELL` 开头。图标只是视觉速记，例如卖出极端为 `❄️ EXT` / `SELL [Score A]`，卖出普通为 `⬇️ NORMAL` / `SELL [Score D]`。
+- **`[Score A]`** 保留在方向行，表示当前 setup score 的 A–D 档位，不是该桶的历史 edge 结论，也不是交易许可。
+- **`n=14 · target 12`** 是已就绪的 Adaptive 标签：不衰减终身样本 14，当前桶目标 12。达到后仍显示目标，因为不同桶可以有不同目标。
+- **`n=9/13⏳`** 表示终身样本 9，当前 Adaptive 目标 13；`⏳` 表示该精确桶暂不能发布质量结论。
+- **`n=18 · eff 3.7<5⏳`** 表示终身数已达当前目标，但衰减后有效权重不足 5。Adaptive 将它视为 stale，不能发布结论。Ranking 会隐藏有效权重低于 5 的行，因此这种标签只会出现在当前 `Stats Filter`、Signal Type 或 Setup Score 视图。
+- `Fixed (Legacy)` 下，已就绪桶只写 `n=28`；未就绪格式为 `n=当前/B⏳`，其中 B 是固定 `Evidence Reference`；`n=28 · stale` 保留旧版仅按终身数发布结论的行为。
 
 右格第一行——`BLOCK · OR (0/2)`：
 
-- **`PASS` / `BLOCK`** 是成熟桶在当前设置下的最终门槛动作。
+- **`PASS` / `BLOCK`** 是可判定证据在当前设置下的最终门槛动作。
 - **`OR (0/2)`** 表示 `Either Edge` 启用，两条证据路径都没达标。`OR (1/2)` 和 `OR (2/2)` 都通过；`Both Edges` 下只有 `AND (2/2)` 通过。
 - **`WR ONLY`** 表示收益门槛关闭；**`ABS WR`** 表示 `Absolute (Legacy)` 使用固定胜率下限。
+- `Adaptive` Ranking 行的精确桶未就绪时，历史行**不会**冒充最终 gate 动作。父桶已就绪时右格三行为 `WAIT · EXACT` / `Gate → Type` / `n=18 · target 12`；父桶也未就绪时写 `WAIT · NO VERDICT` / `Type evidence` / `n=7/10⏳`。父桶进度只作说明，其数值不会冒充精确 score 桶的历史表现。
 
-右格第二、三行：
+右格第二行——`WR edge −0.10pp ✗`：
 
-- **`WR 56.00%`** 是贝叶斯调整胜率，会向同方向基准收缩。**`edge -0.10pp`** 是调整 WR 减去该基准，是用来与胜率 edge 要求比较的证据；`WR-EDGE RANK` 只按这个 edge 排序。
-- **`Avg +6.1%`** 是该桶原始平均方向归一化前瞻结果。SELL 行为正时表示信号后价格下跌。**`edge +0.10%`** 是该平均结果相对同方向基准平均值的置信收缩差，是与 `Min Payoff Edge %` 比较的证据。
-- edge 后面的 ✓/✗ 直接表示该路径是否达标。原始 `WR` 或 `Avg` 即使看起来很高，edge 也可能失败，因为大部分结果同样存在于无条件方向基准中。面板保留两位 edge 小数，但实际判定使用未舍入值，避免临界值被显示四舍五入误导。
-- `WR ONLY` 下 Avg 仍显示为 `Avg ... · not gated`。`ABS WR` 下 WR 行改显示 `min ... ✓|✗`，Avg 同样写 `not gated`。
+- **`WR edge −0.10pp`** 是贝叶斯调整胜率减去同方向基准；`WR-EDGE RANK` 只按这个 edge 排序。
+
+右格第三行——`Avg edge +0.10% ✗`：
+
+- **`Avg edge +0.10%`** 是桶平均方向归一化前瞻结果相对同方向基准平均值的置信收缩差，用来与 `Min Payoff Edge %` 比较。
+- edge 后面的 ✓/✗ 直接表示该路径是否达标。每条路径独占一个短行；Full 模式刻意不再重复原始 `WR` 与 `Avg`，避免用户还要重新综合。
+- 面板保留足够 edge 与 Legacy 门槛小数，实际判定仍使用未舍入值。`WR ONLY` 下第三行把 Avg edge 标为 `info`；`ABS WR` 的右格保持两行，第二行显示 `WR 实际值 ≥|< 最低值 ✓|✗`。
 
 #### 直接读法：先看动作，再看证据
 
-右格从上到下读：
+已就绪 Edge 桶的右格从上到下有三行：
 
 1. **动作与规则：**`PASS` 或 `BLOCK`，再看 `OR`、`AND`、`WR ONLY` 或 `ABS WR`。
-2. **频率证据：**贝叶斯调整 `WR`，后接同方向 `edge` 与标记。
-3. **幅度证据：**原始 `Avg`，后接收缩后的同方向 `edge` 与标记，或 `not gated`。
+2. **胜率频率证据：**`WR edge`，带自己的标记。
+3. **平均收益证据：**`Avg edge`，带自己的标记；收益门槛关闭时则标为 `info`。
 
-这样，用户给出的例子可以直接读成：`WR 56.00% · edge -0.10pp ✗` 和 `Avg +6.1% · edge +0.10% ✗` 表示绝对平均结果看似很高，但几乎都可由方向基准解释。两条超额证据都没达标，所以默认 OR 规则直接给出 `BLOCK · OR (0/2)`。
+例如，第二行 `WR edge −0.10pp ✗` 与第三行 `Avg edge +0.10% ✗` 表示两条超额路径都没达标，所以第一行直接给出 `BLOCK · OR (0/2)`。
 
-终身 `n < Min Samples` 时，面板刻意不解读质量，只写 `ALLOW|BLOCK · UNPROVEN POLICY` 和 `No quality verdict before n=20`；此时由 `Unproven Buckets` 策略而非两个估计值决定。
+所选证据不能发布结论时，门槛会刻意停止质量解读。终身 `n` 低于当前目标时写 `ALLOW|BLOCK · WAITING / No quality verdict`；Adaptive 有效 `n < 5` 时写 `ALLOW|BLOCK · STALE / Need fresh evidence`。此时由 `Unproven Buckets` 而不是两个估计值决定动作。
 
-统计仍启用、但 `Enable Stats Filter` 关闭时，统计行写 `FILTER OFF · ALL ALLOWED`。可用的 `WR`、`Avg` 与 edge 仍作描述，但不带 ✓/✗；无可用估计时写 `No usable estimate / No quality verdict`，表头同时写 `Filter off`。统计总开关关闭时不会渲染历史统计行，因为没有收集统计。
+统计仍启用、但 `Enable Stats Filter` 关闭时，统计行写 `FILTER OFF · ALL ALLOWED`。Edge 模式把描述性 `WR edge` 与 `Avg edge` 分别放在第二、第三行，不带 ✓/✗；Legacy 保持两行 `WR … · no gate`。无可用估计也保持两行，并写 `No usable estimate`；表头同时写 `Filter off`。统计总开关关闭时不会渲染历史统计行，因为没有收集统计。
 
 两个 edge 仍回答不同问题：WR edge 问信号是否比方向基准赢得更频繁；Avg edge 问平均结果是否高于基准。例如 WR edge −4pp、Avg edge +1.2% 在 `Either Edge` 下是 `PASS · OR (1/2)`，在 `Both Edges` 下是 `BLOCK · AND (1/2)`。历史估计不保证未来表现。
+
+#### 自适应样本策略
+
+`Sample Policy = Adaptive` 是默认值。以下用 **B** 表示 `Evidence Reference`。每个桶只读取同方向、同 scope 的四个 peer 桶终身计数：
+
+- Signal Type：同一方向的四种信号类型。
+- Setup Score：同一方向的 A–D 四档。
+- Ranking：同一方向、同一信号类型下的 A–D 四档。
+
+设当前桶终身计数为 `nᵢ`、四个 peer 总数为 `N`，算法使用总权重为 B 的对称先验——等价于每个 peer 加 B/4 个伪计数：
+
+```text
+q = (nᵢ + B/4) / (N + B)
+low  = min(B, max(5, round(0.4B)))
+high = min(B, max(low, round(0.8B)))
+target = round(low + (high − low) × sqrt(clamp(q, 0, 1)))
+```
+
+默认 `Evidence Reference = 20` 时，运营型终身目标因此在 **8–16** 之间动态变化。对称平滑避免空桶或早期历史直接跳到极端；高频桶目标更高，稀疏桶目标更低。计算只看 counts，绝不读取 WR、Avg、edge、PASS/BLOCK 或表现正负。
+
+Adaptive 证据须同时满足终身 `n ≥ 该桶目标` 与有效 `n ≥ 5`。`Signal Type` 和 `Grade` 使用请求桶及其目标。`Ranking` 优先精确的“类型 × score × 方向”桶；若未就绪，则尝试同方向 Signal Type 父桶，而父桶按自己的四个 Signal Type peers 独立计算目标。两级都未就绪时保留精确桶为未判定，由 `Unproven Buckets` 决定。陈旧桶不能仅凭强烈衰减的旧估计去拦截。
+
+关闭 `Independent Samples` 会恢复重叠前瞻窗口，因此 Adaptive 的 overlap guard 会把所有终身目标保护性恢复为 **B**。`Fixed (Legacy)` 同样把 B 当作固定终身门槛，始终使用 `Stats Mode` 请求桶、不回退，并且不以有效样本新鲜度决定是否可判定。
+
+**8–16 是运营型证据规则**，不是统计显著性检验、验证门槛、置信区间或保证。它把稀疏桶的响应速度与稳健性取舍写进规则，但不能证明信号具有持久优势。
+
+两个用户可见的默认 20 作用不同：`Outcome +20 bars` 是前瞻结果窗口；`Evidence Reference = 20` 是 B，因此生成默认 8–16 范围。除此之外，贝叶斯与收益 edge 的置信度仍固定使用 `min(1, effective_n / 20)` 作为满置信分母。降低桶的终身目标**不会**降低这个收缩分母，也不会让 edge 估计更早达到满置信。
+
+历史 Ranking 行始终只展示精确桶证据，不会被父桶数值替换。`WAIT · EXACT / Gate → Type …` 表示匹配的实时事件已有父桶可用；`WAIT · NO VERDICT / Type …` 显示父桶真实进度。只有当前信号的 gate 视图才真正解析到父桶。
 
 #### Edge Summary
 
@@ -231,7 +265,7 @@ Edge Summary     SELL: no supported edge
 Edge Summary     BUY + SELL: no supported edge
 ```
 
-只会出现一个汇总 table row；BUY 和 SELL 同时符合时右格可用两行 cell 文本，仍不新增 table row。某方向要被点名，当前 `Stats Mode` 下必须至少有两个桶同时满足：（a）终身样本达到 `Min Samples`；（b）当前有效权重仍至少为 5。随后，该方向所有纳入检查的桶都必须满足 WR edge < 0 且 Avg edge ≤ 0。未达到终身门槛或因衰减而有效权重过低的桶会被排除，不会被当成负面证据。
+只会出现一个汇总 table row；BUY 和 SELL 同时符合时右格可用两行 cell 文本，仍不新增 table row。某方向要被点名，当前 `Stats Mode` 下必须至少有两个桶同时满足：（a）达到各自真实证据目标；（b）当前有效权重仍至少为 5。随后，该方向所有纳入检查的桶都必须满足 WR edge < 0 且 Avg edge ≤ 0。未达到目标或因衰减而有效权重过低的桶会被排除，不会被当成负面证据。
 
 这条摘要只描述满足上述条件的已加载历史桶，不判断当前市场类型、不预测下一次信号，也不替代逐信号的 `Stats Filter` 判定。切换 `Stats Mode`、加载不同历史深度或改变衰减设置，都可能让摘要变化。
 
@@ -248,7 +282,7 @@ Edge Summary     BUY + SELL: no supported edge
 
 #### 其他统计模式
 
-`Signal Type` 聚合为类型 × 方向，例如 `🔥 EXT BUY` / `n=28`。`Grade` 聚合为方向 × setup-score 档位，例如 `BUY [Score A]` / `n=28`，表头为 `SETUP SCORE STATS`。Ranking 是类型 × score × 方向的完整视图。三种模式的右格都采用上述“结论先行”读法。`Signal Type` 和 `Grade` 可显示 `n=28 · stale`；Ranking 隐藏有效权重低于 5 的桶。
+`Signal Type` 聚合类型 × 方向，左格三行可为 `🔥 EXT` / `BUY` / `n=18 · target 14`。`Grade` 聚合方向 × setup-score，左格为 `BUY` / `[Score A]` / `n=15 · target 12`，表头为 `SETUP SCORE STATS`。Ranking 是类型 × score × 方向的完整视图，左格为 `🔥 EXT` / `BUY [Score A]` / 样本标签。每种模式都从自己的四-peer scope 计算目标，并统一使用“结论先行”的三行已就绪 Edge 右格。直接 waiting/stale 判定仍保持两行；精确 Ranking 的 wait 使用三行，以便把 Type 父桶来源与进度写清。`Adaptive` 下陈旧的 `Signal Type` 或 `Grade` 行显示 `n=18 · eff 3.7<5⏳` 且没有质量结论；`Fixed (Legacy)` 保留旧的 `n=28 · stale` 行为。Ranking 继续隐藏有效权重低于 5 的桶。
 
 ---
 
@@ -319,16 +353,16 @@ Score 只汇总当前信号条件，**不是**历史 WR/Avg edge 结论、`PASS`
 
 | 标记 | 含义 | 备注 |
 |------|------|------|
-| ✓ | 成熟门槛或证据路径通过所设规则 | 出现在当前 Signal 的总体门槛结果、各自达标的 WR/Avg edge 行，以及成熟且放行的警报里。它是规则结果，不是预测。 |
-| ✗ | 成熟门槛或证据路径未达标 | 出现在 `Alert Only`/`Soft` 的当前信号、失败的 WR/Avg edge 行，或成熟 `BLOCK` 中。被拦截的信号不会报警。 |
-| ⏳ | 终身 `n < Min Samples`，无质量结论 | 事件层 `Stats Filter` 写 `ALLOW|BLOCK · UNPROVEN`；统计行写 `ALLOW|BLOCK · UNPROVEN POLICY` 和 `No quality verdict before n=20`。样本标签为 `n=9/20⏳`，不追加 ✓/✗；只有按策略放行时，警报里才会出现 `⏳`。 |
+| ✓ | 可判定证据通过所设规则 | 出现在当前 Signal 的总体门槛结果、各自达标的 WR/Avg edge 行，以及放行警报里。它是规则结果，不是统计验证或预测。 |
+| ✗ | 可判定证据未达标 | 出现在 `Alert Only`/`Soft` 的当前信号、失败的 WR/Avg edge 行，或 `BLOCK` 中。被拦截的信号不会报警。 |
+| ⏳ | 没有质量结论 | 终身 `n` 低于桶所显示的目标，或 `Adaptive` 有效 `n` 低于 5 且没有就绪回退。事件层 `Stats Filter` 写 `ALLOW|BLOCK · WAITING` 或 `ALLOW|BLOCK · STALE`；精确 Ranking 行用 `WAIT · EXACT` 表示有就绪父桶，或用 `WAIT · NO VERDICT` 显示父桶进度。只有按策略放行时，警报里才会出现 `⏳`。 |
 | `🚫 TREND` | 被周线趋势保护隐藏 | 直接写出原因，不再使用含糊的通用隐藏图标。 |
 | `🚫 STATS` | 被 `Hard` 统计过滤隐藏 | 门槛动作为拦截；若 `Stats Filter` 出现，可查看具体比较。 |
 | `🚫 OFF` / `🚫 SMART` | 普通信号被显示模式隐藏 | `OFF` 表示普通信号已关闭；`SMART` 表示 Smart 模式暂停显示。 |
 | ⚠️ | 仅保留给一般运行/数据警告 | 它不是样本或质量判定。当前面板会尽量把常见情况直接写成 `No data` 或具体健康问题。 |
 | — | 当前无事件或不适用 | 持续的超买/超卖上下文只放在 `RSI Zone`。 |
 
-> 只有过滤动作是放行时才会报警。警报后缀为 `✓`（成熟桶通过）或 `⏳`（样本不足但按策略放行）；被拦截的信号不产生警报。
+> 只有过滤动作是放行时才会报警。警报后缀为 `✓`（可判定证据通过）或 `⏳`（未判定证据按策略放行）；被拦截的信号不产生警报。
 
 ---
 
@@ -375,6 +409,8 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 
 警报只为通过统计门槛的信号触发，**所有**过滤模式下都一样——`Alert Only` 在图上不过滤任何信号，但警报流始终是被门控的。同一根 K 线上的去重只放行更高优先级的升级信号再次触发。
 
+动态证据目标会改变 gate 行为。TradingView 警报会保留创建时的脚本快照与设置，因此安装这个版本后，请删除并重建既有的 **Any alert() function call** 警报；否则旧警报可能继续执行之前的固定目标逻辑，即使图上已经显示新版面板。
+
 ---
 
 ## 统计引擎与门槛
@@ -383,18 +419,21 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 
 **记录什么。** 每次信号发生都按前瞻收益计分——`Forward Bars`（默认 20）根 K 线后价格的表现。买入样本记录涨幅；卖出样本记录**跌幅**，所以正数始终对所采样方向有利。样本按 `Stats Mode` 落桶：按信号类型、按 setup-score 档位，或按类型 × score × 方向的完整交叉（`Ranking`）。另有两个无条件基准桶（买/卖）记录**每一根** K 线的前瞻结果，为每个方向提供基准**胜率**和基准**平均结果**。
 
-**贝叶斯调整。** 小样本的原始胜率不稳定。每个桶的胜率向先验收缩：`adjusted = prior + confidence × (raw − prior)`，其中 `confidence = min(1, 有效样本数 / 20)`。`Edge vs Baseline` 模式下先验是该桶自身方向的基准；`Absolute (Legacy)` 模式下是 50%。终身样本数不足 5 的桶不报告调整胜率。
+**贝叶斯调整。** 小样本的原始胜率不稳定。每个桶的胜率向先验收缩：`adjusted = prior + confidence × (raw − prior)`，其中 `confidence = min(1, 有效样本数 / 20)`。`Edge vs Baseline` 模式下先验是该桶自身方向的基准；`Absolute (Legacy)` 模式下是 50%。终身样本数不足 5 的桶不报告调整胜率。这里的 20 是固定满置信分母，不会随 8–16 的 Adaptive 终身目标一起降低。
 
 **收益优势。** 收益侧比较为 `收益优势 = confidence ×（桶平均前瞻结果 − 方向基准平均结果）`，置信度因子与调整胜率相同，也沿用"终身样本数不足 5 不报告数值"的规则。减去方向基准可扣除无条件漂移；收缩会把小样本或陈旧估计拉向 0。
 
-**时间衰减。** `Stats Half-Life Bars`（默认 1500，`0` = 关闭）让样本权重随时间指数衰减——1500 根 K 线在日线上约 6 年、4 小时图上约 9 个月，足以覆盖一个完整周期，同时让旧行情淡出。衰减只影响**有效**样本数（进而影响置信度）；`Min Samples` 门槛始终按未衰减的终身样本数判断，所以稀有信号桶不会被永久锁死。
+**时间衰减。** `Stats Half-Life Bars`（默认 1500，`0` = 关闭）让样本权重随时间指数衰减——1500 根 K 线在日线上约 6 年、4 小时图上约 9 个月，足以覆盖一个完整周期，同时让旧行情淡出。衰减影响**有效**样本数，进而影响置信度；终身计数和目标都不衰减。`Adaptive` 另要求有效 `n ≥ 5`，所以一个桶不能只靠很久以前累积过足够观测就继续发布结论。
 
-**独立采样。** `Independent Samples`（默认开）让每个桶在记录一个样本后至少等 `Forward Bars` 根 K 线再记录下一个，避免前瞻收益窗口重叠虚增样本数。关闭则恢复旧版重叠采样行为。
+**独立采样。** `Independent Samples`（默认开）让每个桶在记录一个样本后至少等 `Forward Bars` 根 K 线再记录下一个，避免前瞻收益窗口重叠虚增样本数。关闭会恢复旧版重叠采样，并启用 Adaptive overlap guard：动态目标全部回到完整 `Evidence Reference` B。
 
-**门槛。** 数据足够时由质量判定说了算；数据不够时由策略说了算：
+**门槛。** 它先解析一个可发布结论的证据桶，再执行质量规则：
 
-1. **样本充分性**：终身样本数 ≥ `Min Samples`（默认 20）。低于该数时，质量路径不作判定，改由 **`Unproven Buckets`** 决定：**`Pass`**（默认）放行并标 `⏳`；**`Block (Legacy)`** 拦截。细粒度 `Ranking` 桶积累较慢，改用 `Signal Type` 可更快达到门槛。
-2. 终身样本足够时由**质量判定**决定。`✓` 表示所设逻辑通过，`✗` 表示未达到；两者都不等于未来表现保证。
+1. **证据解析。** 默认 `Sample Policy = Adaptive` 下，桶必须同时达到终身 `n ≥ 自身动态目标` 与有效 `n ≥ 5`。默认 `Evidence Reference = 20` 时，只看计数的 peer 平滑会生成 8–16 目标。Ranking 的精确桶未就绪时，自动尝试同方向 Signal Type 父桶，并使用父桶独立计算的目标。选桶和目标只看样本计数/就绪状态，绝不看哪个结果更漂亮。`Fixed (Legacy)` 则始终使用当前 `Stats Mode` 请求桶，并只按终身 `n ≥ Evidence Reference` 判断能否发布结论。
+2. **没有就绪证据。** **`Unproven Buckets = Pass`**（默认）放行并标 `⏳`；**`Block (Legacy)`** 拦截。这是策略动作，不是 WR/Avg 质量判定。
+3. **已有就绪证据。** 质量规则决定结果。`✓` 表示所设逻辑通过，`✗` 表示未达到；两者都不是统计验证，也不保证未来表现。
+
+`Evidence Reference = 20` 是可配置的运营参考，不表示 8、16 或 20 个观测已经统计验证信号。完整公式、peer scope、overlap guard，以及独立且固定的 `effective_n / 20` 收缩分母，见[自适应样本策略](#自适应样本策略)。
 
 质量判定有两条可能的路径：
 
@@ -417,9 +456,9 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 | `Soft` | 未通过的信号视觉降级 | 过滤 |
 | `Hard` | 未通过的信号隐藏 | 过滤 |
 
-> **还原 v7.4 门槛行为**：设 `Payoff Gate = Off` **且** `Unproven Buckets = Block (Legacy)`。门槛判定即与 v7.4 完全一致；Ranking 的 Avg-edge 直读数值和 `Edge Summary` 只属于显示层，在 Edge 模式下仍可出现。
+> **还原 v7.4 门槛行为**：设 `Sample Policy = Fixed (Legacy)`、`Payoff Gate = Off` **且** `Unproven Buckets = Block (Legacy)`。门槛会恢复原先指定桶和仅终身样本就绪规则，再执行 v7.4 质量表达式；Ranking 的 Avg-edge 直读数值和 `Edge Summary` 只属于显示层，在 Edge 模式下仍可出现。
 >
-> **还原 v7.3 统计行为**：设 `Stats Half-Life Bars = 0`、关闭 `Independent Samples`、设 `Unproven Buckets = Block (Legacy)`、设 `Gate Mode = Absolute (Legacy)`（后者本身就会停用收益路径，无论 `Payoff Gate` 设成什么），即可精确还原旧版统计引擎的算法。但 v7.4 有两处信号层改动**没有回退开关**——回看窗口分布因子的滞回区间（spread 低于 18 启用、高于 22 释放）和冷却过期级别重置——所以记录到的信号流（进而门槛判定）仍可能与 v7.3 有细微差异。
+> **还原 v7.3 统计行为**：设 `Sample Policy = Fixed (Legacy)`、`Stats Half-Life Bars = 0`、关闭 `Independent Samples`、设 `Unproven Buckets = Block (Legacy)`、设 `Gate Mode = Absolute (Legacy)`（后者本身就会停用收益路径，无论 `Payoff Gate` 设成什么），即可精确还原旧版统计引擎的算法。但 v7.4 有两处信号层改动**没有回退开关**——回看窗口分布因子的滞回区间（spread 低于 18 启用、高于 22 释放）和冷却过期级别重置——所以记录到的信号流（进而门槛判定）仍可能与 v7.3 有细微差异。
 
 **冷却与升级。** 高优先级信号（🌟/💎/🔥/❄️）使用 1 根 K 线的冷却。普通信号按 `Cooldown Mode` 设置：`Smart`（按波动率取 2–8 根，市场活跃时再缩短 1 根）或 `Fixed`（固定冷却期，默认 5 根）。更高优先级的同向信号可以绕过冷却——`⬆️ → 🔥 → 🌟` 可以在连续 K 线上依次触发。升级豁免只跟**仍在冷却中**的前一个信号比较；冷却已过期的级别按 0 计，所以普通信号永远无法用自己的过期级别绕过自己的冷却。
 
@@ -429,7 +468,7 @@ AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈
 
 ### 它是什么——以及不是什么
 
-`adaptive_rsi_strategy_harness.pine` 是**由生产指标自动生成**的 `strategy()` 包装（由 `tools/generate_strategy_harness.py` 生成——从不手工编辑），信号引擎与指标完全一致。它只回答一个问题：v7.5 的信号引擎放进 TradingView 策略测试器里表现如何？
+`adaptive_rsi_strategy_harness.pine` 是**由生产指标自动生成**的 `strategy()` 包装（由 `tools/generate_strategy_harness.py` 生成——从不手工编辑），信号引擎与指标完全一致。它只回答一个问题：v7.6 的信号引擎放进 TradingView 策略测试器里表现如何？
 
 它是**门控信号回测**，不是逐笔 `alert()` 投递的精确模拟：它不建模警报调度和送达次数。用它评估信号与过滤路径，不要拿它对账警报日志。
 
@@ -458,9 +497,19 @@ TradingView 始终显示 `All`、`Long`、`Short` 三列。**按 `Trade Side` �
 
 - `Backtest` —— 用直白文字显示方向和执行路径：`Long only`、`Short only` 或 `Long + short`，后接 `Raw baseline` 或 `Production filter`。
 - `Tester View` —— TradingView `All` 列的读法：`All = long trades`、`All = short trades` 或 `All = both sides`。
-- `Strategy Stats` —— 左格显示实际策略信号来源与桶，如 `BUY · MTF [Score A]` / `n=28`，右格给出直读结论。`Production` 复用正式门槛的 `PASS|BLOCK · OR|AND (k/2)` 及 WR-edge / Avg-edge 两行。`Raw baseline` 则先写 `RAW BASELINE · GATE IGNORED`，保留可用的 `WR`/`Avg`/edge 估计，但刻意不显示 ✓/✗，因为原始信号无视该门槛；Legacy 原始估计写 `no gate`。统计启用但 filter 关闭时写 `FILTER OFF · ALL ALLOWED`，也不显示标记。统计总开关关闭时，左格样本行写 `Stats off`，右格写 `STATS OFF · ALL ALLOWED / No statistics collected / No quality verdict`。无方向触发时显示 `No strategy signal`；双方向同时触发则显示 `BUY + SELL conflict / No strategy action`。只有左侧 `n` 标签可追加 `· stale`。
+- `Strategy Stats` —— 左格三行（`Strategy Stats` / 来源 / 样本）。已就绪 Production Edge 的右格三行分别是动作/规则、WR edge、Avg edge；waiting/stale、Legacy 和无可用估计仍为两行。普通来源可为 `BUY · MTF [Score A]` / `n=14 · target 12`；Production Ranking 实际回退时写 `BUY · MTF [Score A] → Type`，下一行是父桶样本标签与父桶目标。Raw Edge 右格同样以 `RAW · GATE IGNORED`、WR-edge、Avg-edge 三行显示，不带 ✓/✗；Raw Legacy WR 和 `No usable estimate` 保持两行。无方向触发时显示 `No strategy signal`；双方向同时触发则显示 `BUY + SELL conflict / No strategy action`。
 
-`Production filter` 读取经过生产门槛的策略信号，并显示当时实际应用的生产判定。`Raw baseline` 读取原始策略信号且明确忽略 gate，其数值只作描述。Filter-off 和 stats-off 的 `Strategy Stats` 格强制为灰色。`BUY`/`SELL` 始终是信号自身方向；`Trade Side` 只决定它执行入场、平仓还是反手，不会篡改方向——例如 `SELL` 可以在纯多回测中用于平多。随生产面板继承的 `Stats Filter` 仍是当前生产指标事件的判定视图，它不一定与所选回测模式的当前策略事件相同。
+桶与目标来源矩阵如下：
+
+| Strategy Stats 状态 | 显示的桶与目标 | 右格含义 |
+|---------------------|---------------|----------|
+| `Production`，stats + filter 开 | Production 实际解析桶及其目标；Adaptive Ranking 可使用已就绪 Signal Type 父桶 | 已就绪 Edge：三行（`PASS`、WR edge、Avg edge）；按策略放行的 `WAITING`/`STALE`：两行 |
+| `Production`，filter 关 | `Stats Mode` 请求桶及该桶目标；不回退 | Edge：三行（`FILTER OFF`、WR edge、Avg edge）；Legacy/无可用估计：两行 |
+| `Raw baseline`，stats 开 | `Stats Mode` 请求桶及该桶目标；不回退 | Edge：三行（`RAW · GATE IGNORED`、WR edge、Avg edge）；Legacy/无可用估计：两行；数值只作描述 |
+| 任一模式，stats 关 | 仍写请求来源，但样本行是 `Stats off`；不回退 | `STATS OFF · ALL ALLOWED / No quality verdict` |
+| `Fixed (Legacy)` | 始终请求桶；目标固定为 `Evidence Reference` B | 永不回退；仅按终身数判断就绪 |
+
+`Production filter` 读取经过生产门槛的策略信号，并显示当时实际应用的生产判定、解析证据来源及真实目标。`Raw baseline` 读取原始策略信号且明确忽略 gate，其数值只作描述。Filter-off、Raw 和 stats-off 的 `Strategy Stats` 格强制为灰色。`BUY`/`SELL` 始终是信号自身方向；`Trade Side` 只决定它执行入场、平仓还是反手，不会篡改方向——例如 `SELL` 可以在纯多回测中用于平多。随生产面板继承的 `Stats Filter` 仍是当前生产指标事件的判定视图，它不一定与所选回测模式的当前策略事件相同。
 
 ### 成本
 

@@ -81,7 +81,7 @@ ANCHOR_MENTION_RE = re.compile(r"^.*@harness.*$", re.MULTILINE)
 # ────────────────────────────────────────
 
 HARNESS_HEADER = (
-    "// Adaptive RSI Pro v7.5 Strategy Report - v7.2 baseline behavior + stats engine upgrades (win-rate & payoff edge)"
+    "// Adaptive RSI Pro v7.6 Strategy Report - v7.2 baseline behavior + adaptive stats engine (win-rate, payoff edge, evidence targets)"
 )
 
 INDICATOR_DECLARATION_RE = re.compile(
@@ -120,37 +120,60 @@ STATS_LABEL_HELPERS = """
 f_get_signal_type_label(_is_mtf, _is_div, _is_ext) =>
     _is_mtf ? "MTF" : _is_div ? "DIV" : _is_ext ? "EXT" : "NORMAL"
 
-f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade, _is_buy) =>
+// Raw Baseline and disabled production filters describe the bucket requested by
+// Stats Mode. Only an active Production gate may resolve to an Adaptive parent.
+// Raw Baseline 与关闭过滤的 Production 始终描述 Stats Mode 请求桶；只有启用中的
+// Production gate 才可解析到 Adaptive 父级证据桶。
+f_harness_get_requested_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    if stats_mode == "Signal Type"
+        f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
+    else if stats_mode == "Grade"
+        f_get_grade_stats(_is_buy, _grade)
+    else
+        f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+
+f_harness_get_requested_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    if stats_mode == "Signal Type"
+        f_get_signal_type_target(_is_buy, _is_mtf, _is_div, _is_ext)
+    else if stats_mode == "Grade"
+        f_get_grade_target(_is_buy, _grade)
+    else
+        f_get_signal_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+
+f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade, _is_buy, _evidence_source) =>
     _type_label = f_get_signal_type_label(_is_mtf, _is_div, _is_ext)
     _bucket_label = stats_mode == "Signal Type" ? _type_label :
                     stats_mode == "Grade" ? str.format("Score {0}", _grade) :
                     str.format("{0} [Score {1}]", _type_label, _grade)
-    str.format("{0} · {1}", _is_buy ? "BUY" : "SELL", _bucket_label)
+    _display_bucket = _evidence_source == "Type fallback" ? str.format("{0} [Score {1}] → Type", _type_label, _grade) : _bucket_label
+    str.format("{0} · {1}", _is_buy ? "BUY" : "SELL", _display_bucket)
 """
 
 HARNESS_GATE_HELPER = """
-// Raw Baseline ignores the production stats gate. Keep the same metrics, but
-// deliberately omit pass/fail marks so a descriptive edge cannot look like a trade rule.
-// Raw Baseline 不执行生产统计门槛；保留同口径指标，但不显示质量勾叉，避免误读为回测交易规则。
-f_harness_raw_stats_readout(SignalStats _stats, bool _is_buy) =>
+// Raw Baseline ignores the production stats gate. Keep its requested bucket and
+// target, but omit pass/fail marks so descriptive evidence cannot look like a rule.
+// Edge estimates use one metric per line to keep the right cell narrow.
+// Raw Baseline 不执行生产统计门槛；保留请求桶及其目标，但不显示质量勾叉。
+// Edge 估计每项独占一行，避免右侧单元格横向过长。
+f_harness_raw_stats_readout(SignalStats _stats, bool _is_buy, int _target) =>
     _lifetime_n = _stats.get_lifetime_count()
     if _lifetime_n < 5
-        "RAW BASELINE · GATE IGNORED\\nNo usable estimate\\nAll raw signals allowed"
+        "RAW · GATE IGNORED\\nNo usable estimate"
     else
-        [_has_enough, _edge_mode, _payoff_active, _wr_pass, _payoff_pass, _quality_ok, _adj_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy)
-        _avg = _stats.get_avg()
+        [_has_enough, _edge_mode, _payoff_active, _wr_pass, _payoff_pass, _quality_ok, _adj_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy, _target)
         if _edge_mode
             _wr_edge = _adj_wr - f_stats_baseline_rate(_is_buy)
-            str.format("RAW BASELINE · GATE IGNORED\\nWR {0,number,#.1}% · edge {1,number,+#.1;-#.1}pp\\nAvg {2,number,+#.1;-#.1}% · edge {3,number,+#.1;-#.1}%", _adj_wr, _wr_edge, _avg, _payoff_edge)
+            str.format("RAW · GATE IGNORED\\nWR edge {0,number,+#.2;-#.2}pp\\nAvg edge {1,number,+#.2;-#.2}%", _wr_edge, _payoff_edge)
         else
-            str.format("RAW BASELINE · GATE IGNORED\\nWR {0,number,#.1}% · no gate\\nAvg {1,number,+#.1;-#.1}% · no gate", _adj_wr, _avg)
+            str.format("RAW · GATE IGNORED\\nWR {0,number,#.2}% · no gate", _adj_wr)
 
 f_harness_gate_snapshot() =>
     string _source = "Idle"
-    int _count = 0
-    float _effective = 0.0
+    string _sample_display = ""
     string _readout = "No strategy signal"
+    color _readout_color = color.gray
     SignalStats _stats = SignalStats.new()
+    int _target = stats_min_samples
 
     // Rebuild the exact strategy signal for this backtest mode. Trade Side changes
     // whether the signal enters, exits or reverses; it must not rewrite its direction.
@@ -168,55 +191,61 @@ f_harness_gate_snapshot() =>
     bool _has_sell = _sell_mtf or _sell_div or _sell_ext or _sell_norm
     int _direction = _has_buy and not _has_sell ? 1 : _has_sell and not _has_buy ? -1 : 0
     bool _use_buy = _direction == 1
+    bool _use_mtf = false
+    bool _use_div = false
+    bool _use_ext = false
+    string _grade = "D"
 
     if _has_buy and _has_sell
         _source := "Conflict"
 
     if _direction == 1
+        _grade := buy_quality_grade
         if _buy_mtf
-            _stats := f_get_filter_stats(true, true, false, false, buy_quality_grade)
-            _source := f_get_filter_source_label(true, false, false, buy_quality_grade, true)
+            _use_mtf := true
         else if _buy_div
-            _stats := f_get_filter_stats(true, false, true, false, buy_quality_grade)
-            _source := f_get_filter_source_label(false, true, false, buy_quality_grade, true)
+            _use_div := true
         else if _buy_ext
-            _stats := f_get_filter_stats(true, false, false, true, buy_quality_grade)
-            _source := f_get_filter_source_label(false, false, true, buy_quality_grade, true)
-        else if _buy_norm
-            _stats := f_get_filter_stats(true, false, false, false, buy_quality_grade)
-            _source := f_get_filter_source_label(false, false, false, buy_quality_grade, true)
+            _use_ext := true
     else if _direction == -1
+        _grade := sell_quality_grade
         if _sell_mtf
-            _stats := f_get_filter_stats(false, true, false, false, sell_quality_grade)
-            _source := f_get_filter_source_label(true, false, false, sell_quality_grade, false)
+            _use_mtf := true
         else if _sell_div
-            _stats := f_get_filter_stats(false, false, true, false, sell_quality_grade)
-            _source := f_get_filter_source_label(false, true, false, sell_quality_grade, false)
+            _use_div := true
         else if _sell_ext
-            _stats := f_get_filter_stats(false, false, false, true, sell_quality_grade)
-            _source := f_get_filter_source_label(false, false, true, sell_quality_grade, false)
-        else if _sell_norm
-            _stats := f_get_filter_stats(false, false, false, false, sell_quality_grade)
-            _source := f_get_filter_source_label(false, false, false, sell_quality_grade, false)
+            _use_ext := true
 
     if _direction != 0
-        _count := _stats.get_lifetime_count()
-        _effective := _stats.get_count()
-        _readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy) : f_harness_raw_stats_readout(_stats, _use_buy)
+        // Production must explain the exact evidence bucket used by its active gate.
+        // Raw Baseline (and a disabled production filter) keeps the requested bucket.
+        // Production 必须解释启用中 gate 实际使用的证据桶；Raw Baseline（以及关闭的
+        // Production filter）保留用户请求桶，不借用父级统计。
+        bool _use_resolved = harness_use_production and enable_stats and enable_stats_filter
+        string _evidence_source = ""
+        if _use_resolved
+            _stats := f_get_filter_stats(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+            _target := f_get_filter_target(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+            _evidence_source := f_get_filter_source(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+        else
+            _stats := f_harness_get_requested_stats(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+            _target := f_harness_get_requested_target(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+        _source := f_get_filter_source_label(_use_mtf, _use_div, _use_ext, _grade, _use_buy, _evidence_source)
+        _sample_display := not enable_stats ? "Stats off" : f_stats_sample_text(_stats, _target)
+        _readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy, _target) : f_harness_raw_stats_readout(_stats, _use_buy, _target)
+        _readout_color := harness_use_production ? f_stats_direct_color(_stats, _use_buy, _target) : color.gray
 
-    [_source, _count, _effective, _readout]
+    [_source, _sample_display, _readout, _readout_color]
 """
 
 HARNESS_DASHBOARD_ROWS = """            harness_side_display = harness_trade_side == "Long Only" ? "Long only" : harness_trade_side == "Short Only" ? "Short only" : "Long + short"
             harness_mode_display = harness_use_production ? "Production filter" : "Raw baseline"
             harness_tester_display = harness_trade_side == "Long Only" ? "All = long trades" : harness_trade_side == "Short Only" ? "All = short trades" : "All = both sides"
-            [harness_gate_source, harness_gate_count, harness_gate_effective, harness_gate_readout] = f_harness_gate_snapshot()
+            [harness_gate_source, harness_gate_sample_display, harness_gate_readout, harness_gate_color] = f_harness_gate_snapshot()
             // Strategy Stats 解释本回测模式的实际买/卖信号：Production 复用真实 gate 结论，Raw Baseline 明确忽略 gate。
             // Strategy Stats explains the actual signal in this backtest mode: Production reuses the real gate verdict; Raw Baseline explicitly ignores it.
-            harness_gate_sample_display = not enable_stats ? "Stats off" : harness_gate_count >= stats_min_samples ? (harness_gate_effective >= 5 ? str.format("n={0}", harness_gate_count) : str.format("n={0} · stale", harness_gate_count)) : str.format("n={0}/{1}⏳", harness_gate_count, stats_min_samples)
             harness_stats_left = harness_gate_source == "Idle" or harness_gate_source == "Conflict" ? "Strategy Stats" : str.format("Strategy Stats\\n{0}\\n{1}", harness_gate_source, harness_gate_sample_display)
             harness_gate_display = harness_gate_source == "Idle" ? "No strategy signal" : harness_gate_source == "Conflict" ? "BUY + SELL conflict\\nNo strategy action" : harness_gate_readout
-            harness_gate_color = harness_gate_source == "Idle" or harness_gate_source == "Conflict" or not harness_use_production or not enable_stats or not enable_stats_filter ? color.gray : harness_gate_count < stats_min_samples ? (stats_unproven_mode == "Pass" ? #FFC107 : #9E9E9E) : harness_gate_effective < 5 ? #FFC107 : color.white
 
             table.cell(dashboard, 0, row, "Backtest", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, str.format("{0}\\n{1}", harness_side_display, harness_mode_display), text_color=color.white, text_size=txt_size_body)

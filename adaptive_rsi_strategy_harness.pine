@@ -1,4 +1,4 @@
-// Adaptive RSI Pro v7.5 Strategy Report - v7.2 baseline behavior + stats engine upgrades (win-rate & payoff edge)
+// Adaptive RSI Pro v7.6 Strategy Report - v7.2 baseline behavior + adaptive stats engine (win-rate, payoff edge, evidence targets)
 // MIT License - https://github.com/aaajiao/Adaptive-RSI-Pro
 //
 // 信号图例 / Signal Legend:
@@ -70,14 +70,15 @@ grp_stats = "═══ Signal Statistics / 信号统计 ═══"
 enable_stats = input.bool(true, "Enable Statistics / 启用统计", group=grp_stats)
 stats_mode = input.string("Ranking", "Stats Mode / 统计模式", options=["Signal Type", "Grade", "Ranking"], group=grp_stats, tooltip="Signal Type: 按信号类型统计\nGrade: 按当下形态评分统计（不是历史优势结论）\nRanking: 信号类型 × 形态评分排行榜\n---\nSignal Type: group by signal type\nGrade: group by current setup score, not historical edge\nRanking: signal type × setup score leaderboard")
 stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, maxval=100, group=grp_stats, tooltip="信号触发后多少根K线计算收益\n---\nBars after a signal used to measure forward return")
-stats_half_life_bars = input.int(1500, "Stats Half-Life Bars / 统计半衰期K线数", minval=0, maxval=20000, step=100, group=grp_stats, tooltip="样本权重按K线间隔指数衰减的半衰期\n1500根K线 ≈ 日线6年 / 4小时图9个月：日线上覆盖完整市场周期，同时淡出旧市场环境的样本\n0 = 关闭衰减（等权累计，旧版行为）\n衰减只影响胜率置信度，最小样本数门槛按未衰减的累计样本数判断\n---\nHalf-life in bars for exponential decay of sample weights\n1500 bars ≈ 6 years on 1D / 9 months on 4H: covers a full market cycle on daily charts while fading samples from old regimes\n0 = decay off (equal-weight accumulation, legacy behavior)\nDecay only affects win-rate confidence; the Min Samples gate uses the undecayed lifetime count")
+stats_half_life_bars = input.int(1500, "Stats Half-Life Bars / 统计半衰期K线数", minval=0, maxval=20000, step=100, group=grp_stats, tooltip="样本权重按K线间隔指数衰减的半衰期\n1500根K线 ≈ 日线6年 / 4小时图9个月：日线上覆盖完整市场周期，同时淡出旧市场环境的样本\n0 = 关闭衰减（等权累计，旧版行为）\nAdaptive 按动态终身样本目标判断证据量，并另要求有效样本数≥5，避免用过时证据发布结论\n---\nHalf-life in bars for exponential decay of sample weights\n1500 bars ≈ 6 years on 1D / 9 months on 4H: covers a full market cycle on daily charts while fading samples from old regimes\n0 = decay off (equal-weight accumulation, legacy behavior)\nAdaptive uses a dynamic lifetime evidence target and additionally requires effective n >= 5 so stale evidence cannot issue a verdict")
 stats_independent_samples = input.bool(true, "Independent Samples / 独立采样", group=grp_stats, tooltip="每个统计桶记录一个样本后，至少间隔前瞻K线数才记录下一个\n避免相邻信号的前瞻收益区间重叠而虚增样本数\n关闭 = 旧版重叠采样行为\n---\nEach bucket waits at least Forward Bars between recorded samples\nPrevents overlapping forward-return windows from inflating sample counts\nOff = legacy overlapping behavior")
 enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤", group=grp_stats, tooltip="按历史统计门槛过滤信号\n综合样本成熟度、调整胜率及可选收益优势路径\n---\nFilters signals against configured historical-statistics thresholds\nUses sample maturity, adjusted win rate and the optional payoff-edge path")
-stats_min_samples = input.int(20, "Min Samples / 最小样本数", minval=5, maxval=50, group=grp_stats, tooltip="质量路径开始判定前，每个信号桶需要的最小终身样本数\n20为默认起点，不代表未来表现有保证\n按未衰减的累计样本数判断，时间衰减不影响该门槛\n---\nMinimum lifetime samples before the quality paths can issue a verdict\n20 is the default starting point, not a guarantee of future performance\nChecked against the undecayed lifetime sample count; time decay does not affect this gate")
-stats_unproven_mode = input.string("Pass", "Unproven Buckets / 样本不足的桶", options=["Pass", "Block (Legacy)"], group=grp_stats, tooltip="统计桶终身样本数不足 Min Samples 时的处理方式\nPass: 放行（默认）——过滤器只拦截样本足够且未达到所设门槛的桶；样本不足 = 未经判定\nBlock (Legacy): 拦截（旧版行为）——细粒度桶（如 Ranking 模式 32 桶）在新图表上可能长期全部被拦\nSignal 行与警报文本用 ⏳ 标记样本不足；✗ 表示样本足够但未达到门槛\n---\nWhat to do when a bucket's lifetime count is below Min Samples\nPass: let it through (default) — the filter blocks only mature buckets that miss the configured thresholds; insufficient data means no verdict\nBlock (Legacy): block it (legacy behavior) — fine-grained buckets (e.g. 32 in Ranking mode) can remain blocked for a long time on a fresh chart\nSignal and alert text use ⏳ for insufficient samples; ✗ means a mature bucket missed the configured thresholds")
+stats_min_samples = input.int(20, "Evidence Reference / 证据参考值", minval=5, maxval=50, group=grp_stats, tooltip="Adaptive：这是动态样本目标的参考值。默认20会按同方向、同层级四个桶的实际样本分布生成约8–16的桶目标；结果好坏不会改变目标。关闭 Independent Samples 时，为防重叠样本虚增，目标保护性回到本参考值（默认20）\nFixed (Legacy)：本值就是固定终身样本门槛（默认20）\n本值不是统计验证或未来表现保证\n---\nAdaptive: reference for the dynamic sample target. The default 20 produces bucket targets of about 8–16 from the actual same-direction, same-scope four-bucket sample mix; outcome quality never changes the target. With Independent Samples off, an overlap guard restores the target to this reference (20 by default)\nFixed (Legacy): this value is the fixed lifetime-sample threshold (default 20)\nThis is not statistical validation or a guarantee of future performance")
+stats_sample_policy = input.string("Adaptive", "Sample Policy / 样本策略", options=["Adaptive", "Fixed (Legacy)"], group=grp_stats, tooltip="Adaptive（默认）：每个桶按同方向、同层级四个 peer 桶的终身样本占比计算自己的动态目标（参考值20时约8–16），并要求有效样本数≥5。Ranking 精确桶未就绪时回退到已就绪的同方向 Signal Type 父桶；父桶使用自己的真实目标。目标只看样本结构，不看 WR/Avg\nFixed (Legacy)：始终使用 Stats Mode 指定的桶，以 Evidence Reference 作为固定终身门槛，不检查有效样本新鲜度，完全恢复旧版行为\n---\nAdaptive (default): each bucket gets a dynamic target from its lifetime-sample share among the four same-direction, same-scope peers (about 8–16 for reference 20) and also requires effective n >= 5. An unready exact Ranking bucket falls back to a ready same-direction Signal Type parent, using the parent's own target. Targets use sample structure only, never WR/Avg\nFixed (Legacy): always use the Stats Mode bucket, use Evidence Reference as the fixed lifetime threshold, and ignore effective-sample freshness, restoring previous behavior")
+stats_unproven_mode = input.string("Pass", "Unproven Buckets / 样本不足的桶", options=["Pass", "Block (Legacy)"], group=grp_stats, tooltip="证据桶未经判定时的处理方式：终身样本数不足当前桶目标，或 Adaptive 模式下有效样本数<5且没有可用父级桶\nPass: 放行（默认）——过滤器只拦截已有质量结论且未达到门槛的桶\nBlock (Legacy): 拦截——即使没有质量结论也拦截\nSignal 行与警报文本用 ⏳ 标记未经判定；✗ 表示已有结论但未达到门槛\n---\nWhat to do when evidence is unproven: lifetime n is below the bucket's current target, or effective n < 5 under Adaptive with no ready parent\nPass: let it through (default) — block only verdict-ready buckets that miss the quality thresholds\nBlock (Legacy): block even without a verdict\nSignal and alert text use ⏳ for unproven evidence; ✗ means a verdict exists but missed the thresholds")
 stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值\nEdge vs Baseline 模式下：(本值 - 50) 被解读为相对方向基准胜率的最小优势（百分点）\n---\nMinimum Bayesian-adjusted win rate per signal bucket\n55% is the recommended value\nIn Edge vs Baseline mode, (value - 50) is the required edge in percentage points over the direction baseline")
 stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对每个方向的无条件基准胜率（要求超额优势），贝叶斯先验也收缩到基准胜率\n可避免趋势市场中卖出桶因口径问题被系统性拒绝\n有效门槛钳制在25%~90%之间，防止极端基准下门槛不可满足或过低\nAbsolute (Legacy): 旧版固定绝对胜率门槛\n---\nEdge vs Baseline: the win-rate gate is relative to each direction's unconditional baseline win rate (requires an edge); the Bayesian prior shrinks toward the baseline\nAvoids sell buckets being systematically rejected on trending assets\nThe effective requirement is clamped to 25-90% so extreme baselines can't make the gate unsatisfiable or trivially low\nAbsolute (Legacy): legacy fixed absolute threshold")
-stats_payoff_mode = input.string("Either Edge", "Payoff Gate / 收益优势门槛", options=["Off", "Either Edge", "Both Edges"], group=grp_stats, tooltip="在 Edge vs Baseline 模式下为质量判定增加第二条基于收益的路径\nOff: 仅胜率优势（v7.4 行为）\nEither Edge: 胜率优势或收益优势任一通过即可（默认）\nBoth Edges: 两条路径都必须通过\n趋势市中均值回归信号比漂移基准赢得更少但赢时赢得更大，本门槛让这类桶可凭收益优势通过\n质量路径需要达到 Min Samples；不足时由 Unproven Buckets 决定放行或拦截\n仅在 Gate Mode = Edge vs Baseline 时生效\n---\nAdds a second, payoff-based quality path in Edge vs Baseline mode\nOff: win-rate edge only (v7.4 behavior)\nEither Edge: pass if the win-rate edge path OR the payoff edge path passes (default)\nBoth Edges: both paths must pass\nOn trending assets mean-reversion buckets can win less often than the drift baseline but win bigger; this lets those buckets qualify on payoff\nQuality paths require Min Samples; below that, Unproven Buckets decides whether to allow or block\nOnly active when Gate Mode = Edge vs Baseline")
+stats_payoff_mode = input.string("Either Edge", "Payoff Gate / 收益优势门槛", options=["Off", "Either Edge", "Both Edges"], group=grp_stats, tooltip="在 Edge vs Baseline 模式下为质量判定增加第二条基于收益的路径\nOff: 仅胜率优势（v7.4 行为）\nEither Edge: 胜率优势或收益优势任一通过即可（默认）\nBoth Edges: 两条路径都必须通过\n趋势市中均值回归信号比漂移基准赢得更少但赢时赢得更大，本门槛让这类桶可凭收益优势通过\n质量路径需要达到当前证据目标；不足时由 Unproven Buckets 决定放行或拦截\n仅在 Gate Mode = Edge vs Baseline 时生效\n---\nAdds a second, payoff-based quality path in Edge vs Baseline mode\nOff: win-rate edge only (v7.4 behavior)\nEither Edge: pass if the win-rate edge path OR the payoff edge path passes (default)\nBoth Edges: both paths must pass\nOn trending assets mean-reversion buckets can win less often than the drift baseline but win bigger; this lets those buckets qualify on payoff\nQuality paths require the current evidence target; below it, Unproven Buckets decides whether to allow or block\nOnly active when Gate Mode = Edge vs Baseline")
 stats_min_payoff_edge = input.float(0.4, "Min Payoff Edge % / 最小收益优势", minval=0.0, maxval=10.0, step=0.1, group=grp_stats, tooltip="收益优势路径的通过门槛（前瞻窗口收益百分比）\n收缩后收益优势 = 置信度 ×（桶平均前瞻收益 − 方向基准平均前瞻收益）≥ 本值时通过\n漂移已通过基准扣除，本值只需对抗噪声，0.3~0.5 为建议区间\n---\nThreshold for the payoff edge path, in forward-window % terms\nPasses when shrunk payoff edge = confidence × (bucket avg forward return − direction baseline avg) >= this value\nDrift is already subtracted via the baseline, so this only competes against noise; 0.3-0.5 recommended")
 stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
 // @harness: inputs
@@ -421,8 +422,8 @@ type SignalStats
     int last_sample_bar = na
     int lifetime_count = 0
 
-// 惰性指数衰减：读取/更新时按距上次更新的K线数计算 0.5^(Δbars/半衰期)
-// 比值类指标（均值、胜率）对衰减不变，衰减只影响有效样本数（胜率置信度）
+// 惰性指数衰减：读取/更新时按距上次更新的K线数计算 0.5^(Δbars/半衰期)。
+// 比值类指标（均值、胜率）对衰减不变；有效样本数决定收缩置信度，并在 Adaptive 中防止 stale 证据发布结论。
 method get_decay_factor(SignalStats this) =>
     stats_half_life_bars <= 0 ? 1.0 : math.pow(0.5, float(bar_index - this.last_update_bar) / stats_half_life_bars)
 
@@ -430,9 +431,9 @@ method get_count(SignalStats this) =>
     this.count * this.get_decay_factor()
 
 // 终身样本数不衰减：样本充分性检查使用它
-// 信号间隔为 s 时有效样本数的稳态上限为 1/(1-0.5^(s/半衰期))，若用有效样本数判断，稀有信号桶将永远无法达到最小样本数
+// 信号间隔为 s 时有效样本数的稳态上限为 1/(1-0.5^(s/半衰期))，因此终身样本目标与有效样本新鲜度必须分开判断
 // Lifetime sample count never decays: sample-sufficiency checks use it
-// With signal spacing s the effective count is capped at 1/(1-0.5^(s/half_life)); gating on the effective count would make rare buckets permanently fail Min Samples
+// With signal spacing s the effective count is capped at 1/(1-0.5^(s/half_life)), so lifetime evidence targets and effective-sample freshness remain separate checks
 method get_lifetime_count(SignalStats this) =>
     this.lifetime_count
 
@@ -485,6 +486,7 @@ STATS_SIGNAL_NORM = 3
 STATS_SIGNAL_COUNT = 4
 
 STATS_GRADE_COUNT = 4
+STATS_EVIDENCE_PEER_COUNT = 4
 STATS_DIR_BUY = 0
 STATS_DIR_SELL = 1
 STATS_DIR_COUNT = 2
@@ -563,9 +565,75 @@ f_stats_payoff_edge(_stats, _is_buy) =>
 f_stats_required_winrate(_is_buy) =>
     stats_gate_mode == "Edge vs Baseline" ? math.max(math.min(f_stats_baseline_rate(_is_buy) + (stats_min_winrate - 50.0), 90.0), 25.0) : stats_min_winrate
 
-// 无择时优势提示只读取达到 Min Samples 且有效权重仍≥5的成熟桶：至少2个，且全部胜率优势<0、收益优势≤0。
+// Adaptive 的动态目标只读取样本结构：桶本身的终身 n、同方向同 scope 四个 peer 的总 n，以及 Evidence Reference。
+// q 使用总权重为 B 的对称先验平滑；默认 B=20 时目标范围 8–16。关闭独立采样时保护性回到 B，避免重叠窗口虚增证据。
+// Dynamic Adaptive targets use sample structure only: bucket lifetime n, the total lifetime n of its four same-direction/same-scope peers, and Evidence Reference.
+// q uses a symmetric prior with total weight B; default B=20 yields targets 8–16. With independent sampling off, the overlap guard restores B.
+f_stats_adaptive_target_low() =>
+    math.min(stats_min_samples, math.max(5, int(math.round(stats_min_samples * 0.4))))
+
+f_stats_adaptive_target_high() =>
+    _low = f_stats_adaptive_target_low()
+    math.min(stats_min_samples, math.max(_low, int(math.round(stats_min_samples * 0.8))))
+
+f_stats_dynamic_target(SignalStats _stats, int _peer_total) =>
+    if stats_sample_policy == "Fixed (Legacy)" or not stats_independent_samples
+        stats_min_samples
+    else
+        _low = f_stats_adaptive_target_low()
+        _high = f_stats_adaptive_target_high()
+        _bucket_n = _stats.get_lifetime_count()
+        _q = (float(_bucket_n) + float(stats_min_samples) / STATS_EVIDENCE_PEER_COUNT) / (float(_peer_total) + float(stats_min_samples))
+        _smoothed_q = math.max(0.0, math.min(_q, 1.0))
+        int(math.round(_low + (_high - _low) * math.sqrt(_smoothed_q)))
+
+f_stats_signal_type_peer_total(_is_buy) =>
+    int _total = 0
+    for _signal_idx = 0 to STATS_SIGNAL_COUNT - 1
+        _peer = array.get(signal_type_stats, f_signal_type_bucket_index(_is_buy, _signal_idx))
+        _total += _peer.get_lifetime_count()
+    _total
+
+f_stats_grade_peer_total(_is_buy) =>
+    int _total = 0
+    for _grade_idx = 0 to STATS_GRADE_COUNT - 1
+        _peer = array.get(grade_stats, _grade_idx * STATS_DIR_COUNT + f_dir_bucket_index(_is_buy))
+        _total += _peer.get_lifetime_count()
+    _total
+
+f_stats_ranking_peer_total(_is_buy, _signal_idx) =>
+    int _total = 0
+    for _grade_idx = 0 to STATS_GRADE_COUNT - 1
+        _peer = array.get(ranking_stats, (_signal_idx * STATS_GRADE_COUNT + _grade_idx) * STATS_DIR_COUNT + f_dir_bucket_index(_is_buy))
+        _total += _peer.get_lifetime_count()
+    _total
+
+f_stats_signal_type_target(_is_buy, _signal_idx) =>
+    _stats = array.get(signal_type_stats, f_signal_type_bucket_index(_is_buy, _signal_idx))
+    f_stats_dynamic_target(_stats, f_stats_signal_type_peer_total(_is_buy))
+
+f_stats_grade_target(_is_buy, _grade) =>
+    _stats = array.get(grade_stats, f_grade_bucket_index(_is_buy, _grade))
+    f_stats_dynamic_target(_stats, f_stats_grade_peer_total(_is_buy))
+
+f_stats_ranking_target(_is_buy, _signal_idx, _grade) =>
+    _stats = array.get(ranking_stats, f_ranking_bucket_index(_is_buy, _signal_idx, _grade))
+    f_stats_dynamic_target(_stats, f_stats_ranking_peer_total(_is_buy, _signal_idx))
+
+// Fixed (Legacy) 只看固定终身门槛；Adaptive 同时要求动态终身目标与有效 n≥5。
+// Fixed (Legacy) uses only its fixed lifetime threshold; Adaptive requires both its dynamic lifetime target and effective n >= 5.
+f_stats_has_verdict_samples(SignalStats _stats, int _target) =>
+    _stats.get_lifetime_count() >= _target and (stats_sample_policy == "Fixed (Legacy)" or _stats.get_count() >= 5)
+
+// 样本标签始终显示 gate 实际使用的目标，避免 Adaptive 看起来仍固定为20。
+// Sample labels always show the target actually used by the gate, so Adaptive cannot look fixed at 20.
+f_stats_sample_text(SignalStats _stats, int _target) =>
+    _n = _stats.get_lifetime_count()
+    _n >= _target ? (stats_sample_policy == "Fixed (Legacy)" ? (_stats.get_count() >= 5 ? str.format("n={0}", _n) : str.format("n={0} · stale", _n)) : _stats.get_count() >= 5 ? str.format("n={0} · target {1}", _n, _target) : str.format("n={0} · eff {1,number,#.1}<5⏳", _n, _stats.get_count())) : str.format("n={0}/{1}⏳", _n, _target)
+
+// 无择时优势提示只读取达到自身真实目标且有效权重仍≥5的成熟桶：至少2个，且全部胜率优势<0、收益优势≤0。
 // 未成熟或已陈旧桶仍是“无结论”，不能据此发布方向级警告；该提示只描述已加载历史，不推断具体市场制度。
-// The no-timing-edge hint reads only mature buckets that reached Min Samples and retain effective weight >= 5: at least two, all with negative win-rate edge and non-positive payoff edge.
+// The no-timing-edge hint reads only mature buckets that reached their actual target and retain effective weight >= 5: at least two, all with negative win-rate edge and non-positive payoff edge.
 // Unproven or stale buckets remain inconclusive and cannot support a direction-level warning; the hint describes loaded history without diagnosing a regime.
 f_stats_no_timing_edge(_is_buy) =>
     array<SignalStats> _buckets = stats_mode == "Signal Type" ? signal_type_stats : stats_mode == "Grade" ? grade_stats : ranking_stats
@@ -576,7 +644,9 @@ f_stats_no_timing_edge(_is_buy) =>
     for i = 0 to array.size(_buckets) - 1
         if i % STATS_DIR_COUNT == _dir_idx
             _bucket = array.get(_buckets, i)
-            if _bucket.get_lifetime_count() >= stats_min_samples and _bucket.get_count() >= 5
+            _scope_idx = int(math.floor(i / STATS_DIR_COUNT))
+            _target = stats_mode == "Signal Type" ? f_stats_signal_type_target(_is_buy, _scope_idx) : stats_mode == "Grade" ? f_stats_grade_target(_is_buy, f_grade_value(_scope_idx)) : f_stats_ranking_target(_is_buy, int(math.floor(_scope_idx / STATS_GRADE_COUNT)), f_grade_value(_scope_idx % STATS_GRADE_COUNT))
+            if f_stats_has_verdict_samples(_bucket, _target) and _bucket.get_count() >= 5
                 _mature_buckets += 1
                 _wr_edge = _bucket.get_adjusted_winrate_vs(_base_rate) - _base_rate
                 _payoff_edge = f_stats_payoff_edge(_bucket, _is_buy)
@@ -601,7 +671,7 @@ f_signal_kind_icon(_signal_idx, _is_buy) =>
     _signal_idx == STATS_SIGNAL_MTF ? "🌟" : _signal_idx == STATS_SIGNAL_DIV ? "💎" : _signal_idx == STATS_SIGNAL_EXT ? (_is_buy ? "🔥" : "❄️") : _is_buy ? "⬆️" : "⬇️"
 
 f_signal_type_dashboard_label(_signal_idx, _is_buy) =>
-    str.format("{0} {1} {2}", f_signal_kind_icon(_signal_idx, _is_buy), f_signal_kind_name(_signal_idx), _is_buy ? "BUY" : "SELL")
+    str.format("{0} {1}\n{2}", f_signal_kind_icon(_signal_idx, _is_buy), f_signal_kind_name(_signal_idx), _is_buy ? "BUY" : "SELL")
 
 f_signal_type_dashboard_color(_signal_idx, _is_buy, _bull, _bear) =>
     _signal_idx == STATS_SIGNAL_MTF ? #FFD700 :
@@ -611,12 +681,6 @@ f_signal_type_dashboard_color(_signal_idx, _is_buy, _bull, _bear) =>
 
 f_grade_dashboard_color(_grade_idx) =>
     _grade_idx == 0 ? #FFD700 : _grade_idx == 1 ? #4CAF50 : _grade_idx == 2 ? #FF9800 : #9E9E9E
-
-// 样本成熟度与质量判定分开显示：达到 Min Samples 时只报 n；不足时明确报 n/要求并标 ⏳。
-// Sample maturity is separate from quality: mature buckets show n only; insufficient buckets show n/requirement plus ⏳.
-f_stats_sample_text(SignalStats _stats) =>
-    _n = _stats.get_lifetime_count()
-    _n >= stats_min_samples ? (_stats.get_count() >= 5 ? str.format("n={0}", _n) : str.format("n={0} · stale", _n)) : str.format("n={0}/{1}⏳", _n, stats_min_samples)
 
 
 // ────────────────────────────────────────
@@ -1058,33 +1122,87 @@ f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext) =>
 f_get_grade_stats(_is_buy, _grade) =>
     array.get(grade_stats, f_grade_bucket_index(_is_buy, _grade))
 
+f_get_signal_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    f_stats_ranking_target(_is_buy, f_signal_kind_index(_is_mtf, _is_div, _is_ext), _grade)
+
+f_get_signal_type_target(_is_buy, _is_mtf, _is_div, _is_ext) =>
+    f_stats_signal_type_target(_is_buy, f_signal_kind_index(_is_mtf, _is_div, _is_ext))
+
+f_get_grade_target(_is_buy, _grade) =>
+    f_stats_grade_target(_is_buy, _grade)
+
+// Adaptive Ranking 只在精确桶无结论且同方向 Signal Type 父桶已有结论时回退。
+// Bucket selection never depends on performance, only on lifetime/effective sample readiness.
+f_stats_uses_type_fallback(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    _ranking = f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+    _type = f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
+    _ranking_target = f_get_signal_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+    _type_target = f_get_signal_type_target(_is_buy, _is_mtf, _is_div, _is_ext)
+    stats_sample_policy == "Adaptive" and stats_mode == "Ranking" and not f_stats_has_verdict_samples(_ranking, _ranking_target) and f_stats_has_verdict_samples(_type, _type_target)
+
 f_get_filter_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    if stats_mode == "Signal Type"
+        f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
+    else if stats_mode == "Grade"
+        f_get_grade_stats(_is_buy, _grade)
+    else if f_stats_uses_type_fallback(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+        f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
+    else
+        f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+
+f_get_filter_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    if stats_mode == "Signal Type"
+        f_get_signal_type_target(_is_buy, _is_mtf, _is_div, _is_ext)
+    else if stats_mode == "Grade"
+        f_get_grade_target(_is_buy, _grade)
+    else if f_stats_uses_type_fallback(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+        f_get_signal_type_target(_is_buy, _is_mtf, _is_div, _is_ext)
+    else
+        f_get_signal_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+
+f_get_filter_source(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    f_stats_uses_type_fallback(_is_buy, _is_mtf, _is_div, _is_ext, _grade) ? "Type fallback" : ""
+// @harness: stats-helpers
+
+f_get_signal_type_label(_is_mtf, _is_div, _is_ext) =>
+    _is_mtf ? "MTF" : _is_div ? "DIV" : _is_ext ? "EXT" : "NORMAL"
+
+// Raw Baseline and disabled production filters describe the bucket requested by
+// Stats Mode. Only an active Production gate may resolve to an Adaptive parent.
+// Raw Baseline 与关闭过滤的 Production 始终描述 Stats Mode 请求桶；只有启用中的
+// Production gate 才可解析到 Adaptive 父级证据桶。
+f_harness_get_requested_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
     if stats_mode == "Signal Type"
         f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext)
     else if stats_mode == "Grade"
         f_get_grade_stats(_is_buy, _grade)
     else
         f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
-// @harness: stats-helpers
 
-f_get_signal_type_label(_is_mtf, _is_div, _is_ext) =>
-    _is_mtf ? "MTF" : _is_div ? "DIV" : _is_ext ? "EXT" : "NORMAL"
+f_harness_get_requested_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade) =>
+    if stats_mode == "Signal Type"
+        f_get_signal_type_target(_is_buy, _is_mtf, _is_div, _is_ext)
+    else if stats_mode == "Grade"
+        f_get_grade_target(_is_buy, _grade)
+    else
+        f_get_signal_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
 
-f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade, _is_buy) =>
+f_get_filter_source_label(_is_mtf, _is_div, _is_ext, _grade, _is_buy, _evidence_source) =>
     _type_label = f_get_signal_type_label(_is_mtf, _is_div, _is_ext)
     _bucket_label = stats_mode == "Signal Type" ? _type_label :
                     stats_mode == "Grade" ? str.format("Score {0}", _grade) :
                     str.format("{0} [Score {1}]", _type_label, _grade)
-    str.format("{0} · {1}", _is_buy ? "BUY" : "SELL", _bucket_label)
+    _display_bucket = _evidence_source == "Type fallback" ? str.format("{0} [Score {1}] → Type", _type_label, _grade) : _bucket_label
+    str.format("{0} · {1}", _is_buy ? "BUY" : "SELL", _display_bucket)
 
 // 质量路径的单一事实来源：过滤器与面板共用同一组未舍入布尔值，避免显示与实际动作漂移。
 // Single source of truth for quality paths: the filter and dashboard share the same unrounded booleans.
-f_stats_gate_paths(SignalStats _stats, bool _is_buy) =>
+f_stats_gate_paths(SignalStats _stats, bool _is_buy, int _target) =>
     _edge_mode = stats_gate_mode == "Edge vs Baseline"
     _prior = _edge_mode ? f_stats_baseline_rate(_is_buy) : 50.0
     _required = f_stats_required_winrate(_is_buy)
     _adj_wr = _stats.get_adjusted_winrate_vs(_prior)
-    _has_enough_samples = _stats.get_lifetime_count() >= stats_min_samples
+    _has_enough_samples = f_stats_has_verdict_samples(_stats, _target)
     _has_good_winrate = not na(_adj_wr) and _adj_wr >= _required
     _payoff_edge = f_stats_payoff_edge(_stats, _is_buy)
     _has_good_payoff = not na(_payoff_edge) and _payoff_edge >= stats_min_payoff_edge
@@ -1096,39 +1214,38 @@ f_stats_gate_paths(SignalStats _stats, bool _is_buy) =>
 // Edge vs Baseline: 先验收缩到方向基准胜率，门槛 = 基准 + (最小调整胜率 - 50)，钳制在 [25%, 90%]（见 f_stats_required_winrate）
 //   Payoff Gate ≠ Off 时增加收益优势路径：收缩后收益优势 ≥ 最小收益优势即通过（Either Edge = 任一路径，Both Edges = 两路径都过）
 // Absolute (Legacy): 先验50%，门槛 = 最小调整胜率（旧版行为）；收益优势路径不生效，保持纯 v7.3 语义
-// 样本不足（终身样本数 < Min Samples）时质量路径无从判定：Unproven Buckets = Pass 放行（未经证明 ≠ 被证明差），Block (Legacy) 拦截（旧版行为）
+// 证据未经判定（终身样本数不足，或 Adaptive 下有效样本数<5）时：Unproven Buckets = Pass 放行，Block (Legacy) 拦截。
 // 样本足够时收益优势仍只是质量判定的替代路径，不是样本充分性的替代
-// With insufficient samples (lifetime count < Min Samples) the quality paths have no verdict: Unproven Buckets = Pass lets the signal through, Block (Legacy) blocks it (legacy behavior)
+// Without verdict-ready evidence (insufficient lifetime samples, or effective n < 5 under Adaptive), Unproven Buckets decides whether to pass or block.
 // With sufficient samples the payoff edge remains an alternative quality criterion, never an alternative to sample sufficiency
-f_passes_stats_filter(_stats, _is_buy) =>
+f_passes_stats_filter(_stats, _is_buy, _target) =>
     if not enable_stats_filter or not enable_stats
         true
     else
-        [_has_enough_samples, _edge_mode, _payoff_active, _has_good_winrate, _has_good_payoff, _quality_ok, _adj_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy)
+        [_has_enough_samples, _edge_mode, _payoff_active, _has_good_winrate, _has_good_payoff, _quality_ok, _adj_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy, _target)
         _has_enough_samples ? _quality_ok : stats_unproven_mode == "Pass"
 
 // 桶统计行直接翻译生产门槛：最终动作取自 f_passes_stats_filter，路径值和门槛与该函数同口径。
-// 最多三行：先给结论/组合逻辑，再分别给 WR 与 Avg 的原值、优势及 ✓/✗；用英文 edge 避免 Δ 在部分字体中显示成 A。
+// Edge 证据最多三行：先给结论/组合逻辑，再分别显示 WR edge 与 Avg edge；不重复原始 WR/Avg。
 // Translate each bucket into the production gate decision. The overall action comes from f_passes_stats_filter;
-// path values and thresholds use the same inputs. Keep the readout to three lines and avoid the poorly supported Δ glyph.
-f_stats_direct_readout(SignalStats _stats, bool _is_buy) =>
-    _gate_pass = f_passes_stats_filter(_stats, _is_buy)
+// path values and thresholds use the same inputs. Edge evidence uses at most three lines and avoids repeating raw WR/Avg.
+f_stats_direct_readout(SignalStats _stats, bool _is_buy, int _target) =>
+    _gate_pass = f_passes_stats_filter(_stats, _is_buy, _target)
     _lifetime_n = _stats.get_lifetime_count()
     _has_estimate = _lifetime_n >= 5
-    [_has_enough_samples, _edge_mode, _payoff_active, _wr_pass, _payoff_pass, _quality_ok, _display_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy)
-    _display_avg = _stats.get_avg()
+    [_has_enough_samples, _edge_mode, _payoff_active, _wr_pass, _payoff_pass, _quality_ok, _display_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy, _target)
     if not enable_stats
-        "STATS OFF · ALL ALLOWED\nNo statistics collected\nNo quality verdict"
+        "STATS OFF · ALL ALLOWED\nNo quality verdict"
     else if not enable_stats_filter
         if not _has_estimate
-            "FILTER OFF · ALL ALLOWED\nNo usable estimate\nNo quality verdict"
+            "FILTER OFF · ALL ALLOWED\nNo usable estimate"
         else if _edge_mode
             _wr_edge = _display_wr - f_stats_baseline_rate(_is_buy)
-            str.format("FILTER OFF · ALL ALLOWED\nWR {0,number,#.1}% · edge {1,number,+#.1;-#.1}pp\nAvg {2,number,+#.1;-#.1}% · edge {3,number,+#.1;-#.1}%", _display_wr, _wr_edge, _display_avg, _payoff_edge)
+            str.format("FILTER OFF · ALL ALLOWED\nWR edge {0,number,+#.2;-#.2}pp\nAvg edge {1,number,+#.2;-#.2}%", _wr_edge, _payoff_edge)
         else
-            str.format("FILTER OFF · ALL ALLOWED\nWR {0,number,#.1}% · no gate\nAvg {1,number,+#.1;-#.1}% · no gate", _display_wr, _display_avg)
-    else if _lifetime_n < stats_min_samples
-        str.format("{0} · UNPROVEN POLICY\nNo quality verdict before n={1}", _gate_pass ? "ALLOW" : "BLOCK", stats_min_samples)
+            str.format("FILTER OFF · ALL ALLOWED\nWR {0,number,#.2}% · no gate", _display_wr)
+    else if not _has_enough_samples
+        _lifetime_n < _target ? str.format("{0} · WAITING\nNo quality verdict", _gate_pass ? "ALLOW" : "BLOCK") : str.format("{0} · STALE\nNeed fresh evidence", _gate_pass ? "ALLOW" : "BLOCK")
     else
         _required_wr = f_stats_required_winrate(_is_buy)
         _path_count = (_wr_pass ? 1 : 0) + (_payoff_pass ? 1 : 0)
@@ -1136,17 +1253,17 @@ f_stats_direct_readout(SignalStats _stats, bool _is_buy) =>
         _headline = str.format("{0} · {1}", _gate_pass ? "PASS" : "BLOCK", _edge_mode ? _logic : "ABS WR")
         if _edge_mode
             _wr_edge = _display_wr - f_stats_baseline_rate(_is_buy)
-            _avg_path = _payoff_active ? str.format("Avg {0,number,+#.1;-#.1}% · edge {1,number,+#.2;-#.2}% {2}", _display_avg, _payoff_edge, _payoff_pass ? "✓" : "✗") : str.format("Avg {0,number,+#.1;-#.1}% · not gated", _display_avg)
-            _headline + str.format("\nWR {0,number,#.2}% · edge {1,number,+#.2;-#.2}pp {2}\n{3}", _display_wr, _wr_edge, _wr_pass ? "✓" : "✗", _avg_path)
+            _avg_path = _payoff_active ? str.format("Avg edge {0,number,+#.2;-#.2}% {1}", _payoff_edge, _payoff_pass ? "✓" : "✗") : str.format("Avg edge {0,number,+#.2;-#.2}% · info", _payoff_edge)
+            _headline + str.format("\nWR edge {0,number,+#.2;-#.2}pp {1}\n{2}", _wr_edge, _wr_pass ? "✓" : "✗", _avg_path)
         else
-            _headline + str.format("\nWR {0,number,#.2}% · min {1,number,#.2}% {2}\nAvg {3,number,+#.1;-#.1}% · not gated", _display_wr, _required_wr, _wr_pass ? "✓" : "✗", _display_avg)
+            _headline + str.format("\nWR {0,number,#.2}% {1} {2,number,#.2}% {3}", _display_wr, _wr_pass ? "≥" : "<", _required_wr, _wr_pass ? "✓" : "✗")
 
 // 一个 cell 只能使用一种文字颜色；成熟桶保持白色，避免 OR 模式下失败路径的 ✗ 被整体 PASS 绿色误导。
 // A cell has one text color, so mature buckets stay white: an OR-pass must not paint its failed path and ✗ green.
-f_stats_direct_color(SignalStats _stats, bool _is_buy) =>
-    _gate_pass = f_passes_stats_filter(_stats, _is_buy)
+f_stats_direct_color(SignalStats _stats, bool _is_buy, int _target) =>
+    _gate_pass = f_passes_stats_filter(_stats, _is_buy, _target)
     not enable_stats or not enable_stats_filter ? color.gray :
-     _stats.get_lifetime_count() < stats_min_samples ? (_gate_pass ? #FFC107 : #9E9E9E) :
+     not f_stats_has_verdict_samples(_stats, _target) ? (_gate_pass ? #FFC107 : #9E9E9E) :
      _stats.get_count() < 5 ? #FFC107 :
      color.white
 
@@ -1155,22 +1272,38 @@ buy_mtf_stats = f_get_filter_stats(true, true, false, false, buy_quality_grade)
 buy_div_stats = f_get_filter_stats(true, false, true, false, buy_quality_grade)
 buy_ext_stats = f_get_filter_stats(true, false, false, true, buy_quality_grade)
 buy_norm_stats = f_get_filter_stats(true, false, false, false, buy_quality_grade)
+buy_mtf_stats_target = f_get_filter_target(true, true, false, false, buy_quality_grade)
+buy_div_stats_target = f_get_filter_target(true, false, true, false, buy_quality_grade)
+buy_ext_stats_target = f_get_filter_target(true, false, false, true, buy_quality_grade)
+buy_norm_stats_target = f_get_filter_target(true, false, false, false, buy_quality_grade)
+buy_mtf_stats_source = f_get_filter_source(true, true, false, false, buy_quality_grade)
+buy_div_stats_source = f_get_filter_source(true, false, true, false, buy_quality_grade)
+buy_ext_stats_source = f_get_filter_source(true, false, false, true, buy_quality_grade)
+buy_norm_stats_source = f_get_filter_source(true, false, false, false, buy_quality_grade)
 
 sell_mtf_stats = f_get_filter_stats(false, true, false, false, sell_quality_grade)
 sell_div_stats = f_get_filter_stats(false, false, true, false, sell_quality_grade)
 sell_ext_stats = f_get_filter_stats(false, false, false, true, sell_quality_grade)
 sell_norm_stats = f_get_filter_stats(false, false, false, false, sell_quality_grade)
+sell_mtf_stats_target = f_get_filter_target(false, true, false, false, sell_quality_grade)
+sell_div_stats_target = f_get_filter_target(false, false, true, false, sell_quality_grade)
+sell_ext_stats_target = f_get_filter_target(false, false, false, true, sell_quality_grade)
+sell_norm_stats_target = f_get_filter_target(false, false, false, false, sell_quality_grade)
+sell_mtf_stats_source = f_get_filter_source(false, true, false, false, sell_quality_grade)
+sell_div_stats_source = f_get_filter_source(false, false, true, false, sell_quality_grade)
+sell_ext_stats_source = f_get_filter_source(false, false, false, true, sell_quality_grade)
+sell_norm_stats_source = f_get_filter_source(false, false, false, false, sell_quality_grade)
 
 // 过滤结果
-filter_buy_mtf = f_passes_stats_filter(buy_mtf_stats, true)
-filter_buy_div = f_passes_stats_filter(buy_div_stats, true)
-filter_buy_ext = f_passes_stats_filter(buy_ext_stats, true)
-filter_buy_norm = f_passes_stats_filter(buy_norm_stats, true)
+filter_buy_mtf = f_passes_stats_filter(buy_mtf_stats, true, buy_mtf_stats_target)
+filter_buy_div = f_passes_stats_filter(buy_div_stats, true, buy_div_stats_target)
+filter_buy_ext = f_passes_stats_filter(buy_ext_stats, true, buy_ext_stats_target)
+filter_buy_norm = f_passes_stats_filter(buy_norm_stats, true, buy_norm_stats_target)
 
-filter_sell_mtf = f_passes_stats_filter(sell_mtf_stats, false)
-filter_sell_div = f_passes_stats_filter(sell_div_stats, false)
-filter_sell_ext = f_passes_stats_filter(sell_ext_stats, false)
-filter_sell_norm = f_passes_stats_filter(sell_norm_stats, false)
+filter_sell_mtf = f_passes_stats_filter(sell_mtf_stats, false, sell_mtf_stats_target)
+filter_sell_div = f_passes_stats_filter(sell_div_stats, false, sell_div_stats_target)
+filter_sell_ext = f_passes_stats_filter(sell_ext_stats, false, sell_ext_stats_target)
+filter_sell_norm = f_passes_stats_filter(sell_norm_stats, false, sell_norm_stats_target)
 
 // 根据过滤模式决定显示的信号
 // Hard: 只显示通过的信号
@@ -1210,8 +1343,8 @@ alert_sell_norm = sig_sell_normal and filter_sell_norm
 
 // 当前信号的统计桶是否样本不足（⏳ = 无质量结论）；与 f_passes_stats_filter 的样本门槛同口径
 // Whether the current signal's bucket lacks samples (⏳ = no quality verdict); same basis as the sample gate in f_passes_stats_filter
-f_stats_insufficient(_stats) =>
-    _stats.get_lifetime_count() < stats_min_samples
+f_stats_insufficient(_stats, _target) =>
+    not f_stats_has_verdict_samples(_stats, _target)
 
 // ────────────────────────────────────────
 // 信号隐藏状态检测（用于统一显示）
@@ -1298,7 +1431,8 @@ current_is_hidden = signal_event_active and (signal_event_stats_hidden or signal
 
 signal_event_filter_pass = signal_event_kind == 1 ? (signal_event_direction == 1 ? filter_buy_mtf : filter_sell_mtf) : signal_event_kind == 2 ? (signal_event_direction == 1 ? filter_buy_div : filter_sell_div) : signal_event_kind == 3 ? (signal_event_direction == 1 ? filter_buy_ext : filter_sell_ext) : signal_event_kind == 4 ? (signal_event_direction == 1 ? filter_buy_norm : filter_sell_norm) : true
 signal_event_stats = signal_event_direction == 1 ? (signal_event_kind == 1 ? buy_mtf_stats : signal_event_kind == 2 ? buy_div_stats : signal_event_kind == 3 ? buy_ext_stats : buy_norm_stats) : (signal_event_kind == 1 ? sell_mtf_stats : signal_event_kind == 2 ? sell_div_stats : signal_event_kind == 3 ? sell_ext_stats : sell_norm_stats)
-signal_event_insufficient = signal_event_kind >= 1 and signal_event_kind <= 4 and f_stats_insufficient(signal_event_stats)
+signal_event_stats_target = signal_event_direction == 1 ? (signal_event_kind == 1 ? buy_mtf_stats_target : signal_event_kind == 2 ? buy_div_stats_target : signal_event_kind == 3 ? buy_ext_stats_target : buy_norm_stats_target) : (signal_event_kind == 1 ? sell_mtf_stats_target : signal_event_kind == 2 ? sell_div_stats_target : signal_event_kind == 3 ? sell_ext_stats_target : sell_norm_stats_target)
+signal_event_insufficient = signal_event_kind >= 1 and signal_event_kind <= 4 and f_stats_insufficient(signal_event_stats, signal_event_stats_target)
 
 // 信号结果：✓/✗ 只表示门槛结果，⏳ 只表示样本不足，⚠️ 保留给运行/数据警告；隐藏原因直接写明。
 // Signal result: ✓/✗ are gate verdicts, ⏳ means insufficient samples, and ⚠️ remains a general runtime/data warning; hidden reasons are explicit.
@@ -1341,30 +1475,36 @@ f_gate_bucket_label(_kind, _grade, _is_buy) =>
     _dir_text = _is_buy ? "BUY" : "SELL"
     _type_text = f_signal_kind_icon(_signal_idx, _is_buy) + " " + f_signal_kind_name(_signal_idx)
     stats_mode == "Signal Type" ? _type_text + " " + _dir_text : stats_mode == "Grade" ? _dir_text + " [Score " + _grade + "]" : _type_text + " " + _dir_text + " [Score " + _grade + "]"
+
+f_gate_type_bucket_label(_kind, _is_buy) =>
+    _signal_idx = _kind - 1
+    f_signal_kind_icon(_signal_idx, _is_buy) + " " + f_signal_kind_name(_signal_idx) + " " + (_is_buy ? "BUY" : "SELL")
 // @harness: gate-helper
 
-// Raw Baseline ignores the production stats gate. Keep the same metrics, but
-// deliberately omit pass/fail marks so a descriptive edge cannot look like a trade rule.
-// Raw Baseline 不执行生产统计门槛；保留同口径指标，但不显示质量勾叉，避免误读为回测交易规则。
-f_harness_raw_stats_readout(SignalStats _stats, bool _is_buy) =>
+// Raw Baseline ignores the production stats gate. Keep its requested bucket and
+// target, but omit pass/fail marks so descriptive evidence cannot look like a rule.
+// Edge estimates use one metric per line to keep the right cell narrow.
+// Raw Baseline 不执行生产统计门槛；保留请求桶及其目标，但不显示质量勾叉。
+// Edge 估计每项独占一行，避免右侧单元格横向过长。
+f_harness_raw_stats_readout(SignalStats _stats, bool _is_buy, int _target) =>
     _lifetime_n = _stats.get_lifetime_count()
     if _lifetime_n < 5
-        "RAW BASELINE · GATE IGNORED\nNo usable estimate\nAll raw signals allowed"
+        "RAW · GATE IGNORED\nNo usable estimate"
     else
-        [_has_enough, _edge_mode, _payoff_active, _wr_pass, _payoff_pass, _quality_ok, _adj_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy)
-        _avg = _stats.get_avg()
+        [_has_enough, _edge_mode, _payoff_active, _wr_pass, _payoff_pass, _quality_ok, _adj_wr, _payoff_edge] = f_stats_gate_paths(_stats, _is_buy, _target)
         if _edge_mode
             _wr_edge = _adj_wr - f_stats_baseline_rate(_is_buy)
-            str.format("RAW BASELINE · GATE IGNORED\nWR {0,number,#.1}% · edge {1,number,+#.1;-#.1}pp\nAvg {2,number,+#.1;-#.1}% · edge {3,number,+#.1;-#.1}%", _adj_wr, _wr_edge, _avg, _payoff_edge)
+            str.format("RAW · GATE IGNORED\nWR edge {0,number,+#.2;-#.2}pp\nAvg edge {1,number,+#.2;-#.2}%", _wr_edge, _payoff_edge)
         else
-            str.format("RAW BASELINE · GATE IGNORED\nWR {0,number,#.1}% · no gate\nAvg {1,number,+#.1;-#.1}% · no gate", _adj_wr, _avg)
+            str.format("RAW · GATE IGNORED\nWR {0,number,#.2}% · no gate", _adj_wr)
 
 f_harness_gate_snapshot() =>
     string _source = "Idle"
-    int _count = 0
-    float _effective = 0.0
+    string _sample_display = ""
     string _readout = "No strategy signal"
+    color _readout_color = color.gray
     SignalStats _stats = SignalStats.new()
+    int _target = stats_min_samples
 
     // Rebuild the exact strategy signal for this backtest mode. Trade Side changes
     // whether the signal enters, exits or reverses; it must not rewrite its direction.
@@ -1382,43 +1522,51 @@ f_harness_gate_snapshot() =>
     bool _has_sell = _sell_mtf or _sell_div or _sell_ext or _sell_norm
     int _direction = _has_buy and not _has_sell ? 1 : _has_sell and not _has_buy ? -1 : 0
     bool _use_buy = _direction == 1
+    bool _use_mtf = false
+    bool _use_div = false
+    bool _use_ext = false
+    string _grade = "D"
 
     if _has_buy and _has_sell
         _source := "Conflict"
 
     if _direction == 1
+        _grade := buy_quality_grade
         if _buy_mtf
-            _stats := f_get_filter_stats(true, true, false, false, buy_quality_grade)
-            _source := f_get_filter_source_label(true, false, false, buy_quality_grade, true)
+            _use_mtf := true
         else if _buy_div
-            _stats := f_get_filter_stats(true, false, true, false, buy_quality_grade)
-            _source := f_get_filter_source_label(false, true, false, buy_quality_grade, true)
+            _use_div := true
         else if _buy_ext
-            _stats := f_get_filter_stats(true, false, false, true, buy_quality_grade)
-            _source := f_get_filter_source_label(false, false, true, buy_quality_grade, true)
-        else if _buy_norm
-            _stats := f_get_filter_stats(true, false, false, false, buy_quality_grade)
-            _source := f_get_filter_source_label(false, false, false, buy_quality_grade, true)
+            _use_ext := true
     else if _direction == -1
+        _grade := sell_quality_grade
         if _sell_mtf
-            _stats := f_get_filter_stats(false, true, false, false, sell_quality_grade)
-            _source := f_get_filter_source_label(true, false, false, sell_quality_grade, false)
+            _use_mtf := true
         else if _sell_div
-            _stats := f_get_filter_stats(false, false, true, false, sell_quality_grade)
-            _source := f_get_filter_source_label(false, true, false, sell_quality_grade, false)
+            _use_div := true
         else if _sell_ext
-            _stats := f_get_filter_stats(false, false, false, true, sell_quality_grade)
-            _source := f_get_filter_source_label(false, false, true, sell_quality_grade, false)
-        else if _sell_norm
-            _stats := f_get_filter_stats(false, false, false, false, sell_quality_grade)
-            _source := f_get_filter_source_label(false, false, false, sell_quality_grade, false)
+            _use_ext := true
 
     if _direction != 0
-        _count := _stats.get_lifetime_count()
-        _effective := _stats.get_count()
-        _readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy) : f_harness_raw_stats_readout(_stats, _use_buy)
+        // Production must explain the exact evidence bucket used by its active gate.
+        // Raw Baseline (and a disabled production filter) keeps the requested bucket.
+        // Production 必须解释启用中 gate 实际使用的证据桶；Raw Baseline（以及关闭的
+        // Production filter）保留用户请求桶，不借用父级统计。
+        bool _use_resolved = harness_use_production and enable_stats and enable_stats_filter
+        string _evidence_source = ""
+        if _use_resolved
+            _stats := f_get_filter_stats(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+            _target := f_get_filter_target(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+            _evidence_source := f_get_filter_source(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+        else
+            _stats := f_harness_get_requested_stats(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+            _target := f_harness_get_requested_target(_use_buy, _use_mtf, _use_div, _use_ext, _grade)
+        _source := f_get_filter_source_label(_use_mtf, _use_div, _use_ext, _grade, _use_buy, _evidence_source)
+        _sample_display := not enable_stats ? "Stats off" : f_stats_sample_text(_stats, _target)
+        _readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy, _target) : f_harness_raw_stats_readout(_stats, _use_buy, _target)
+        _readout_color := harness_use_production ? f_stats_direct_color(_stats, _use_buy, _target) : color.gray
 
-    [_source, _count, _effective, _readout]
+    [_source, _sample_display, _readout, _readout_color]
 
 if show_dashboard
     // 经验分位只能定位到区间，不能把区间上界冒充精确百分位（例如 P50–P75 不能写成 P75）。
@@ -1507,39 +1655,17 @@ if show_dashboard
                 gate_grade = gate_is_buy ? buy_quality_grade : sell_quality_grade
                 if gate_row_visible
                     string gate_left_display = "Stats Filter\nPure divergence"
-                    string gate_display = "DISPLAY ONLY\nNo stats bucket\nNot an alert signal"
+                    string gate_display = "DISPLAY ONLY\nNot an alert signal"
                     color gate_color = color.gray
                     if gate_kind > 0
                         gate_stats = gate_is_buy ? (gate_kind == 1 ? buy_mtf_stats : gate_kind == 2 ? buy_div_stats : gate_kind == 3 ? buy_ext_stats : buy_norm_stats) : (gate_kind == 1 ? sell_mtf_stats : gate_kind == 2 ? sell_div_stats : gate_kind == 3 ? sell_ext_stats : sell_norm_stats)
-                        gate_pass = gate_is_buy ? (gate_kind == 1 ? filter_buy_mtf : gate_kind == 2 ? filter_buy_div : gate_kind == 3 ? filter_buy_ext : filter_buy_norm) : (gate_kind == 1 ? filter_sell_mtf : gate_kind == 2 ? filter_sell_div : gate_kind == 3 ? filter_sell_ext : filter_sell_norm)
-                        gate_label = f_gate_bucket_label(gate_kind, gate_grade, gate_is_buy)
-                        gate_n = gate_stats.get_lifetime_count()
-                        if gate_n < stats_min_samples
-                            gate_left_display := str.format("Stats Filter\n{0}\nn={1}/{2}⏳", gate_label, gate_n, stats_min_samples)
-                            gate_display := str.format("{0} · UNPROVEN\nPolicy decision only\nNo quality verdict", gate_pass ? "ALLOW" : "BLOCK")
-                            gate_color := gate_pass ? #FFC107 : #9E9E9E
-                        else
-                            [gate_has_enough, gate_edge_mode, gate_payoff_active, gate_wr_pass, gate_payoff_pass, gate_quality_ok, gate_adj_value, gate_payoff_value] = f_stats_gate_paths(gate_stats, gate_is_buy)
-                            gate_adj = nz(gate_adj_value)
-                            gate_req = f_stats_required_winrate(gate_is_buy)
-                            gate_effective_usable = gate_stats.get_count() >= 5
-                            gate_sample_suffix = gate_effective_usable ? "" : " · stale"
-                            gate_payoff = nz(gate_payoff_value)
-                            gate_wr_mark = gate_wr_pass ? "✓" : "✗"
-                            gate_wr_compare = gate_wr_pass ? "≥" : "<"
-                            gate_payoff_mark = gate_payoff_pass ? "✓" : "✗"
-                            gate_payoff_compare = gate_payoff_pass ? "≥" : "<"
-                            gate_logic = stats_payoff_mode == "Either Edge" ? "OR" : "AND"
-                            gate_path_count = (gate_wr_pass ? 1 : 0) + (gate_payoff_pass ? 1 : 0)
-                            gate_result = gate_payoff_active ? str.format("{0} · {1} ({2}/2)", gate_pass ? "PASS" : "BLOCK", gate_logic, gate_path_count) : str.format("{0} · {1}", gate_pass ? "PASS" : "BLOCK", gate_edge_mode ? "WR ONLY" : "ABS WR")
-                            // 门槛行保留足够小数位，避免未舍入的比较结果显示成“67%<67%”。
-                            // Keep enough precision in the gate row to avoid rendering an unrounded comparison as "67%<67%".
-                            gate_left_display := str.format("Stats Filter\n{0}\nn={1}{2}", gate_label, gate_n, gate_sample_suffix)
-                            gate_third_line = gate_payoff_active ? str.format("Avg edge {0,number,+#.2;-#.2}%{1}{2,number,+#.2;-#.2}% {3}", gate_payoff, gate_payoff_compare, stats_min_payoff_edge, gate_payoff_mark) : str.format("Avg {0,number,+#.1;-#.1}% · not gated", gate_stats.get_avg())
-                            gate_display := gate_result + str.format("\nWR {0,number,#.2}%{1}{2,number,#.2}% {3}\n", gate_adj, gate_wr_compare, gate_req, gate_wr_mark) + gate_third_line
-                            // 同一 cell 同时可能含 ✓ 与 ✗；成熟态保持白色，避免总体结果颜色污染单条路径。
-                            // One cell can contain both ✓ and ✗, so mature text stays white; stale estimates remain yellow.
-                            gate_color := gate_effective_usable ? color.white : #FFC107
+                        gate_target = gate_is_buy ? (gate_kind == 1 ? buy_mtf_stats_target : gate_kind == 2 ? buy_div_stats_target : gate_kind == 3 ? buy_ext_stats_target : buy_norm_stats_target) : (gate_kind == 1 ? sell_mtf_stats_target : gate_kind == 2 ? sell_div_stats_target : gate_kind == 3 ? sell_ext_stats_target : sell_norm_stats_target)
+                        gate_source = gate_is_buy ? (gate_kind == 1 ? buy_mtf_stats_source : gate_kind == 2 ? buy_div_stats_source : gate_kind == 3 ? buy_ext_stats_source : buy_norm_stats_source) : (gate_kind == 1 ? sell_mtf_stats_source : gate_kind == 2 ? sell_div_stats_source : gate_kind == 3 ? sell_ext_stats_source : sell_norm_stats_source)
+                        gate_title = "Stats Filter"
+                        gate_label = gate_source == "Type fallback" ? f_gate_type_bucket_label(gate_kind, gate_is_buy) + " → Type" : f_gate_bucket_label(gate_kind, gate_grade, gate_is_buy)
+                        gate_left_display := gate_title + "\n" + gate_label + "\n" + f_stats_sample_text(gate_stats, gate_target)
+                        gate_display := f_stats_direct_readout(gate_stats, gate_is_buy, gate_target)
+                        gate_color := f_stats_direct_color(gate_stats, gate_is_buy, gate_target)
                     table.cell(dashboard, 0, row, gate_left_display, text_color=color.gray, text_size=txt_size_body)
                     table.cell(dashboard, 1, row, gate_display, text_color=gate_color, text_size=txt_size_body)
                     row += 1
@@ -1548,13 +1674,11 @@ if show_dashboard
             harness_side_display = harness_trade_side == "Long Only" ? "Long only" : harness_trade_side == "Short Only" ? "Short only" : "Long + short"
             harness_mode_display = harness_use_production ? "Production filter" : "Raw baseline"
             harness_tester_display = harness_trade_side == "Long Only" ? "All = long trades" : harness_trade_side == "Short Only" ? "All = short trades" : "All = both sides"
-            [harness_gate_source, harness_gate_count, harness_gate_effective, harness_gate_readout] = f_harness_gate_snapshot()
+            [harness_gate_source, harness_gate_sample_display, harness_gate_readout, harness_gate_color] = f_harness_gate_snapshot()
             // Strategy Stats 解释本回测模式的实际买/卖信号：Production 复用真实 gate 结论，Raw Baseline 明确忽略 gate。
             // Strategy Stats explains the actual signal in this backtest mode: Production reuses the real gate verdict; Raw Baseline explicitly ignores it.
-            harness_gate_sample_display = not enable_stats ? "Stats off" : harness_gate_count >= stats_min_samples ? (harness_gate_effective >= 5 ? str.format("n={0}", harness_gate_count) : str.format("n={0} · stale", harness_gate_count)) : str.format("n={0}/{1}⏳", harness_gate_count, stats_min_samples)
             harness_stats_left = harness_gate_source == "Idle" or harness_gate_source == "Conflict" ? "Strategy Stats" : str.format("Strategy Stats\n{0}\n{1}", harness_gate_source, harness_gate_sample_display)
             harness_gate_display = harness_gate_source == "Idle" ? "No strategy signal" : harness_gate_source == "Conflict" ? "BUY + SELL conflict\nNo strategy action" : harness_gate_readout
-            harness_gate_color = harness_gate_source == "Idle" or harness_gate_source == "Conflict" or not harness_use_production or not enable_stats or not enable_stats_filter ? color.gray : harness_gate_count < stats_min_samples ? (stats_unproven_mode == "Pass" ? #FFC107 : #9E9E9E) : harness_gate_effective < 5 ? #FFC107 : color.white
 
             table.cell(dashboard, 0, row, "Backtest", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, str.format("{0}\n{1}", harness_side_display, harness_mode_display), text_color=color.white, text_size=txt_size_body)
@@ -1613,8 +1737,9 @@ if show_dashboard
                     // Edge 模式显示方向基准→实际最低胜率；Legacy 是固定绝对门槛，不能伪装成由基准推导。
                     // Edge mode shows direction baseline→effective minimum; Legacy is a fixed absolute threshold and must not imply baseline derivation.
                     stats_logic = stats_payoff_mode == "Either Edge" ? "OR" : stats_payoff_mode == "Both Edges" ? "AND" : "WR only"
-                    stats_gate_label = not enable_stats_filter ? "Filter off" : stats_gate_mode == "Edge vs Baseline" ? (stats_payoff_mode == "Off" ? "WR-only gate" : stats_logic + " gate") : "Absolute WR gate"
-                    stats_title_display = stats_title + str.format("\n{0}-bar forward\n{1}", stats_forward_bars, stats_gate_label)
+                    stats_gate_label = not enable_stats_filter ? "Filter off" : stats_gate_mode == "Edge vs Baseline" ? (stats_payoff_mode == "Off" ? "WR only" : stats_logic) : "Absolute WR"
+                    stats_policy_label = stats_sample_policy == "Fixed (Legacy)" ? str.format("Fixed target n {0}", stats_min_samples) : not stats_independent_samples ? str.format("Adaptive guard n {0}", stats_min_samples) : str.format("Adaptive n {0}–{1}", f_stats_adaptive_target_low(), f_stats_adaptive_target_high())
+                    stats_title_display = stats_title + str.format("\nOutcome +{0} bars\n{1} · {2}", stats_forward_bars, stats_gate_label, stats_policy_label)
                     stats_header = stats_gate_mode == "Edge vs Baseline" ? (stats_payoff_mode == "Off" ? str.format("BUY WR {0,number,#.2}→{1,number,#.2}%\nSELL WR {2,number,#.2}→{3,number,#.2}%", f_stats_baseline_rate(true), f_stats_required_winrate(true), f_stats_baseline_rate(false), f_stats_required_winrate(false)) : str.format("Avg edge min {0,number,+#.1;-#.1}%\nBUY WR {1,number,#.2}→{2,number,#.2}%\nSELL WR {3,number,#.2}→{4,number,#.2}%", stats_min_payoff_edge, f_stats_baseline_rate(true), f_stats_required_winrate(true), f_stats_baseline_rate(false), f_stats_required_winrate(false))) : str.format("Minimum WR {0,number,#.2}%", stats_min_winrate)
                     table.cell(dashboard, 0, row, stats_title_display, text_color=color.gray, text_size=txt_size_body)
                     table.cell(dashboard, 1, row, stats_header, text_color=color.gray, text_size=txt_size_body)
@@ -1636,9 +1761,10 @@ if show_dashboard
                             for dir_idx = 0 to STATS_DIR_COUNT - 1
                                 is_buy = dir_idx == STATS_DIR_BUY
                                 sig_stats = array.get(signal_type_stats, f_signal_type_bucket_index(is_buy, sig_idx))
-                                sig_display = f_stats_direct_readout(sig_stats, is_buy)
-                                sig_value_color = f_stats_direct_color(sig_stats, is_buy)
-                                table.cell(dashboard, 0, row, f_signal_type_dashboard_label(sig_idx, is_buy) + "\n" + f_stats_sample_text(sig_stats), text_color=f_signal_type_dashboard_color(sig_idx, is_buy, color_bull, color_bear), text_size=txt_size_body)
+                                sig_target = f_stats_signal_type_target(is_buy, sig_idx)
+                                sig_display = f_stats_direct_readout(sig_stats, is_buy, sig_target)
+                                sig_value_color = f_stats_direct_color(sig_stats, is_buy, sig_target)
+                                table.cell(dashboard, 0, row, f_signal_type_dashboard_label(sig_idx, is_buy) + "\n" + f_stats_sample_text(sig_stats, sig_target), text_color=f_signal_type_dashboard_color(sig_idx, is_buy, color_bull, color_bear), text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, sig_display, text_color=sig_value_color, text_size=txt_size_body)
                                 row += 1
 
@@ -1648,9 +1774,10 @@ if show_dashboard
                                 is_buy = dir_idx == STATS_DIR_BUY
                                 grade_label = f_grade_value(grade_idx)
                                 grade_bucket = array.get(grade_stats, grade_idx * STATS_DIR_COUNT + dir_idx)
-                                grade_display = f_stats_direct_readout(grade_bucket, is_buy)
-                                grade_value_color = f_stats_direct_color(grade_bucket, is_buy)
-                                table.cell(dashboard, 0, row, str.format("{0} [Score {1}]\n{2}", is_buy ? "BUY" : "SELL", grade_label, f_stats_sample_text(grade_bucket)), text_color=f_grade_dashboard_color(grade_idx), text_size=txt_size_body)
+                                grade_target = f_stats_grade_target(is_buy, grade_label)
+                                grade_display = f_stats_direct_readout(grade_bucket, is_buy, grade_target)
+                                grade_value_color = f_stats_direct_color(grade_bucket, is_buy, grade_target)
+                                table.cell(dashboard, 0, row, str.format("{0}\n[Score {1}]\n{2}", is_buy ? "BUY" : "SELL", grade_label, f_stats_sample_text(grade_bucket, grade_target)), text_color=f_grade_dashboard_color(grade_idx), text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, grade_display, text_color=grade_value_color, text_size=txt_size_body)
                                 row += 1
 
@@ -1700,11 +1827,17 @@ if show_dashboard
                                 dir_text = is_buy_rank ? "BUY" : "SELL"
                                 dir_clr = f_dir_color(dir, color_bull, color_bear)
 
-                                label_text = str.format("{0} {1} {2} [Score {3}]\n{4}", f_signal_kind_icon(sig - 1, is_buy_rank), f_signal_kind_name(sig - 1), dir_text, grd, f_stats_sample_text(rank_stats))
-                                // 与生产 gate 直接对齐：第一行给动作/OR|AND，第二行给两个优势路径的 ✓/✗。
-                                // Align directly with the production gate: action/OR|AND first, then each edge path with ✓/✗.
-                                value_text = f_stats_direct_readout(rank_stats, is_buy_rank)
-                                value_color = f_stats_direct_color(rank_stats, is_buy_rank)
+                                rank_target = f_stats_ranking_target(is_buy_rank, sig - 1, grd)
+                                label_text = str.format("{0} {1}\n{2} [Score {3}]\n{4}", f_signal_kind_icon(sig - 1, is_buy_rank), f_signal_kind_name(sig - 1), dir_text, grd, f_stats_sample_text(rank_stats, rank_target))
+                                // Adaptive 下未成熟的排行榜行只描述精确桶本身；当前事件可能改用父级桶，不能在这里冒充最终 ALLOW/BLOCK。
+                                // Under Adaptive, an unready ranking row describes only its exact bucket; a current event may use its parent, so this is not a final action.
+                                exact_has_verdict = f_stats_has_verdict_samples(rank_stats, rank_target)
+                                parent_stats = array.get(signal_type_stats, f_signal_type_bucket_index(is_buy_rank, sig - 1))
+                                parent_target = f_stats_signal_type_target(is_buy_rank, sig - 1)
+                                parent_ready = f_stats_has_verdict_samples(parent_stats, parent_target)
+                                parent_progress = f_stats_sample_text(parent_stats, parent_target)
+                                value_text = stats_sample_policy == "Adaptive" and not exact_has_verdict ? (parent_ready ? "WAIT · EXACT\nGate → Type\n" + parent_progress : "WAIT · NO VERDICT\nType evidence\n" + parent_progress) : f_stats_direct_readout(rank_stats, is_buy_rank, rank_target)
+                                value_color = stats_sample_policy == "Adaptive" and not exact_has_verdict ? #FFC107 : f_stats_direct_color(rank_stats, is_buy_rank, rank_target)
 
                                 table.cell(dashboard, 0, row, label_text, text_color=dir_clr, text_size=txt_size_body)
                                 table.cell(dashboard, 1, row, value_text, text_color=value_color, text_size=txt_size_body)
@@ -1753,8 +1886,8 @@ if enable_smart_alert
 
     // 买卖提醒各自跟随实际触发的最高等级事件，避免同 K 线反向候选读到错误统计桶。
     // Buy and sell alerts each follow their own highest-priority triggered event, so opposite candidates cannot borrow the wrong bucket status.
-    buy_alert_insufficient = alert_buy_mtf ? f_stats_insufficient(buy_mtf_stats) : alert_buy_div ? f_stats_insufficient(buy_div_stats) : alert_buy_ext ? f_stats_insufficient(buy_ext_stats) : filtered_buy_normal ? f_stats_insufficient(buy_norm_stats) : false
-    sell_alert_insufficient = alert_sell_mtf ? f_stats_insufficient(sell_mtf_stats) : alert_sell_div ? f_stats_insufficient(sell_div_stats) : alert_sell_ext ? f_stats_insufficient(sell_ext_stats) : filtered_sell_normal ? f_stats_insufficient(sell_norm_stats) : false
+    buy_alert_insufficient = alert_buy_mtf ? f_stats_insufficient(buy_mtf_stats, buy_mtf_stats_target) : alert_buy_div ? f_stats_insufficient(buy_div_stats, buy_div_stats_target) : alert_buy_ext ? f_stats_insufficient(buy_ext_stats, buy_ext_stats_target) : filtered_buy_normal ? f_stats_insufficient(buy_norm_stats, buy_norm_stats_target) : false
+    sell_alert_insufficient = alert_sell_mtf ? f_stats_insufficient(sell_mtf_stats, sell_mtf_stats_target) : alert_sell_div ? f_stats_insufficient(sell_div_stats, sell_div_stats_target) : alert_sell_ext ? f_stats_insufficient(sell_ext_stats, sell_ext_stats_target) : filtered_sell_normal ? f_stats_insufficient(sell_norm_stats, sell_norm_stats_target) : false
     string buy_alert_filter_status = enable_stats_filter and enable_stats ? (buy_alert_insufficient ? " ⏳" : " ✓") : ""
     string sell_alert_filter_status = enable_stats_filter and enable_stats ? (sell_alert_insufficient ? " ⏳" : " ✓") : ""
 

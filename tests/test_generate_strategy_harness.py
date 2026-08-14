@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import math
 import re
 import sys
 import tempfile
@@ -26,6 +27,24 @@ def read_source() -> str:
 
 def read_target() -> str:
     return gen.DEFAULT_TARGET.read_text(encoding="utf-8")
+
+
+def reference_adaptive_targets(counts: list[int], evidence_reference: int = 20) -> list[int]:
+    """Python mirror of Pine's positive-number smoothed-share target formula."""
+
+    low = min(evidence_reference, max(5, math.floor(evidence_reference * 0.4 + 0.5)))
+    high = min(evidence_reference, max(low, math.floor(evidence_reference * 0.8 + 0.5)))
+    peer_total = sum(counts)
+    prior_per_peer = evidence_reference / 4
+    return [
+        math.floor(
+            low
+            + (high - low)
+            * math.sqrt(max(0.0, min((count + prior_per_peer) / (peer_total + evidence_reference), 1.0)))
+            + 0.5
+        )
+        for count in counts
+    ]
 
 
 class GoldenTest(unittest.TestCase):
@@ -133,17 +152,28 @@ class DashboardSemanticsTest(unittest.TestCase):
         self.assertIn('"NA · need history"', self.source)
 
     def test_stats_rows_translate_metrics_into_the_actual_gate_decision(self) -> None:
-        self.assertIn("f_stats_gate_paths(SignalStats _stats, bool _is_buy)", self.source)
-        self.assertGreaterEqual(self.source.count("f_stats_gate_paths"), 4)
+        self.assertIn("f_stats_gate_paths(SignalStats _stats, bool _is_buy, int _target)", self.source)
+        self.assertGreaterEqual(self.source.count("f_stats_gate_paths"), 3)
         self.assertIn('str.format("OR ({0}/2)"', self.source)
         self.assertIn('str.format("AND ({0}/2)"', self.source)
         self.assertIn('"ABS WR"', self.source)
         self.assertIn('"FILTER OFF · ALL ALLOWED', self.source)
         self.assertIn('"STATS OFF · ALL ALLOWED', self.source)
-        self.assertIn("UNPROVEN POLICY", self.source)
-        self.assertIn("· edge {1,number,+#.2;-#.2}pp", self.source)
-        self.assertIn("· edge {1,number,+#.2;-#.2}%", self.source)
-        self.assertIn("· not gated", self.source)
+        self.assertIn('str.format("{0} · WAITING\\nNo quality verdict"', self.source)
+        self.assertIn('str.format("{0} · STALE\\nNeed fresh evidence"', self.source)
+        self.assertIn(
+            '_headline + str.format("\\nWR edge {0,number,+#.2;-#.2}pp {1}\\n{2}"',
+            self.source,
+        )
+        self.assertIn(
+            'str.format("Avg edge {0,number,+#.2;-#.2}% {1}"',
+            self.source,
+        )
+        self.assertIn(
+            'str.format("FILTER OFF · ALL ALLOWED\\nWR edge {0,number,+#.2;-#.2}pp\\nAvg edge {1,number,+#.2;-#.2}%"',
+            self.source,
+        )
+        self.assertNotIn("UNPROVEN POLICY", self.source)
         self.assertNotIn("ΔWR", self.source)
         self.assertNotIn("ΔAvg", self.source)
 
@@ -151,19 +181,185 @@ class DashboardSemanticsTest(unittest.TestCase):
         self.assertIn("signal_full_panel_display", self.source)
         self.assertIn('str.format("Z {0,number,+#.2;-#.2}σ\\nHistory {1}"', self.source)
         self.assertIn('trend_context + "\\n" + weekly_rsi_display + "\\n" + volume_context', self.source)
-        self.assertIn('"Stats Filter\\n{0}\\nn={1}{2}"', self.source)
-        self.assertIn('stats_title + str.format("\\n{0}-bar forward\\n{1}"', self.source)
+        self.assertIn('gate_title + "\\n" + gate_label + "\\n" + f_stats_sample_text(gate_stats, gate_target)', self.source)
+        self.assertIn('gate_display := f_stats_direct_readout(gate_stats, gate_is_buy, gate_target)', self.source)
+        self.assertIn('stats_title + str.format("\\nOutcome +{0} bars\\n{1} · {2}"', self.source)
         self.assertIn('"Avg edge min {0,number,+#.1;-#.1}%\\nBUY WR', self.source)
         self.assertIn('"Divergence"', self.source)
         self.assertIn("Pivot {2} · Max gap {3} bars", self.source)
         self.assertIn("Allowed {1}–{2} bars", self.source)
-        self.assertIn("gate_color := gate_effective_usable ? color.white", self.source)
+        self.assertIn("gate_color := f_stats_direct_color(gate_stats, gate_is_buy, gate_target)", self.source)
+
+    def test_full_stats_bucket_cells_use_three_semantic_lines(self) -> None:
+        self.assertIn(
+            'str.format("{0} {1}\\n{2}", f_signal_kind_icon(_signal_idx, _is_buy), '
+            'f_signal_kind_name(_signal_idx), _is_buy ? "BUY" : "SELL")',
+            self.source,
+        )
+        self.assertIn(
+            'f_signal_type_dashboard_label(sig_idx, is_buy) + "\\n" + '
+            "f_stats_sample_text(sig_stats, sig_target)",
+            self.source,
+        )
+        self.assertIn(
+            'str.format("{0}\\n[Score {1}]\\n{2}", is_buy ? "BUY" : "SELL", '
+            "grade_label, f_stats_sample_text(grade_bucket, grade_target))",
+            self.source,
+        )
+        self.assertIn(
+            'str.format("{0} {1}\\n{2} [Score {3}]\\n{4}", '
+            "f_signal_kind_icon(sig - 1, is_buy_rank), "
+            "f_signal_kind_name(sig - 1), dir_text, grd, "
+            "f_stats_sample_text(rank_stats, rank_target))",
+            self.source,
+        )
+
+    def test_adaptive_ranking_wait_cells_use_three_semantic_lines(self) -> None:
+        self.assertIn(
+            'parent_ready ? "WAIT · EXACT\\nGate → Type\\n" + parent_progress : '
+            '"WAIT · NO VERDICT\\nType evidence\\n" + parent_progress',
+            self.source,
+        )
+        self.assertNotIn('"WAIT · EXACT\\nGate → Type " + parent_progress', self.source)
+        self.assertNotIn('"WAIT · NO VERDICT\\nType " + parent_progress', self.source)
+
+    def test_stats_filter_fallback_uses_narrow_three_line_left_cell(self) -> None:
+        self.assertIn('gate_title = "Stats Filter"', self.source)
+        self.assertIn(
+            'gate_label = gate_source == "Type fallback" ? '
+            'f_gate_type_bucket_label(gate_kind, gate_is_buy) + " → Type" : '
+            "f_gate_bucket_label(gate_kind, gate_grade, gate_is_buy)",
+            self.source,
+        )
+        self.assertIn(
+            'gate_left_display := gate_title + "\\n" + gate_label + "\\n" + '
+            "f_stats_sample_text(gate_stats, gate_target)",
+            self.source,
+        )
+        self.assertNotIn("Stats Filter · Type fallback", self.source)
 
     def test_setup_score_is_not_presented_as_a_quality_verdict(self) -> None:
         self.assertIn('"── SETUP SCORE STATS ──"', self.source)
         self.assertIn('" [Score " + signal_grade_text + "]"', self.source)
         self.assertIn("[Score {3}]", self.source)
         self.assertNotIn('"── GRADE STATS ──"', self.source)
+
+    def test_adaptive_sample_policy_resolves_only_ready_ranking_parents(self) -> None:
+        self.assertIn('stats_sample_policy = input.string("Adaptive"', self.source)
+        self.assertIn('options=["Adaptive", "Fixed (Legacy)"]', self.source)
+        self.assertIn("f_stats_has_verdict_samples(SignalStats _stats, int _target)", self.source)
+        self.assertIn('stats_sample_policy == "Fixed (Legacy)" or _stats.get_count() >= 5', self.source)
+        self.assertIn("f_stats_uses_type_fallback", self.source)
+        self.assertIn('stats_sample_policy == "Adaptive" and stats_mode == "Ranking"', self.source)
+        self.assertIn("not f_stats_has_verdict_samples(_ranking, _ranking_target)", self.source)
+        self.assertIn("f_stats_has_verdict_samples(_type, _type_target)", self.source)
+        self.assertIn("f_get_filter_target", self.source)
+        self.assertIn('? "Type fallback" : ""', self.source)
+
+    def test_adaptive_stale_is_unproven_but_fixed_preserves_legacy_verdict(self) -> None:
+        self.assertIn('str.format("n={0} · eff {1,number,#.1}<5⏳"', self.source)
+        self.assertIn("else if not _has_enough_samples", self.source)
+        self.assertIn('"{0} · STALE\\nNeed fresh evidence"', self.source)
+        self.assertIn("not f_stats_has_verdict_samples(_stats, _target)", self.source)
+
+
+class AdaptiveTargetContractTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source = read_source()
+
+    def test_smoothed_share_reference_values(self) -> None:
+        cases = (
+            ([0, 0, 0, 0], [12, 12, 12, 12]),
+            ([10, 10, 10, 10], [12, 12, 12, 12]),
+            ([1, 13, 13, 13], [11, 12, 12, 12]),
+            ([37, 1, 1, 1], [15, 11, 11, 11]),
+            ([7, 11, 14, 30], [11, 12, 12, 13]),
+        )
+        for counts, expected in cases:
+            with self.subTest(counts=counts):
+                self.assertEqual(reference_adaptive_targets(counts), expected)
+
+    def test_pine_formula_matches_the_smoothed_share_contract(self) -> None:
+        self.assertIn("STATS_EVIDENCE_PEER_COUNT = 4", self.source)
+        self.assertIn("stats_min_samples * 0.4", self.source)
+        self.assertIn("stats_min_samples * 0.8", self.source)
+        self.assertIn(
+            "_q = (float(_bucket_n) + float(stats_min_samples) / STATS_EVIDENCE_PEER_COUNT) / "
+            "(float(_peer_total) + float(stats_min_samples))",
+            self.source,
+        )
+        self.assertIn("math.sqrt(_smoothed_q)", self.source)
+
+    def test_dynamic_target_uses_sample_structure_not_outcomes(self) -> None:
+        match = re.search(
+            r"f_stats_dynamic_target\(SignalStats _stats, int _peer_total\) =>\n"
+            r"(?P<body>.*?)(?=\nf_stats_signal_type_peer_total)",
+            self.source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        for forbidden in (
+            "wins",
+            "total_return",
+            "get_winrate",
+            "get_avg",
+            "get_adjusted",
+            "payoff",
+            "baseline",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, body)
+        self.assertIn("_stats.get_lifetime_count()", body)
+        self.assertIn("_peer_total", body)
+
+    def test_fixed_and_overlapping_sample_guards_restore_reference_target(self) -> None:
+        self.assertIn(
+            'if stats_sample_policy == "Fixed (Legacy)" or not stats_independent_samples\n'
+            "        stats_min_samples",
+            self.source,
+        )
+        self.assertIn('stats_sample_policy == "Adaptive" and stats_mode == "Ranking"', self.source)
+
+    def test_exact_and_parent_use_their_own_targets(self) -> None:
+        self.assertIn("_ranking_target = f_get_signal_target", self.source)
+        self.assertIn("_type_target = f_get_signal_type_target", self.source)
+        self.assertIn("f_stats_has_verdict_samples(_ranking, _ranking_target)", self.source)
+        self.assertIn("f_stats_has_verdict_samples(_type, _type_target)", self.source)
+        self.assertIn("parent_target = f_stats_signal_type_target", self.source)
+        self.assertIn("parent_progress = f_stats_sample_text(parent_stats, parent_target)", self.source)
+
+    def test_production_signal_and_alert_paths_carry_targets(self) -> None:
+        for event in ("mtf", "div", "ext", "norm"):
+            for direction in ("buy", "sell"):
+                with self.subTest(direction=direction, event=event):
+                    self.assertIn(f"{direction}_{event}_stats_target = f_get_filter_target", self.source)
+                    is_buy = "true" if direction == "buy" else "false"
+                    self.assertIn(
+                        f"filter_{direction}_{event} = f_passes_stats_filter("
+                        f"{direction}_{event}_stats, {is_buy}, {direction}_{event}_stats_target)",
+                        self.source,
+                    )
+                    self.assertIn(
+                        f"f_stats_insufficient({direction}_{event}_stats, {direction}_{event}_stats_target)",
+                        self.source,
+                    )
+        self.assertIn("signal_event_stats_target", self.source)
+        self.assertIn("f_stats_insufficient(signal_event_stats, signal_event_stats_target)", self.source)
+        self.assertIn("f_stats_sample_text(gate_stats, gate_target)", self.source)
+        self.assertIn("f_stats_direct_readout(gate_stats, gate_is_buy, gate_target)", self.source)
+        self.assertIn("f_stats_direct_color(gate_stats, gate_is_buy, gate_target)", self.source)
+
+    def test_old_three_line_unproven_vocabulary_is_gone(self) -> None:
+        for old_text in (
+            "UNPROVEN POLICY",
+            "Policy decision only",
+            "EXACT BUCKET · UNPROVEN",
+            "No ready Type parent",
+            "No exact-bucket verdict",
+        ):
+            with self.subTest(old_text=old_text):
+                self.assertNotIn(old_text, self.source)
 
 
 class GenerationContentTest(unittest.TestCase):
@@ -213,27 +409,137 @@ class GenerationContentTest(unittest.TestCase):
     def test_strategy_stats_follow_the_actual_signal_and_effective_weight(self) -> None:
         self.assertIn("int _direction = _has_buy and not _has_sell ? 1", self.generated)
         self.assertIn('if _has_buy and _has_sell\n        _source := "Conflict"', self.generated)
-        self.assertIn("_source := f_get_filter_source_label(true, false, false, buy_quality_grade, true)", self.generated)
-        self.assertIn("_source := f_get_filter_source_label(true, false, false, sell_quality_grade, false)", self.generated)
-        self.assertIn("_effective := _stats.get_count()", self.generated)
-        self.assertIn("harness_gate_effective >= 5", self.generated)
-        self.assertIn('str.format("n={0} · stale"', self.generated)
+        self.assertIn("_grade := buy_quality_grade", self.generated)
+        self.assertIn("_grade := sell_quality_grade", self.generated)
+        self.assertIn("int _target = stats_min_samples", self.generated)
+        self.assertIn("_sample_display := not enable_stats ? \"Stats off\" : f_stats_sample_text(_stats, _target)", self.generated)
+        self.assertIn("_readout_color := harness_use_production ? f_stats_direct_color(_stats, _use_buy, _target) : color.gray", self.generated)
+        self.assertIn("[_source, _sample_display, _readout, _readout_color]", self.generated)
+        self.assertIn("[harness_gate_source, harness_gate_sample_display, harness_gate_readout, harness_gate_color]", self.generated)
+        self.assertNotIn("harness_gate_count >= stats_min_samples", self.generated)
+        self.assertNotIn("harness_gate_effective >= 5", self.generated)
 
     def test_strategy_stats_explain_production_but_ignore_gate_in_raw_baseline(self) -> None:
         self.assertIn("f_harness_raw_stats_readout", self.generated)
-        self.assertIn("RAW BASELINE · GATE IGNORED", self.generated)
+        self.assertIn("RAW · GATE IGNORED", self.generated)
+        self.assertIn("f_harness_get_requested_stats", self.generated)
+        self.assertIn("f_harness_get_requested_target", self.generated)
+        self.assertIn("bool _use_resolved = harness_use_production and enable_stats and enable_stats_filter", self.generated)
+        self.assertIn("if _use_resolved\n            _stats := f_get_filter_stats", self.generated)
+        self.assertIn("_target := f_get_filter_target", self.generated)
+        self.assertIn("else\n            _stats := f_harness_get_requested_stats", self.generated)
+        self.assertIn("_target := f_harness_get_requested_target", self.generated)
+        self.assertIn('_evidence_source := f_get_filter_source(', self.generated)
         self.assertIn(
-            "_readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy) "
-            ": f_harness_raw_stats_readout(_stats, _use_buy)",
+            "_readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy, _target) "
+            ": f_harness_raw_stats_readout(_stats, _use_buy, _target)",
             self.generated,
         )
         self.assertIn("STATS OFF · ALL ALLOWED", self.generated)
         self.assertIn('str.format("Strategy Stats\\n{0}\\n{1}"', self.generated)
         self.assertIn("Score {0}", self.generated)
+        self.assertIn('[Score {1}] → Type', self.generated)
+        self.assertIn('_evidence_source == "Type fallback"', self.generated)
         self.assertIn('not enable_stats ? "Stats off"', self.generated)
-        self.assertIn("not enable_stats or not enable_stats_filter ? color.gray", self.generated)
+        self.assertIn("f_stats_direct_color(_stats, _use_buy, _target)", self.generated)
         self.assertNotIn("harness_gate_metrics_display", self.generated)
         self.assertNotIn("ΔAvg", self.generated)
+
+    def test_raw_readout_is_target_aware_and_splits_edge_metrics_across_three_lines(self) -> None:
+        self.assertIn(
+            "f_harness_raw_stats_readout(SignalStats _stats, bool _is_buy, int _target)",
+            self.generated,
+        )
+        self.assertIn("f_stats_gate_paths(_stats, _is_buy, _target)", self.generated)
+        match = re.search(
+            r"f_harness_raw_stats_readout\(SignalStats _stats, bool _is_buy, int _target\) =>\n"
+            r"(?P<body>.*?)(?=\nf_harness_gate_snapshot)",
+            self.generated,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertNotIn("All raw signals allowed", body)
+        self.assertIn(
+            'str.format("RAW · GATE IGNORED\\nWR edge {0,number,+#.2;-#.2}pp\\nAvg edge {1,number,+#.2;-#.2}%"',
+            body,
+        )
+        self.assertIn('"RAW · GATE IGNORED\\nNo usable estimate"', body)
+        self.assertIn(
+            'str.format("RAW · GATE IGNORED\\nWR {0,number,#.2}% · no gate"',
+            body,
+        )
+        # Only the mature Edge branch needs three lines. The no-estimate and
+        # Legacy branches deliberately remain two-line cells.
+        three_line_literals = re.findall(r'"[^"\n]*(?:\\n[^"\n]*){2}"', body)
+        self.assertEqual(len(three_line_literals), 1)
+        self.assertNotRegex(body, r'"[^"\n]*(?:\\n[^"\n]*){3}')
+
+    def test_production_readout_line_budget_matches_cell_semantics(self) -> None:
+        match = re.search(
+            r"f_stats_direct_readout\(SignalStats _stats, bool _is_buy, int _target\) =>\n"
+            r"(?P<body>.*?)(?=\nf_stats_direct_color)",
+            self.generated,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn(
+            '_headline + str.format("\\nWR edge {0,number,+#.2;-#.2}pp {1}\\n{2}"',
+            body,
+        )
+        self.assertIn(
+            'str.format("FILTER OFF · ALL ALLOWED\\nWR edge {0,number,+#.2;-#.2}pp\\nAvg edge {1,number,+#.2;-#.2}%"',
+            body,
+        )
+        self.assertIn(
+            'str.format("FILTER OFF · ALL ALLOWED\\nWR {0,number,#.2}% · no gate"',
+            body,
+        )
+        self.assertIn(
+            '_headline + str.format("\\nWR {0,number,#.2}% {1} {2,number,#.2}% {3}"',
+            body,
+        )
+        self.assertIn('"STATS OFF · ALL ALLOWED\\nNo quality verdict"', body)
+        self.assertIn('str.format("{0} · WAITING\\nNo quality verdict"', body)
+        self.assertIn('str.format("{0} · STALE\\nNeed fresh evidence"', body)
+        self.assertNotIn("pp · Avg edge", body)
+        self.assertNotIn("WAITING\\nNo quality verdict\\n", body)
+        self.assertNotIn("STALE\\nNeed fresh evidence\\n", body)
+        self.assertNotRegex(body, r'"[^"\n]*(?:\\n[^"\n]*){3}')
+
+    def test_strategy_stats_adaptive_and_fixed_source_contracts_are_explicit(self) -> None:
+        # Active Production is the only harness mode that may resolve a parent.
+        # Raw, stats-off, filter-off and Fixed retain the requested Stats Mode bucket;
+        # Fixed is guaranteed by the production resolver's Adaptive-only condition.
+        self.assertIn("harness_use_production and enable_stats and enable_stats_filter", self.generated)
+        self.assertIn('stats_sample_policy == "Adaptive" and stats_mode == "Ranking"', self.generated)
+        self.assertIn('stats_sample_policy == "Fixed (Legacy)" or _stats.get_count() >= 5', self.generated)
+        self.assertIn("f_harness_get_requested_stats(_use_buy, _use_mtf, _use_div, _use_ext, _grade)", self.generated)
+        self.assertIn("f_harness_get_requested_target(_use_buy, _use_mtf, _use_div, _use_ext, _grade)", self.generated)
+        self.assertIn('string _evidence_source = ""', self.generated)
+        self.assertIn('str.format("{0} [Score {1}] → Type"', self.generated)
+
+    def test_every_harness_stats_render_call_carries_the_selected_target(self) -> None:
+        expected = (
+            "f_stats_sample_text(_stats, _target)",
+            "f_stats_gate_paths(_stats, _is_buy, _target)",
+            "f_stats_direct_readout(_stats, _use_buy, _target)",
+            "f_stats_direct_color(_stats, _use_buy, _target)",
+            "f_harness_raw_stats_readout(_stats, _use_buy, _target)",
+        )
+        for call in expected:
+            with self.subTest(call=call):
+                self.assertIn(call, self.generated)
+        for legacy_call in (
+            "f_stats_sample_text(_stats)",
+            "f_stats_gate_paths(_stats, _is_buy)",
+            "f_stats_direct_readout(_stats, _use_buy)",
+            "f_stats_direct_color(_stats, _use_buy)",
+            "f_harness_raw_stats_readout(_stats, _use_buy)",
+        ):
+            with self.subTest(legacy_call=legacy_call):
+                self.assertNotIn(legacy_call, self.generated)
 
     def test_source_with_execution_block_raises(self) -> None:
         mutated = read_source() + "\n" + gen.STRATEGY_EXECUTION_SENTINEL + "\n"
