@@ -9,7 +9,7 @@
 
 **Pine Script v6** | **v7.5**
 
-An RSI that adapts its overbought/oversold thresholds to each asset's own statistics, scores every signal, tracks how those signals actually performed, and only alerts you when a signal type has a proven historical edge.
+An RSI that adapts its overbought/oversold thresholds to each asset's own statistics, scores every signal, tracks how those signals performed in loaded history, and gates alerts with configurable sample and quality rules.
 
 ![Adaptive RSI Pro on a chart](images/annotated_rsi_indicator.png)
 
@@ -38,7 +38,7 @@ Traditional RSI uses fixed 30/70 thresholds, but different assets live in differ
 | ±2σ | ≈ P2 / P98 | Extreme zone |
 | ±Nσ | Dynamic | Normal overbought/oversold reference (N adapts to volatility) |
 
-On top of the adaptive thresholds it layers multi-timeframe resonance, divergence detection, weekly trend protection, per-signal quality grading, and a statistics engine that gates alerts on each signal type's measured historical edge.
+On top of the adaptive thresholds it layers multi-timeframe resonance, divergence detection, weekly trend protection, per-signal quality grading, and a statistics engine that gates alerts using the selected bucket's sample state and measured history.
 
 The project ships two files:
 
@@ -74,7 +74,7 @@ The project ships two files:
 
 - `Alert Only` — best default: every signal stays on the chart, but only gate-passing signals reach your phone.
 - `Soft` — keep full chart context, with failed signals visually de-emphasized.
-- `Hard` — show only historically qualified signals; cleanest chart.
+- `Hard` — show only signals allowed by the current gate settings; cleanest chart.
 
 ---
 
@@ -85,166 +85,171 @@ The project ships two files:
 With `Stats Mode = Ranking` and the default `Edge vs Baseline` gate, the panel looks like this:
 
 ```text
-┌────────────────────────────────────────────┐
-│ ADAPTIVE RSI                          35.2 │
-├────────────────────────────────────────────┤
-│ Z-Score              -2.15σ (≈P2)          │
-│ Percentile           P5 (−1.5σ ~ −2σ)      │
-│ Signal               🔥[A]✓                │
-│ Status               🟢 EXTREME OVERSOLD   │
-│ Gate                 🔥[A]📈 n=34          │
-│                      69→67%✓|+1.2→0.4%✓    │
-│ Protection [Moderate] ✓ W.RSI:45 📊↑       │
-│ Lookback [Auto]      456↑(150-800) ✅✅✅   │
-│ Normal [Smart]       ⬆️1.50σ ✓             │
-├────────────────────────────────────────────┤
-│ MTF 1h|4h|D          🟢|–|🟢               │
-│ Resonance            ⚪ 2/3 ⚠️             │
-│ Divergence [Normal]  🟢 BULL (5/60)        │
-├────────────────────────────────────────────┤
-│ ── RANKING ──        (20b) Base→Req        │
-│                      ⬆62→67%|⬇38→43%       │
-│ 🌟[A]📈(28)✓         +3.2%|71%             │
-│                      (+8.6pp|+2.3%)        │
-│ 💎[B]📉(21)✓         +1.8%|46%             │
-│                      (+7.9pp|+2.7%)        │
-└────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ ADAPTIVE RSI                                               35 │
+├──────────────────────────────────────────────────────────────┤
+│ RSI Position          Z -2.15σ                                │
+│                       History ≤P5                              │
+│ Signal                🔥 EXT BUY                              │
+│                       [Score A] ✗                              │
+│ RSI Zone              🟢 EXTREME OVERSOLD                    │
+│ Stats Filter          🔥 EXT BUY [Score A]                    │
+│ n=34                  BLOCK · OR (0/2)                       │
+│                       WR 56.00%<61.10% ✗                    │
+│                       Avg edge +0.10%<+0.40% ✗             │
+│ Market Context        Trend Moderate: Both allowed              │
+│                       W-RSI 45                                  │
+│                       Volume: Surge (1.8×)                    │
+│ Lookback [Auto]       74 bars                                 │
+│ Allowed 59–400 bars   Healthy                                 │
+│ Normal Signals [Smart] Active                                  │
+│                       Threshold ±1.50σ                         │
+├──────────────────────────────────────────────────────────────┤
+│ MTF                   1h 🟢Oversold · 4h No data            │
+│                       D 🟢Oversold                             │
+│                       No resonance · 2/4 incl chart             │
+│ Divergence            None · Auto / Crypto                    │
+│                       Pivot 10 · Max gap 120 bars              │
+├──────────────────────────────────────────────────────────────┤
+│ ── WR-EDGE RANK ──    Avg edge min +0.4%                   │
+│ 20-bar forward        BUY WR 56.10→61.10%                    │
+│ OR gate               SELL WR 44.00→49.00%                   │
+│ Edge Summary          SELL: no supported edge                │
+│ 🌟 MTF BUY [Score B] PASS · OR (2/2)                        │
+│ n=28                  WR 71.00% · edge +8.60pp ✓           │
+│                       Avg +3.2% · edge +2.30% ✓            │
+│ 🔥 EXT BUY [Score A] BLOCK · OR (0/2)                       │
+│ n=34                  WR 56.00% · edge -0.10pp ✗           │
+│                       Avg +6.1% · edge +0.10% ✗            │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+The visual line breaks above are newline-separated layers inside each table cell. They do **not** add Pine table rows or consume more of the dashboard's row capacity. `Stats Filter` and `Edge Summary` are conditional table rows, so a neutral panel can still be shorter than this example.
 
 ### Row-by-row guide
 
 | Row | What it shows |
 |-----|---------------|
-| **Z-Score** | Current RSI Z-Score and its approximate percentile (`≈P2`). The percentile label assumes a normal distribution — a display approximation, not an exact rank. |
-| **Percentile** | The actual bucketed percentile of RSI in the lookback window (P5/P10/P25/P50/P75/P90/P95/P99), with the matching σ range. |
-| **Signal** | Active signal icon + quality grade + filter mark, e.g. `🔥[A]✓`. The mark is three-state: `✓` enough samples and the quality gate passed (proven good), `⚠️` enough samples and the gate failed (**proven bad**), `⏳` not enough samples for a verdict (passed through or blocked per `Unproven Buckets`). Between signals it shows persistent state text such as `🔥持续` (extreme zone continues) or `超卖区` (in the normal oversold zone). |
-| **Status** | Current zone: `🟢 EXTREME OVERSOLD`, `🟡 OVERSOLD`, `⚪ NEUTRAL`, `🟠 OVERBOUGHT`, `🔴 EXTREME OVERBOUGHT`. |
-| **Gate** | Only with the stats filter enabled. The exact stats bucket the gate consults for the current (or prospective) signal and the verdict — the "why" behind the Signal row's `✓`/`⏳`/`⚠️`. `🔥[A]📈 n=2/20⏳✓` = the bucket has 2 of the 20 required lifetime samples: **not enough data, unproven — not proven bad**; the trailing mark shows what `Unproven Buckets` did with it (`⏳✓` green = passed through under `Pass`, `⏳✗` gray = blocked under `Block (Legacy)`). With enough samples each quality path shows `actual→required` plus its own mark, e.g. `63→67%✗\|+1.1→0.4%✓` (win-rate edge fails, payoff edge passes → gate passes under `Either Edge`); the cell is green when the gate passes, orange when it fails. `—` = nothing to gate (neutral bar, or a pure-divergence `↗️`/`↘️` marker, which bypasses the gate). |
-| **Protection** | Weekly trend filter state — `✓` both directions allowed, `BUY✓` / `SELL✓` one direction allowed, `⚠️` both blocked, `OFF` disabled — plus the weekly RSI value and a volume icon (`📊↑` surge, `📊↓` low, `📊` normal). |
-| **Lookback** | `[Auto]` or `[Custom]` mode; the current adaptive sample window and its allowed range, e.g. `456(150-800)`. A trailing `↑` after the number means the spread-feedback boost is engaged (narrow RSI distribution → longer window). The three icons are health checks — sample coverage, distribution width, statistical validity — each `✅` (ok) or `⚠️` (degraded). |
-| **Normal** | Normal-signal mode `[Smart]`/`[On]`/`[Off]` and the current dynamic threshold, e.g. `⬆️1.50σ ✓` (active) or `1.50σ ✗` (suppressed by Smart mode), `—` when off. |
-| **MTF** | Per-timeframe RSI status: `🟢` oversold, `🔴` overbought, `⚪` neutral, `–` no usable data for that timeframe. |
-| **Resonance** | How many timeframes agree out of those with valid data, e.g. `🟢 3/4`. When one of the configured timeframes is the chart's own timeframe (e.g. `D` on a daily chart) it is counted only once — the denominator becomes 3 and resonance then requires all three distinct timeframes to agree. A trailing `⚠️` means at least one timeframe has no data (display-only warning; resonance math is unchanged). |
-| **Divergence** | Active divergence mode (auto-selected or custom), `🟢 BULL` / `🔴 BEAR` / `—`, and the (lookback/range) parameters in use. |
+| **RSI Position** | One non-duplicated location readout. `Z -2.15σ` is distance from the current RSI mean; `History ≤P5` is the empirical rank interval inside the active lookback. Other intervals are `P5–P10`, `P10–P25`, `P25–P50`, `P50–P75`, `P75–P90`, `P90–P95`, and `>P95`. `History` is intentionally a range, not an exact percentile. |
+| **Signal** | An event on the current bar. Full mode places icon + type + direction on the first cell line and `[Score A]` plus any gate mark on the second, for example `🔥 EXT BUY` / `[Score A] ✓`. The score is the current setup score, not the historical-edge verdict or permission to trade. Persistent overbought/oversold state no longer repeats here; with no event the row shows `—`. |
+| **RSI Zone** | Persistent RSI state: `🟢 EXTREME OVERSOLD`, `🟡 OVERSOLD`, `⚪ NEUTRAL`, `🟠 OVERBOUGHT`, or `🔴 EXTREME OVERBOUGHT`. This is context, not a new signal. |
+| **Stats Filter** | Appears only for a current signal event. Its left cell is layered as `Stats Filter` / bucket label / lifetime `n`; only the `n` line can carry `· stale`. Its right cell leads with the actual decision and logic—`PASS|BLOCK · OR (k/2)`, `AND (k/2)`, `WR ONLY`, or `ABS WR`—then shows the win-rate path and average-result path separately. `k/2` is the number of quality paths that cleared their thresholds. With insufficient samples it instead says `ALLOW|BLOCK · UNPROVEN`, `Policy decision only`, and `No quality verdict`; the policy, not the edge estimates, decides. Pure divergence says `DISPLAY ONLY / No stats bucket / Not an alert signal`. With no current event the row is omitted. Mature statistic cells stay white because one cell can contain both ✓ and ✗; `stale` is yellow, unproven allow is yellow, unproven block is gray, and filter-off/display-only states are gray. The Signal row can still use its overall action color. |
+| **Market Context** | Weekly trend protection in words (`Both allowed`, `BUY only`, `SELL only`, `Both blocked`, or `Trend: Off`), confirmed weekly RSI, and volume scoring state (`Surge`, `Low`, `Normal`, or `score off`). White means both directions are available or protection is off, yellow means one direction is available, and red means both are blocked. These are inputs to signal handling and grading, not an entry instruction. |
+| **Lookback** | The left cell separates mode from its allowed window, for example `Lookback [Auto]` / `Allowed 59–400 bars`; `[Custom]` uses its fixed-window wording. The right cell shows the current value and health, such as `74 bars` / `Healthy`, or names the actual issue in natural language. Multiple issues can use a third cell line. |
+| **Normal Signals** | `[Smart]`, `[On]`, or `[Off]`; the value cell separates the operating state from the symmetric threshold, for example `Active` / `Threshold ±1.50σ`. |
+| **MTF** | One cell uses up to three lines for the configured timeframes and their plain states: `🟢Oversold`, `🔴Overbought`, `⚪Neutral`, or `No data`, followed by `Oversold resonance`, `Overbought resonance`, or `No resonance` and the agreeing/valid-slot count. `incl chart` means the chart timeframe participates in the ratio; a configured slot equal to it is not counted twice. |
+| **Divergence** | Two cell lines: current result plus mode, such as `None · Auto / Crypto`, then explicit parameter meanings such as `Pivot 10 · Max gap 120 bars`. |
 
 ### Mobile mode
 
 Three rows only:
 
 ```text
-┌─────────────────┐
-│  RSI      35.2  │
-│  Signal   🔥[A]✓│   signal + grade + mark
-│  Status   🟢极卖 │   zone only
-└─────────────────┘
+┌────────────────────────────┐
+│ RSI        35.2            │
+│ Signal     🔥 EXT BUY [Score A] ✓│
+│ RSI Zone   🟢极卖           │
+└────────────────────────────┘
 ```
 
 ### Reading the Ranking Leaderboard
 
-With `Stats Mode = Ranking` the dashboard becomes a leaderboard of **signal type × quality grade × direction** buckets (32 in total), showing which combinations have actually worked on this chart. This is the most information-dense part of the panel, so here is how to read it, element by element.
+With `Stats Mode = Ranking`, the dashboard compares **signal type × setup-score band × direction** buckets (32 in total) using the history loaded on the chart.
 
 A typical panel in the default `Edge vs Baseline` mode:
 
 ```text
-── RANKING ──      (20b) Base→Req
-                   ⬆62→67%|⬇38→43%
-🌟[A]📈(28)✓       +3.2%|71%
-                   (+8.6pp|+2.3%)
-💎[B]📉(21)✓       +1.8%|46%
-                   (+7.9pp|+2.7%)
-🔥[B]📈(35)✓       +1.6%|68%
-                   (+5.7pp|+0.7%)
-⬆️[C]📉(9)⏳       +0.6%|39%
-                   (+1.2pp|+0.7%)
-🔥[D]📈(12)⏳      -0.8%|60%
-                   (-2.4pp|-1.0%)
+── WR-EDGE RANK ──   Avg edge min +0.4%
+20-bar forward          BUY WR 56.10→61.10%
+OR gate                 SELL WR 44.00→49.00%
+🌟 MTF BUY [Score B]    PASS · OR (2/2)
+n=28                    WR 71.00% · edge +8.60pp ✓
+                        Avg +3.2% · edge +2.30% ✓
+🔥 EXT BUY [Score A]    BLOCK · OR (0/2)
+n=34                    WR 56.00% · edge -0.10pp ✗
+                        Avg +6.1% · edge +0.10% ✗
+💎 DIV SELL [Score B]   ALLOW · UNPROVEN POLICY
+n=9/20⏳                 No quality verdict before n=20
 ```
 
 #### The header
 
-`(20b)` is the forward window: every sample measures what price did **20 bars** after a signal (`Forward Bars`, default 20).
+The left header cell is `WR-EDGE RANK` / `20-bar forward` / `OR gate`; the right cell is `Avg edge min +0.4%` / the BUY win-rate baseline→minimum / the SELL baseline→minimum. Those are three visual lines inside one table row.
 
-`⬆62→67%` reads as: the **buy-direction baseline** win rate is 62% — the probability that buying on *any* bar of this chart shows a gain 20 bars later — and a buy bucket needs an **adjusted win rate of 67%** to pass the win-rate path of the alert gate (since v7.5, under the default `Payoff Gate = Either Edge`, a bucket can alternatively qualify through the payoff path — see [the stats engine](#the-stats-engine--gate)). The requirement is `baseline + (Min Adjusted WinRate − 50)`, so with the default `Min Adjusted WinRate = 55` that is baseline + 5 percentage points, clamped to 25–90% so extreme baselines can never make the gate unsatisfiable or trivially easy. `⬇38→43%` is the same thing for the sell direction.
+`20-bar forward` means every sample measures the direction-normalized price result **20 bars** after a signal (`Forward Bars`, default 20). `BUY WR 56.10→61.10%` means a 56.10% unconditional buy-direction baseline and a 61.10% effective minimum for the win-rate path. The minimum is `baseline + (Min Adjusted WinRate − 50)`, so the default setting adds 5 percentage points and clamps the result to 25–90%. `SELL WR 44.00→49.00%` is the same calculation for sell samples. `Avg edge min +0.4%` is the separate payoff-edge threshold.
 
-The `Base→Req` header appears in both gate modes; under `Absolute (Legacy)` the `Req` value is simply the fixed absolute threshold.
+The last header line names the active rule: `OR gate` for `Either Edge`, `AND gate` for `Both Edges`, and `WR-only gate` when payoff gating is off. When `Enable Stats Filter` is off it says `Filter off` instead, while the right header keeps the configured thresholds as reference.
+
+Under `Absolute (Legacy)`, the title becomes `WIN-RATE RANK`, the left cell says `Absolute WR gate`, and the right cell says `Minimum WR 55.00%`. It does not show baseline-derived thresholds because that mode uses a fixed absolute win-rate rule.
 
 #### Each row
 
-Left cell — `🌟[A]📈(28)✓`:
+Left cell — `🔥 EXT BUY [Score A]` / `n=34`:
 
-- **Signal type emoji**: `🌟` MTF resonance, `💎` divergence + extreme, `🔥` extreme, `⬆️` normal. In this column the type emoji is *not* directional — direction comes only from the next element.
-- **`[A]`** — quality grade A–D.
-- **`📈`/`📉`** — buy or sell bucket.
-- **`(28)`** — lifetime sample count (undecayed — the same `n` the `Min Samples` gate and the `Gate` row use).
-- **Reliability mark**: keyed on the lifetime count — `✓` ≥ `Min Samples` (enough data for the gate to judge), `⏳` ≥ 5 but below `Min Samples` (numbers shown but unproven — expect this on most rows of a young chart; it is honest, not alarming), `❌` < 5 (no usable numbers; only visible in `Signal Type`/`Grade` modes, since Ranking hides such rows). The panel-wide vocabulary holds here too: `⚠️` is reserved for *proven bad* and never appears in this position. Time decay does not touch this mark — the effective count has a hard steady-state cap (about `1/(1−0.5^(spacing/half-life))`), so judging the mark on it would leave sparse buckets stuck below `✓` forever.
+- **Type and direction are written out**: `MTF`, `DIV`, `EXT`, or `NORMAL`, followed by `BUY` or `SELL`. The icon is only a visual shortcut; for example sell extreme is `❄️ EXT SELL` and sell normal is `⬇️ NORMAL SELL`.
+- **`[Score A]`** is the current setup score band A–D. It is not the bucket's historical-edge verdict and is not permission to trade.
+- **`n=28`** is the undecayed lifetime count and means the bucket reached `Min Samples`. It is a sample-maturity statement, not a quality verdict.
+- **`n=9/20⏳`** means 9 lifetime samples out of the required 20. `⏳` is the only maturity mark; mature rows simply show `n=...` with no check mark. Time decay does not change this displayed count or the maturity threshold.
+- **`n=28 · stale`** can appear in `Signal Type` or `Grade` when lifetime count is mature but decayed effective weight has fallen below 5. `stale` stays only on this left-side sample label; Ranking hides buckets below effective weight 5.
 
-Right cell, first line — `+3.2%|71%`:
+Right cell, first line — `BLOCK · OR (0/2)`:
 
-- **Average forward return**. For `📉` (sell) rows the convention flips: the number measures how far price *fell* after the signal, so positive = the sell call was right.
-- **Adjusted win rate** — the raw win rate shrunk toward the bucket's own direction baseline (see [the stats engine](#the-stats-engine--gate)).
+- **`PASS` / `BLOCK`** is the configured gate's final decision for a mature bucket.
+- **`OR (0/2)`** means the `Either Edge` rule is active and zero of the two evidence paths passed. `OR (1/2)` and `OR (2/2)` pass; `AND (2/2)` is the only passing count under `Both Edges`.
+- **`WR ONLY`** means payoff gating is off. **`ABS WR`** means `Absolute (Legacy)` is using a fixed win-rate minimum.
 
-Right cell, second line — `(+8.6pp|+2.3%)`:
+Right cell, second and third lines:
 
-- **Win-rate edge**: adjusted win rate − its own direction's baseline, in percentage points. This is the sort key.
-- **Payoff edge**: the bucket's average forward return minus the direction baseline's average forward return, shrunk by the same confidence factor as the win rate (see [the stats engine](#the-stats-engine--gate)). Positive = this bucket's signals not only happen, they *pay* better than random entries.
-- The second line only appears in `Edge vs Baseline` mode; under `Absolute (Legacy)` the cell is a single line and rows are sorted by absolute adjusted win rate instead.
+- **`WR 56.00%`** is the Bayesian-adjusted win rate, shrunk toward the same-direction baseline. **`edge -0.10pp`** is adjusted WR minus that baseline; it is the evidence compared with the configured win-rate edge requirement. `WR-EDGE RANK` sorts by this edge only.
+- **`Avg +6.1%`** is the bucket's raw average direction-normalized forward result. For SELL rows, positive means price fell after the signal. **`edge +0.10%`** is the confidence-shrunk difference between that average and the same-direction baseline average; it is the payoff evidence compared with `Min Payoff Edge %`.
+- The `✓`/`✗` after each edge says whether that path cleared its threshold. The raw `WR` or `Avg` can look high while the edge fails because most of the result was also present in the unconditional direction baseline.
+- Displayed WR, WR edge, Avg edge, and Legacy minimum values use enough decimals to prevent an apparent boundary contradiction. The actual ✓/✗ decision still uses the unrounded internal value.
+- With `WR ONLY`, Avg remains visible as `Avg ... · not gated`. Under `ABS WR`, the WR line instead shows `min ... ✓|✗`, while Avg is also `not gated`.
 
-#### The core reading rule: compare pp, not win rates
+#### The direct reading rule: decision first, evidence second
 
-Think of the win rate as an exam score and the baseline as the class average for that exam. Only the amount **above the average** was earned by the signal itself.
+Read the three right-cell lines from top to bottom:
 
-On a rising asset, randomly buying might win 62% of the time (tailwind), while randomly selling is right only 38% of the time (headwind). A 68% buy win rate and a 46% sell win rate are therefore **not directly comparable**. Run the numbers: out of 100 random buys you'd win 62; the `🔥[B]📈` bucket at 68% wins only 6 more (+5.7pp). Out of 100 random sells you'd be right 38 times; the `💎[B]📉` bucket at 46% is right 8 more times (+7.9pp). The "worse-looking" sell bucket actually carries more information.
+1. **Action and rule:** `PASS` or `BLOCK`, then `OR`, `AND`, `WR ONLY`, or `ABS WR`.
+2. **Frequency evidence:** Bayesian-adjusted `WR`, then its same-direction `edge` and mark.
+3. **Magnitude evidence:** raw `Avg`, then its shrunk same-direction `edge` and mark, or `not gated`.
 
-If the leaderboard ranked by absolute win rate, every buy bucket on an uptrending asset would crowd the top and every sell bucket would sink to the bottom — the board would be measuring "this stock is going up", not "which signal works". (This was a real flaw in v7.3, and the same accounting issue caused sell alerts to be systematically filtered out.) Edge sorting uses the same yardstick as the alert gate: with a lifetime sample count ≥ `Min Samples` (default 20) the gate requires a quality edge — a win-rate edge of at least +5pp (by default) or, since v7.5 under the default `Payoff Gate = Either Edge`, a payoff edge ≥ `Min Payoff Edge %` instead; below `Min Samples` there is no verdict and `Unproven Buckets` decides (default `Pass`: the signal flows, marked `⏳`).
+This makes the user's example direct: `WR 56.00% · edge -0.10pp ✗` and `Avg +6.1% · edge +0.10% ✗` means the absolute average looks high, but almost all of it is explained by the direction baseline. Neither excess path reaches its threshold, so the default OR rule reports `BLOCK · OR (0/2)`.
 
-#### Win-rate edge vs payoff edge
+With lifetime `n < Min Samples`, the row deliberately suppresses a quality interpretation. It says `ALLOW|BLOCK · UNPROVEN POLICY` and `No quality verdict before n=20`; `Unproven Buckets`, not either estimate, decides the action.
 
-The two numbers on the second line answer different questions. **Win-rate edge** (`pp`) asks: does this signal win *more often* than a random entry? **Payoff edge** (`%`) asks: does it win *more money* per trade than a random entry? A bucket can fail one and pass the other.
+If statistics remain enabled but `Enable Stats Filter` is off, the row says `FILTER OFF · ALL ALLOWED`. Available `WR`, `Avg`, and edge estimates remain descriptive and carry no ✓/✗ marks; unavailable estimates say `No usable estimate / No quality verdict`. The header also says `Filter off`. When statistics themselves are off, history rows are not rendered because no statistics are collected.
 
-Worked example, on a chart with a 62% buy baseline whose random 20-bar entry averages +0.9%: a bucket sits at a 58% win rate — that is **−4pp**, it fails the win-rate path — but its average forward return is **+2.1%** against the baseline's +0.9%, a **+1.2% shrunk payoff edge** (at full confidence), which clears the default `Min Payoff Edge % = 0.4`. The bucket **wins less often, but wins bigger** — typical of mean-reversion entries on a trending asset, where the few deep-pullback fills capture outsized rebounds. With the default `Payoff Gate = Either Edge`, this bucket passes the gate.
+The two edges still answer different questions: WR edge asks whether the signal wins more often than its direction baseline; Avg edge asks whether its average result exceeds that baseline. A bucket can clear one and miss the other. For example, WR edge −4pp plus Avg edge +1.2% gives `PASS · OR (1/2)` under `Either Edge`, but `BLOCK · AND (1/2)` under `Both Edges`. Historical estimates are not guarantees of future behavior.
 
-The converse is the caution: when **both** edges are negative — wins less often *and* pays worse than random — the bucket is truly dead. No reading of the numbers rescues it.
+#### Edge Summary
 
-#### What a negative pp means
-
-A negative edge means following that signal wins *less often than buying at random* — the signal systematically picks worse-than-average moments. This is easy to misread: in the mock panel, `🔥[D]📈` shows a 60% win rate, which looks fine against the naive 50% mark — but with a 62% baseline it is 2.4pp **worse than blind buying** (the win rate is shown rounded; the panel's `(-2.4pp)` is the exact edge). Mechanically this happens, for example, when extreme-oversold signals tend to fire mid-collapse (catching a falling knife). Since v7.5 a negative pp is no longer a single-metric death sentence — check the payoff figure on the same line before discarding the bucket, because a wins-less-often-wins-bigger bucket can still carry a real payoff edge (here `🔥[D]📈` shows `-1.0%`, so both edges are negative and the bucket really is dead).
-
-This is also why bucketing matters: the same signal type at different grades can have opposite signs — `🔥[A]📈` might be +6pp while `🔥[D]📈` sits at −2.4pp.
-
-How to act on a negative-edge bucket:
-
-- The win-rate path of the gate blocks it, so under the default `Either Edge` it only alerts if its payoff edge clears `Min Payoff Edge %` — i.e. a negative-pp alert is always a "wins less often, wins bigger" bucket. With `Payoff Gate = Off` or `Both Edges` it never alerts.
-- If it appears on the chart anyway (e.g. `Alert Only` mode), treat it as noise.
-- Don't trade it in reverse: the inverse trade is measured against the *opposite* direction's baseline, and after costs there is usually no edge left.
-- Because shrinkage pulls small samples toward the baseline, the true negative edge may be deeper than displayed.
-- Only when a bucket reaches `✓` reliability and stays negative is it a dependable "this path doesn't work" verdict.
-
-#### The "No timing edge" row
-
-When an entire *direction* goes dead, the panel says so explicitly. Right under the stats header, a row like
+In `Edge vs Baseline` mode, one optional row condenses a direction-level check:
 
 ```text
-⬆️ No timing edge  无择时优势·趋势市?
+Edge Summary     BUY: no supported edge
+Edge Summary     SELL: no supported edge
+Edge Summary     BUY + SELL: no supported edge
 ```
 
-appears (in orange, one row per direction at most, `Edge vs Baseline` mode only) when that direction has at least **2 buckets with data** (effective count ≥ 5) and **all** of them show a negative win-rate edge **and** a non-positive payoff edge. In other words: nothing in that direction wins more often than random, and nothing wins bigger either.
+Only one summary row can appear. It may use two cell lines when both BUY and SELL qualify; that still does not add a table row. For a direction to be named, the active `Stats Mode` must contain at least two buckets that both (a) reached lifetime `Min Samples` and (b) retain effective weight of at least 5. Every included bucket in that direction must then have WR edge < 0 and Avg edge ≤ 0. Buckets below the lifetime threshold or too stale to retain effective weight are excluded rather than treated as negative evidence.
 
-That pattern is the signature of a trending regime — on a strong uptrend, mean-reversion buy timing adds nothing over just being long (and vice versa for downtrends). How to act on it: don't counter-trend time entries in that direction on this symbol/timeframe; the alert gate will already be blocking those signals, so treat any that still appear on the chart as noise. The hint reads the same buckets the gate reads (the active `Stats Mode`), so switching `Stats Mode` can change whether it fires. Like everything in the stats panel, it describes loaded history — after a regime change it fades only as new samples accumulate.
+The summary describes only the loaded historical buckets that met those conditions. It is not a market-regime diagnosis, does not predict the next signal, and does not replace the per-signal `Stats Filter` verdict. Changing `Stats Mode`, history depth, or decay can change the summary.
 
 #### Two honest caveats
 
-1. **High edge ≠ high expected return.** A 46% win rate still means a 54% chance of being wrong — counter-trend remains counter-trend. The average-return column already amortizes the losing trades, so read both: win rate tells you whether the signal *reads the market* well; average return tells you whether it *makes money*.
-2. **The baseline itself moves.** It depends on how much chart history is loaded and shifts with time decay, so after a regime change the meaning of every edge value refreshes. Small-sample buckets have their adjusted win rate shrunk toward the baseline, squeezing their edge toward 0 — by design, so small samples can't brag.
+1. **High WR edge does not imply high `Avg`.** Read the final decision and both evidence lines; frequency and magnitude capture different properties of the loaded sample.
+2. **The baseline and effective weight move.** They depend on loaded history and time decay. A row can change or disappear as old weight fades, even though its displayed lifetime `n` never decreases.
 
 #### Visibility rules
 
 - At most **8 rows** are shown.
-- Buckets with fewer than 5 effective samples are hidden; if nothing qualifies, the panel shows `No data yet / Need ≥5 signals`.
-- Negative-edge buckets stay visible and naturally sink to the bottom.
+- Ranking includes only buckets with effective `n ≥ 5`; if none qualify, it says `No usable buckets / Need effective n ≥ 5`.
+- Negative WR-edge buckets remain eligible and sort below higher WR-edge buckets.
 
 #### Other stats modes
 
-`Stats Mode = Signal Type` aggregates by signal type only (labels like the alert icons, 8 buckets); `Grade` aggregates by quality grade only (`[A]📈`-style labels, 8 buckets). Both use the same header and the same gate; `Ranking` is the cross product and the recommended default.
+`Signal Type` aggregates into type × direction rows such as `🔥 EXT BUY` / `n=28`. `Grade` uses direction × setup-score rows such as `BUY [Score A]` / `n=28` under the header `SETUP SCORE STATS`. Ranking is the full type × score × direction view. All three modes use the same decision-first right-cell readout described above. `Signal Type` and `Grade` can show `n=28 · stale`; Ranking hides buckets below effective weight 5.
 
 ---
 
@@ -284,16 +289,18 @@ That pattern is the signature of a trending regime — on a strong uptrend, mean
 
 > *N is the dynamic normal threshold, derived from volatility: ~1.0σ in high-volatility markets up to 1.8σ in very quiet ones (1.28σ and 1.5σ in between). In `On` mode it is the manual threshold instead.
 
-### Quality grades
+### Setup score bands
 
-Every signal carries a grade from a multi-factor score:
+Every signal carries a multi-factor setup score. The panel writes its band explicitly as `[Score A]` through `[Score D]` so it cannot be confused with the separate historical-edge verdict:
 
-| Grade | Score | Interpretation |
-|-------|-------|----------------|
-| [A] | ≥80 | High quality, tradable |
-| [B] | 60–79 | Good, tradable |
-| [C] | 40–59 | Mixed, trade cautiously |
-| [D] | <40 | Low quality, usually skip |
+| Band | Score | Interpretation |
+|------|-------|----------------|
+| [Score A] | ≥80 | Strong current setup score |
+| [Score B] | 60–79 | Supportive current setup score |
+| [Score C] | 40–59 | Mixed current setup score |
+| [Score D] | <40 | Weak current setup score |
+
+The score summarizes the current signal's conditions. It is **not** a historical WR/Avg edge verdict, a `PASS`/`BLOCK` decision, or permission to trade. Read the setup score and the stats decision as separate evidence.
 
 **How the score is built** (buy side shown; sell side mirrors it):
 
@@ -313,13 +320,16 @@ Every signal carries a grade from a multi-factor score:
 
 | Mark | Meaning | Notes |
 |------|---------|-------|
-| ✓ | Enough samples, quality gate passed | Proven good — appears in dashboard signal rows and alert messages |
-| ⚠️ | Enough samples, quality gate failed | **Proven bad** — shown in `Alert Only` or `Soft` mode; never alerts |
-| ⏳ | Bucket lacks samples — no verdict | Unproven, not proven bad. Whether the signal still alerts depends on `Unproven Buckets` (`Pass` default: yes, marked `⏳`; `Block (Legacy)`: no). In the Gate row, `n=2/20⏳✓`/`⏳✗` shows the count and the resulting verdict; in stats/ranking rows it is the middle reliability tier (≥ 5 but below `Min Samples`) |
-| 🚫 | Signal exists but is hidden | Caused by Smart normal-signal hiding, trend protection, or `Hard` filtering |
-| (none) | Not a trigger bar, or stats filtering disabled | E.g. persistent state text such as `🔥持续` |
+| ✓ | A mature gate or evidence path passed its configured rule | Appears on the current Signal's final gate result, on each passing WR/Avg edge line, and in a mature allowed alert. It is a rule result, not a forecast. |
+| ✗ | A mature gate or evidence path missed its configured rule | Appears on current signals in `Alert Only`/`Soft`, on failed WR/Avg edge lines, or with a mature `BLOCK`. A blocked signal does not alert. |
+| ⏳ | Lifetime `n < Min Samples`; no quality verdict | The event-level `Stats Filter` says `ALLOW|BLOCK · UNPROVEN`; statistics rows say `ALLOW|BLOCK · UNPROVEN POLICY` and `No quality verdict before n=20`. Stats labels use `n=9/20⏳` and do not append ✓/✗. An alert can contain `⏳` only when policy allowed it. |
+| `🚫 TREND` | Hidden by weekly trend protection | Used instead of a generic hidden icon so the reason is visible. |
+| `🚫 STATS` | Hidden by `Hard` stats filtering | The gate action is block; inspect `Stats Filter` for its comparisons when shown. |
+| `🚫 OFF` / `🚫 SMART` | Normal signal hidden by its display mode | `OFF` means Normal Signals is disabled; `SMART` means Smart mode paused it. |
+| ⚠️ | General runtime/data warning only | It is not a sample or quality verdict. The current dashboard spells out common cases as `No data` or the specific health issue. |
+| — | No current event or not applicable | Persistent overbought/oversold context belongs in `RSI Zone`. |
 
-> Alerts fire only for signals that pass the stats filter — alert text shows `✓` (proven) or `⏳` (unproven, passed through under the default `Unproven Buckets = Pass`), never `⚠️`.
+> Alerts fire only when the filter action is allow. Their filter suffix is `✓` for a mature passing bucket or `⏳` for an insufficient-sample bucket allowed by policy; blocked signals produce no alert.
 
 ---
 
@@ -330,27 +340,27 @@ One aggregated alert covers all signal types. Create it once with **Any alert() 
 ### Message anatomy
 
 ```text
-AAPL: 🟢 BUY → 🌟MTF共振 | RSI:25.3 Z:-2.1σ (≈P2) [A]✓
-AAPL: 🔴 SELL → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98) [B]✓
+AAPL: 🟢 BUY → 🌟MTF共振 | RSI:25.3 Z:-2.1σ (≈P2) [Score A] ✓
+AAPL: 🔴 SELL → ❄️极端 | RSI:78.5 Z:2.3σ (≈P98) [Score B] ✓
 ```
 
 - **Direction**: `🟢 BUY` / `🔴 SELL`
 - **Signal icon**: `🌟MTF共振` (resonance), `💎背离` (divergence), `🔥极端` / `❄️极端` (extreme), `⬆️超卖` / `⬇️超买` (normal)
 - **Optional suffixes**: `✓确认` (RSI pivot confirmation), `↩反转` (Z-Score crossing back out of the extreme zone), `⚡实时背离` (realtime divergence forming)
-- **Context**: RSI value, Z-Score, approximate percentile, quality grade, filter mark
+- **Context**: RSI value, Z-Score, approximate percentile, setup score band, filter mark
 
 With `Include Risk Hints in Alerts` enabled:
 
 ```text
-AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈P2) [A]✓ | SL:-1.5% TP:+3.0%
+AAPL: 🟢 BUY → 🔥极端 ✓确认 ⚡实时背离 | RSI:25.3 Z:-2.1σ (≈P2) [Score A] ✓ | SL:-1.5% TP:+3.0%
 ```
 
 ### Risk hints
 
-Stops are based on **ATR(14)**, scaled by signal grade:
+Stops are based on **ATR(14)**, scaled by the signal's setup-score band:
 
-| Grade | Stop distance |
-|-------|---------------|
+| Setup-score band | Stop distance |
+|------------------|---------------|
 | A | 2.5 × ATR |
 | B | 2.0 × ATR |
 | C | 1.5 × ATR |
@@ -370,13 +380,13 @@ Alerts fire only for signals that pass the stats gate, in **every** filter mode 
 
 ## The Stats Engine & Gate
 
-This is what makes the `✓` mark mean something. In plain terms:
+The statistics turn each signal bucket's loaded history into a configurable filter decision. The marks report that decision; they do not certify future performance.
 
-**What gets recorded.** Every signal occurrence is scored by its forward return — what price did `Forward Bars` later (default 20). Buy samples record the rise; sell samples record the *decline*, so positive always means "the signal was right". Samples land in buckets according to `Stats Mode`: by signal type, by grade, or by the full type × grade × direction cross (`Ranking`). Two unconditional baseline buckets (buy/sell) record the forward return of *every* bar, giving each direction its "random entry" benchmark — both a baseline **win rate** and a baseline **average return** (the drift).
+**What gets recorded.** Every signal occurrence is scored by its forward return — what price did `Forward Bars` later (default 20). Buy samples record the rise; sell samples record the *decline*, so positive is favorable to the sampled direction. Samples land in buckets according to `Stats Mode`: by signal type, by setup-score band, or by the full type × score × direction cross (`Ranking`). Two unconditional baseline buckets (buy/sell) record the forward result of *every* bar, giving each direction both a baseline **win rate** and a baseline **average result**.
 
-**Bayesian adjustment.** Raw win rates from a handful of samples lie. Each bucket's win rate is shrunk toward a prior: `adjusted = prior + confidence × (raw − prior)` with `confidence = min(1, effective_samples / 20)`. In `Edge vs Baseline` mode the prior is the bucket's own direction baseline; in `Absolute (Legacy)` mode it is 50%. Buckets with fewer than 5 lifetime samples report no adjusted rate at all.
+**Bayesian adjustment.** Small raw samples are unstable. Each bucket's win rate is shrunk toward a prior: `adjusted = prior + confidence × (raw − prior)` with `confidence = min(1, effective_samples / 20)`. In `Edge vs Baseline` mode the prior is the bucket's own direction baseline; in `Absolute (Legacy)` mode it is 50%. Buckets with fewer than 5 lifetime samples report no adjusted rate.
 
-**Payoff edge.** The same anti-overclaim treatment applied to returns instead of win rates: `payoff edge = confidence × (bucket average forward return − direction baseline average return)`, with the same confidence factor and the same "no value below 5 lifetime samples" rule as the adjusted win rate. Subtracting the direction baseline removes the asset's drift, so what remains is the **timing contribution** of the signal in forward-window % terms; the shrinkage drags small or stale buckets toward zero edge so they can't brag.
+**Payoff edge.** The return-side comparison is `payoff edge = confidence × (bucket average forward result − direction baseline average result)`, with the same confidence factor and the same "no value below 5 lifetime samples" rule. Subtracting the direction baseline removes unconditional drift; shrinkage pulls small or stale estimates toward zero.
 
 **Time decay.** `Stats Half-Life Bars` (default 1500, `0` = off) exponentially fades sample weight with age — 1500 bars is roughly 6 years on a daily chart or 9 months on 4H, covering a full cycle while letting old regimes fade. Decay only affects the *effective* count (and therefore confidence); the `Min Samples` gate always uses the undecayed lifetime count, so rare signal buckets are not permanently locked out.
 
@@ -384,8 +394,8 @@ This is what makes the `✓` mark mean something. In plain terms:
 
 **The gate.** With enough data the quality criterion decides; without enough data a policy decides:
 
-1. **Sample sufficiency**: lifetime samples ≥ `Min Samples` (default 20). When the bucket is *below* this, the quality paths have no verdict and **`Unproven Buckets`** decides instead: **`Pass`** (default) lets the signal through, marked `⏳` — insufficient data means *unproven, not proven bad* — while **`Block (Legacy)`** blocks it (the original behavior, under which fine-grained buckets — 32 in `Ranking` mode — can keep every signal on a fresh chart blocked for years). With `Pass`, the filter's job reduces to what it can actually justify: blocking signals **proven** not to work. The protection grows in as data accumulates; if you want the conservative behavior, set `Block (Legacy)`, or speed up sample accumulation by switching `Stats Mode` to `Signal Type` (8 buckets fill roughly 4× faster than 32).
-2. With sufficient samples, the **quality criterion** decides — `⚠️` therefore always means *proven bad*, never *no data*.
+1. **Sample sufficiency**: lifetime samples ≥ `Min Samples` (default 20). Below this count, the quality paths issue no verdict and **`Unproven Buckets`** decides instead: **`Pass`** (default) allows the signal and marks it `⏳`; **`Block (Legacy)`** blocks it. Fine-grained `Ranking` buckets accumulate more slowly, so `Signal Type` mode can reach the threshold sooner.
+2. With sufficient lifetime samples, the **quality criterion** decides. `✓` means its configured logic passed and `✗` means it missed; neither mark is a performance guarantee.
 
 The quality criterion has two possible paths:
 
@@ -408,7 +418,7 @@ How the two paths combine is set by **`Payoff Gate`** (options `Off` / `Either E
 | `Soft` | Failed signals downgraded visually | Filtered |
 | `Hard` | Failed signals hidden | Filtered |
 
-> **Restoring v7.4 gate behavior**: set `Payoff Gate = Off` **and** `Unproven Buckets = Block (Legacy)`. The gate decision is then bit-identical to v7.4 (the ranking panel's payoff numbers and the "No timing edge" hint are display-only and remain visible in Edge mode).
+> **Restoring v7.4 gate behavior**: set `Payoff Gate = Off` **and** `Unproven Buckets = Block (Legacy)`. The gate decision is then bit-identical to v7.4. Ranking Avg-edge readouts and `Edge Summary` are display-only and remain available in Edge mode.
 >
 > **Restoring v7.3 stats behavior**: set `Stats Half-Life Bars = 0`, turn `Independent Samples` **off**, set `Unproven Buckets = Block (Legacy)`, and set `Gate Mode = Absolute (Legacy)` (which by itself deactivates the payoff path, whatever `Payoff Gate` says). This restores the legacy stats-engine arithmetic exactly. Two v7.4 signal-level changes have **no revert switch** — the lookback spread-factor hysteresis band (engages below a spread of 18, releases above 22) and the cooldown stale-level reset — so the recorded signal stream, and therefore gate decisions, may still differ slightly from v7.3.
 
@@ -443,15 +453,15 @@ Also keep the two views apart: the indicator's stats are fixed-horizon **forward
 
 ### Reading the results
 
-TradingView always shows `All`, `Long`, and `Short` columns. **Read `All` according to `Trade Side`**: with `Long Only` it is your long-only result; with `Short Only` your short-only result; with `Both` the combined result. The harness's `Tester` dashboard row repeats this rule.
+TradingView always shows `All`, `Long`, and `Short` columns. **Read `All` according to `Trade Side`**: with `Long Only` it is your long-only result; with `Short Only` your short-only result; with `Both` the combined result. The harness's `Tester View` row repeats this rule.
 
 The harness adds three rows to the dashboard:
 
-- `Harness` — current `Trade Side` and `Backtest Mode`
-- `Tester` — how to read `All`
-- `Production Gate` — the actual stats bucket selected by `Stats Mode` for the active signal, with its lifetime sample count (a trailing `⏳` marks a count below `Min Samples`), average return, adjusted win rate and — in `Edge vs Baseline` mode — its shrunk payoff edge, e.g. `EXT[A](12⏳) +2.8%|67%|+1.2%` in `Ranking` mode (`TYPE:EXT` in `Signal Type` mode, `GRADE[A]` in `Grade` mode; `Idle` when no signal is active; under `Absolute (Legacy)` the payoff suffix is omitted).
+- `Backtest` — side and execution path in plain language: `Long only`, `Short only`, or `Long + short`, followed by `Raw baseline` or `Production filter`.
+- `Tester View` — how to read TradingView's `All` column: `All = long trades`, `All = short trades`, or `All = both sides`.
+- `Strategy Stats` — the actual strategy signal's source and bucket on the left, for example `BUY · MTF [Score A]` / `n=28`, with the interpretation on the right. In `Production`, it reuses the same decision-first readout as the production gate: `PASS|BLOCK · OR|AND (k/2)`, followed by the WR-edge and Avg-edge lines. In `Raw baseline`, it instead leads with `RAW BASELINE · GATE IGNORED`, keeps the available `WR`/`Avg`/edge estimates, and deliberately omits ✓/✗ because every raw signal is allowed regardless of that gate. Legacy raw estimates say `no gate`. If statistics are enabled but the filter is off, it uses `FILTER OFF · ALL ALLOWED` and no marks. If statistics themselves are off, the left sample line says `Stats off` and the right says `STATS OFF · ALL ALLOWED / No statistics collected / No quality verdict`. It says `No strategy signal` when neither direction fires; simultaneous directions say `BUY + SELL conflict / No strategy action`. Only the left `n` label can append `· stale`.
 
-The indicator's own `Gate` row also appears (inherited from the production dashboard). The two differ: `Gate` tracks the prospective signal on every bar, including persistent zone states, and shows the gate verdict against its thresholds; `Production Gate` only populates on actual trigger bars (`Idle` otherwise) and respects `Trade Side` when choosing the direction.
+`Production filter` reads production-gated strategy signals and displays the production decision that applied. `Raw baseline` reads raw strategy signals and explicitly ignores the gate; its metrics are descriptive only. Filter-off and stats-off `Strategy Stats` cells are gray. `BUY`/`SELL` is always the signal's own direction. `Trade Side` decides what that signal does—entry, close, or reversal—but does not relabel it: for example, a `SELL` signal can close a long-only position. The inherited `Stats Filter` row remains the decision view for the current production indicator event, which need not be the same event selected by the chosen backtest mode.
 
 ### Costs
 
@@ -472,7 +482,6 @@ The harness declares **commission 0.05%** and **slippage 2 ticks** as defaults. 
 - **Sample-overlap bias**: `Independent Samples` mitigates overlapping forward-return windows but cannot fully eliminate sample-overlap bias.
 - **Lower-TF MTF coverage**: lower-timeframe MTF data only covers roughly the most recent 1400 chart bars (`MAX_REQUEST_BARS`), so MTF resonance signals are sparse in deep history.
 - **Intrabar repaint**: intrabar signals can appear and disappear before the bar closes unless `Alert on Bar Close` is enabled.
-- **Percentile labels are approximations**: the Z-Score-to-percentile labels (such as `≈P2`) assume a normal distribution and are display approximations, not exact ranks.
 - **Harness scope**: the strategy harness is a gated-signal backtest, not an exact intrabar `alert()` delivery simulation.
 
 ---

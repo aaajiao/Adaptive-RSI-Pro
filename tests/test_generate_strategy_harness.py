@@ -107,6 +107,65 @@ class CosmeticEditRobustnessTest(unittest.TestCase):
         self.assertIn("// edited helper comment / 已编辑", generated)
 
 
+class DashboardSemanticsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source = read_source()
+
+    def test_sample_maturity_is_not_rendered_as_a_quality_checkmark(self) -> None:
+        self.assertNotIn("get_reliability", self.source)
+        self.assertIn("f_stats_sample_text", self.source)
+        self.assertIn('str.format("n={0}/{1}⏳"', self.source)
+
+    def test_direction_edge_warning_is_a_single_combined_row(self) -> None:
+        self.assertNotIn("No timing edge", self.source)
+        self.assertEqual(self.source.count('table.cell(dashboard, 0, row, "Edge Summary"'), 1)
+
+    def test_selected_event_drives_direction_bucket_and_hidden_state(self) -> None:
+        self.assertIn("int signal_event_kind = switch", self.source)
+        self.assertIn("signal_event_kind >= 1 and signal_event_kind <= 4 ? signal_event_kind : 0", self.source)
+        self.assertNotIn("signal_setup_direction", self.source)
+        self.assertNotIn('"Stats Filter [Setup]"', self.source)
+        self.assertNotIn("current_signal_passes_filter", self.source)
+        self.assertNotIn("current_signal_insufficient", self.source)
+
+    def test_missing_quantiles_do_not_claim_top_percentile(self) -> None:
+        self.assertIn('na(rsi_p5) or na(rsi_p10)', self.source)
+        self.assertIn('"NA · need history"', self.source)
+
+    def test_stats_rows_translate_metrics_into_the_actual_gate_decision(self) -> None:
+        self.assertIn("f_stats_gate_paths(SignalStats _stats, bool _is_buy)", self.source)
+        self.assertGreaterEqual(self.source.count("f_stats_gate_paths"), 4)
+        self.assertIn('str.format("OR ({0}/2)"', self.source)
+        self.assertIn('str.format("AND ({0}/2)"', self.source)
+        self.assertIn('"ABS WR"', self.source)
+        self.assertIn('"FILTER OFF · ALL ALLOWED', self.source)
+        self.assertIn('"STATS OFF · ALL ALLOWED', self.source)
+        self.assertIn("UNPROVEN POLICY", self.source)
+        self.assertIn("· edge {1,number,+#.2;-#.2}pp", self.source)
+        self.assertIn("· edge {1,number,+#.2;-#.2}%", self.source)
+        self.assertIn("· not gated", self.source)
+        self.assertNotIn("ΔWR", self.source)
+        self.assertNotIn("ΔAvg", self.source)
+
+    def test_full_dashboard_uses_semantic_multiline_cells(self) -> None:
+        self.assertIn("signal_full_panel_display", self.source)
+        self.assertIn('str.format("Z {0,number,+#.2;-#.2}σ\\nHistory {1}"', self.source)
+        self.assertIn('trend_context + "\\n" + weekly_rsi_display + "\\n" + volume_context', self.source)
+        self.assertIn('"Stats Filter\\n{0}\\nn={1}{2}"', self.source)
+        self.assertIn('stats_title + str.format("\\n{0}-bar forward\\n{1}"', self.source)
+        self.assertIn('"Avg edge min {0,number,+#.1;-#.1}%\\nBUY WR', self.source)
+        self.assertIn('"Divergence"', self.source)
+        self.assertIn("Pivot {2} · Max gap {3} bars", self.source)
+        self.assertIn("Allowed {1}–{2} bars", self.source)
+        self.assertIn("gate_color := gate_effective_usable ? color.white", self.source)
+
+    def test_setup_score_is_not_presented_as_a_quality_verdict(self) -> None:
+        self.assertIn('"── SETUP SCORE STATS ──"', self.source)
+        self.assertIn('" [Score " + signal_grade_text + "]"', self.source)
+        self.assertIn("[Score {3}]", self.source)
+        self.assertNotIn('"── GRADE STATS ──"', self.source)
+
+
 class GenerationContentTest(unittest.TestCase):
     def setUp(self) -> None:
         self.generated = gen.generate(read_source())
@@ -121,6 +180,60 @@ class GenerationContentTest(unittest.TestCase):
     def test_execution_block_appended_once(self) -> None:
         self.assertEqual(self.generated.count(gen.STRATEGY_EXECUTION_SENTINEL), 1)
         self.assertTrue(self.generated.endswith("\n"))
+
+    def test_dashboard_row_and_capacity_offsets_stay_consistent(self) -> None:
+        source = read_source()
+
+        def extract_int(text: str, pattern: str) -> int:
+            match = re.search(pattern, text, re.MULTILINE)
+            self.assertIsNotNone(match, pattern)
+            return int(match.group(1))
+
+        source_base = extract_int(source, r"^[ \t]*full_rows = (\d+) \+")
+        generated_base = extract_int(self.generated, r"^[ \t]*full_rows = (\d+) \+")
+        source_capacity = extract_int(source, r"table\.new\(position\.top_right, 2, (\d+),")
+        generated_capacity = extract_int(self.generated, r"table\.new\(position\.top_right, 2, (\d+),")
+        source_clear_end = extract_int(source, r"table\.clear\(dashboard, 0, 0, 1, (\d+)\)")
+        generated_clear_end = extract_int(self.generated, r"table\.clear\(dashboard, 0, 0, 1, (\d+)\)")
+
+        self.assertEqual(generated_base, source_base + gen.HARNESS_EXTRA_ROWS)
+        self.assertEqual(generated_capacity, source_capacity + gen.HARNESS_TABLE_ROW_OFFSET)
+        self.assertEqual(source_clear_end, source_capacity - 1)
+        self.assertEqual(generated_clear_end, generated_capacity - 1)
+
+    def test_readable_harness_dashboard_rows_are_inserted_once(self) -> None:
+        for label in ('"Backtest"', '"Tester View"', '"Strategy Stats"'):
+            with self.subTest(label=label):
+                self.assertEqual(self.generated.count(label), 1)
+
+        self.assertNotIn('"Trigger Stats"', self.generated)
+        self.assertIn('"No strategy signal"', self.generated)
+        self.assertIn('"BUY + SELL conflict\\nNo strategy action"', self.generated)
+
+    def test_strategy_stats_follow_the_actual_signal_and_effective_weight(self) -> None:
+        self.assertIn("int _direction = _has_buy and not _has_sell ? 1", self.generated)
+        self.assertIn('if _has_buy and _has_sell\n        _source := "Conflict"', self.generated)
+        self.assertIn("_source := f_get_filter_source_label(true, false, false, buy_quality_grade, true)", self.generated)
+        self.assertIn("_source := f_get_filter_source_label(true, false, false, sell_quality_grade, false)", self.generated)
+        self.assertIn("_effective := _stats.get_count()", self.generated)
+        self.assertIn("harness_gate_effective >= 5", self.generated)
+        self.assertIn('str.format("n={0} · stale"', self.generated)
+
+    def test_strategy_stats_explain_production_but_ignore_gate_in_raw_baseline(self) -> None:
+        self.assertIn("f_harness_raw_stats_readout", self.generated)
+        self.assertIn("RAW BASELINE · GATE IGNORED", self.generated)
+        self.assertIn(
+            "_readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy) "
+            ": f_harness_raw_stats_readout(_stats, _use_buy)",
+            self.generated,
+        )
+        self.assertIn("STATS OFF · ALL ALLOWED", self.generated)
+        self.assertIn('str.format("Strategy Stats\\n{0}\\n{1}"', self.generated)
+        self.assertIn("Score {0}", self.generated)
+        self.assertIn('not enable_stats ? "Stats off"', self.generated)
+        self.assertIn("not enable_stats or not enable_stats_filter ? color.gray", self.generated)
+        self.assertNotIn("harness_gate_metrics_display", self.generated)
+        self.assertNotIn("ΔAvg", self.generated)
 
     def test_source_with_execution_block_raises(self) -> None:
         mutated = read_source() + "\n" + gen.STRATEGY_EXECUTION_SENTINEL + "\n"

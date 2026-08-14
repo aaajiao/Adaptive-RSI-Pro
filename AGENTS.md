@@ -2,7 +2,7 @@
 
 > Guidelines for AI agents working on this TradingView Pine Script v6 project.
 
-**Generated**: 2026-06-10 | **Version**: v7.5 | **Branch**: main
+**Generated**: 2026-08-14 | **Version**: v7.5 | **Branch**: main
 
 ## Quick Reference
 
@@ -63,10 +63,10 @@ RSI_stock/
     shrinks toward the direction baseline and the required win rate becomes
     `baseline + (Min Adjusted WinRate − 50)`, clamped to `[25%, 90%]`
     (`f_stats_required_winrate`) so extreme baselines can't make the gate
-    unsatisfiable or trivially low. The dashboard stats header surfaces the
-    effective requirement per direction as `Base→Req`, and in this mode the
-    `Ranking` leaderboard sorts by edge over each bucket's own direction
-    baseline (gate-consistent) and appends the edge in `pp`; buckets with
+    unsatisfiable or trivially low. The dashboard stats header surfaces each
+    direction as `BUY/SELL WR baseline→minimum`, and in this mode
+    the `Ranking` leaderboard sorts by win-rate edge over each bucket's own
+    direction baseline and labels that fact as `WR-EDGE RANK`; buckets with
     fewer than 5 effective samples are hidden via an explicit has-data flag,
     while negative-edge buckets stay visible and naturally rank last.
     `"Absolute (Legacy)"` restores the old fixed-threshold/50% prior behavior
@@ -105,26 +105,38 @@ RSI_stock/
     quality paths in **all** modes (as released in v7.5 an insufficient
     bucket always failed; post-v7.5 the `Unproven Buckets` policy decides
     that case — see below). Legacy gate mode forces the payoff path off.
-  - **Display** (Edge gate mode only): the `Ranking` second line is
-    `(+8.6pp|+2.3%)` (win-rate edge pp | shrunk payoff edge %; sort key is
-    still the win-rate edge); a per-direction "No timing edge" regime-hint
-    row (`f_stats_no_timing_edge`) renders after the stats header when ≥ 2
-    has-data buckets (effective count ≥ 5) in that direction all have
-    negative win-rate edge and non-positive payoff edge; `full_rows` gains
-    `+2` in Edge gate mode (indicator table capacity 23, harness 27).
-- Post-v7.5 dashboard addition (display only): a **`Gate` row** renders after
-  `Status` whenever `enable_stats and enable_stats_filter`, showing the bucket
-  the stats gate consults for the current (prospective) signal and the verdict
-  — the explanation for the Signal row's `✓`/`⚠️`. `f_gate_signal_kind()`
+  - **Display**: Signal Type, setup-score, and Ranking rows all use the same
+    action-first readout. A mature Edge/Either row is three short cell lines:
+    `BLOCK · OR (0/2)`, `WR 56.00% · edge −0.10pp ✗`, and
+    `Avg +6.1% · edge +0.10% ✗`. This retains absolute bucket performance while
+    translating each baseline-relative gate path directly; `Δ` is avoided
+    because some TradingView fonts render it like `A`. `f_stats_gate_paths()`
+    is the shared, unrounded source for filter and display booleans, while
+    `f_passes_stats_filter()` remains the final action. Ranking still sorts by
+    win-rate edge. A single combined `Edge Summary` row
+    renders when either direction has ≥ 2 buckets that both reached
+    `Min Samples` and retain effective count ≥ 5, and every qualifying bucket
+    has negative win-rate edge plus non-positive payoff edge. It reports
+    `no supported edge` for loaded history and does not infer a market regime.
+    `full_rows` gains `+1` in Edge mode (indicator capacity 20, harness 24).
+- Post-v7.5 dashboard addition (display only): a **`Stats Filter`** row
+  renders after `RSI Zone` only when there is a selected current event,
+  including a pure-divergence display event. It shows the
+  bucket the stats gate consults and the verdict — the explanation for the
+  Signal row's `✓`/`✗`/`⏳`. `f_gate_signal_kind()`
   mirrors the `signal_type_text` priority (pure divergence → not gateable);
   bucket choice and the overall verdict reuse the production `*_stats` /
   `filter_*` outputs so the row cannot drift from `f_passes_stats_filter`.
-  Insufficient lifetime samples render `n=x/y⏳` plus the `Unproven Buckets`
-  verdict (`⏳✓` green / `⏳✗` gray); otherwise each quality path shows
-  `actual→required` plus `✓`/`✗` (payoff segment only when the payoff path
-  is active). `full_rows` gains `+1` when the stats filter is
-  on; the row flows into the harness, where it coexists with the
-  harness-owned `Production Gate` row (per-bar prospective vs trigger-only).
+  Insufficient lifetime samples render `n=x/y⏳` plus explicit
+  `ALLOW|BLOCK · UNPROVEN` (yellow/gray, never green); mature buckets show an
+  explicit `PASS|BLOCK · OR|AND (k/2)`, `WR actual≥/<minimum`, and optional
+  `Avg edge actual≥/<minimum` payoff path. The bucket/sample label is in the
+  left cell and the three short verdict lines are in the right cell. Bars
+  without an event omit
+  the row instead of guessing a future type from a persistent zone;
+  pure divergence says `DISPLAY ONLY / No stats bucket / Not an alert signal`.
+  The row flows into the
+  harness, where it coexists with the harness-owned `Strategy Stats` snapshot.
 - Post-v7.5 gate change — **unproven-bucket pass-through** (revert switch:
   `Unproven Buckets = Block (Legacy)` restores the pre-change gate exactly):
   - New input `stats_unproven_mode` — `"Unproven Buckets"`, options
@@ -133,29 +145,49 @@ RSI_stock/
   - `f_passes_stats_filter` final expression became
     `_has_enough_samples ? _quality_ok : stats_unproven_mode == "Pass"`:
     with sufficient lifetime samples the quality paths decide as before; below
-    `Min Samples` the policy decides (Pass = let through, Block = legacy), so
-    `⚠️` now always means "proven bad", never "no data".
-  - Three-state marks: `signal_mark_text` and the alert `alert_filter_status`
-    render `⏳` when the bucket lacks samples (via
-    `current_signal_insufficient` / `f_stats_insufficient`, same
-    lifetime-count basis as the gate), `✓`/`⚠️` only with sufficient samples.
-    The Gate row's insufficient branch shows `n=x/y⏳✓` (green, passed under
-    Pass) or `⏳✗` (gray, blocked under Block), reusing the production
-    `gate_pass`. The harness `Production Gate` count gains a `⏳` suffix below
-    `Min Samples` (harness-owned snippet in the generator).
+    `Min Samples` the policy decides (Pass = let through, Block = legacy).
+  - Three-state marks: the selected dashboard event and each alert direction
+    render `⏳` when their own bucket lacks samples (via
+    `f_stats_insufficient`, on the same lifetime-count basis as the gate), and
+    `✓`/`✗` only for mature-bucket verdicts. `⚠️` is reserved for general
+    data/runtime warnings. Hidden signals spell out `TREND`, `STATS`, `SMART`,
+    or `OFF` after `🚫`.
   - Full v7.4-gate revert = `Payoff Gate = Off` **and**
     `Unproven Buckets = Block (Legacy)` (both READMEs' revert notes updated).
-- Post-v7.5 display fix: `get_reliability()` and the bucket-row sample counts
-  (Signal Type / Grade / Ranking rows, plus the harness `Production Gate`
-  snapshot count in `f_harness_gate_snapshot()`) now use the undecayed
-  `lifetime_count` — `✓ ≥ stats_min_samples`, `⏳ ≥ 5`, `❌ < 5` — the same
-  basis as the `Min Samples` gate and the Gate row's `n=`. The middle tier is
-  `⏳` (unproven), keeping `⚠️` exclusively for "proven bad" panel-wide. The
+- Post-v7.5 display fix: bucket rows and the harness `Strategy Stats` readout
+  show undecayed lifetime sample progress directly: `n=x` when mature or
+  `n=x/y⏳` below `Min Samples`; sample maturity never uses a quality
+  checkmark. A mature bucket whose decayed effective weight fell below 5 is
+  labeled `stale`; the right cell still reports the production decision from
+  the strongly shrunk estimates and does not repeat `stale`. The
   decayed effective count is hard-capped at `1/(1-0.5^(spacing/half_life))`
   (≈ 20 only when a bucket samples at least every ~111 bars at the default
-  1500-bar half-life), so keying the mark on it left every sparse bucket
-  permanently below `✓`. Ranking's has-data visibility cut (effective ≥ 5) is
-  unchanged.
+  1500-bar half-life), so effective count is not used as the `Min Samples`
+  maturity basis. Ranking's visibility cut (effective ≥ 5) is unchanged.
+- Post-v7.5 dashboard semantics pass (display only):
+  - `Signal` is current-bar events only; ongoing zones live solely in
+    `RSI Zone`, and no event displays `—` instead of a duplicate neutral dot.
+    One strength-prioritized event is selected first; its direction then drives
+    the grade, hidden reason, stats bucket, verdict, and color, so opposite
+    candidates on the same bar cannot produce a mixed-direction explanation.
+  - Z-Score and historical rank are one `RSI Position` row; empirical rank is
+    an honest interval such as `P50–P75`, never an exact percentile claim;
+    unavailable quantiles say `NA · need history` instead of defaulting to
+    `>P95`.
+  - MTF states and resonance share one row, with explicit
+    `Oversold/Neutral/Overbought` labels and a plain-language resonance result.
+  - Weekly trend protection and volume scoring are explicitly separated
+    inside `Market Context`; adaptive-window health uses words instead of
+    three unlabeled icons; normal thresholds display symmetrically as `±σ`.
+  - Full-mode cells use semantic `\n` breaks (generally two or three lines)
+    for position, signal, filter, context, lookback, normal state, MTF,
+    divergence, stats header, and bucket readouts. These do not consume
+    additional table rows. Setup grade is labeled `[Score A]`; it describes
+    current pattern score, not historical edge, a gate verdict, or permission
+    to trade.
+  - Ranking direction stays in the left label; mature historical readout
+    cells are neutral white so an OR-pass cannot paint its failed `✗` path
+    green. Filter-off cells are gray and stale cells yellow.
 - Post-v7.5 signal-model fix (user-approved deviation from the v7.2 baseline,
   no revert switch — it is a correctness fix, like the v7.3 ones): the MTF
   `tf*_is_current` dedupe now compares `f_tf_seconds(active_tf*)` against
@@ -168,7 +200,8 @@ RSI_stock/
   signals are now stricter/rarer; intraday round TFs (1h/4h) already matched
   and are unchanged. The unused `current_tf_display` was removed.
 - `Stats Mode` still selects whether the gate reads Signal Type, Grade, or
-  Ranking buckets.
+  Ranking buckets. The legacy option value `Grade` now renders as
+  `Setup Score` / `[Score A]` so it cannot be mistaken for historical edge.
 
 ### Strategy report harness
 
@@ -193,11 +226,20 @@ RSI_stock/
     placed at the close of held bar N−1, fills at the next open; `0` = off)
 - `Baseline` trades raw `v7.2` signals; `Production` trades signals that pass
   the production alert gate/filter.
-- The harness-owned `f_harness_gate_snapshot()` returns a 5-tuple (source,
-  count, avg, adjusted win rate, payoff edge); the `Production Gate` row
-  appends `|+x.x%` (shrunk payoff edge) in Edge gate mode only. This snippet
-  lives in `tools/generate_strategy_harness.py` — edit it there, never in the
-  generated file.
+- The harness-owned `f_harness_gate_snapshot()` returns a 4-tuple (source,
+  lifetime count, effective count, direct readout). The `Strategy Stats` row
+  explains the actual unambiguous buy/sell strategy signal for the selected
+  `Backtest Mode`, including exit/reversal signals; `Trade Side` does not
+  rewrite its direction. Production mode reuses `f_stats_direct_readout()`
+  and therefore shows the real filter result. Raw Baseline uses
+  `f_harness_raw_stats_readout()`, explicitly says
+  `RAW BASELINE · GATE IGNORED`, retains WR/Avg/edge context without quality
+  marks, and allows every raw signal. When statistics are disabled, both modes
+  instead prioritize `STATS OFF · ALL ALLOWED / No statistics collected / No
+  quality verdict`. Stale buckets follow the production effective-count rule.
+  Harness context rows are `Backtest`, `Tester View`, and `Strategy Stats`.
+  These snippets live in `tools/generate_strategy_harness.py` — edit them
+  there, never in the generated file.
 - It is a gated-signal backtest, not an exact intrabar `alert()` delivery
   simulation.
 - User-facing harness documentation lives in `README.md` § "Backtesting with
@@ -209,21 +251,21 @@ RSI_stock/
 | Task | Location | Notes |
 |------|----------|-------|
 | Input groups | `adaptive_rsi.pine:17-89` | All production inputs incl. stats/gate/payoff/alert toggles |
-| Dynamic lookback | `adaptive_rsi.pine:123-181` | Adaptive sample-depth logic |
+| Dynamic lookback | `adaptive_rsi.pine:124-181` | Adaptive sample-depth logic |
 | Spread hysteresis | `adaptive_rsi.pine:163-195` | Boost state machine + `prev_spread` feedback update |
-| Weekly protection | `adaptive_rsi.pine:237-266` | Confirmed weekly trend filter |
-| MTF analysis | `adaptive_rsi.pine:279-411` | TF selection, lower-TF aggregation, availability flags (333-387), seconds-based current-TF dedupe (389-393) |
-| Statistics types | `adaptive_rsi.pine:412-592` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate, shrunk payoff edge, `f_stats_required_winrate` clamp, `f_stats_no_timing_edge` |
-| Signal detection | `adaptive_rsi.pine:759-795` | Raw signals and cooldown state |
-| Consolidated signals | `adaptive_rsi.pine:797-892` | Priority merge, upgrade exemption with expired-level reset |
-| Statistics engine | `adaptive_rsi.pine:1007-1053` | Forward-return bookkeeping, baseline sampling, independent sampling |
-| Stats filter | `adaptive_rsi.pine:1054-1218` | Edge-vs-baseline / legacy gate, payoff-edge path, stats-mode-aware buckets, hidden-state detection |
-| Dashboard | `adaptive_rsi.pine:1304-1604` | Main indicator UI incl. Gate row (helpers 1315-1330, render 1421-1456), MTF availability warning, `Base→Req` header, regime-hint rows, edge-sorted ranking with payoff column |
-| Alerts | `adaptive_rsi.pine:1605-1691` | Smart alert aggregation, per-bar level reset, `alert_on_close` gating |
+| Weekly protection | `adaptive_rsi.pine:228-255` | Confirmed weekly trend filter |
+| MTF analysis | `adaptive_rsi.pine:268-399` | TF selection, lower-TF aggregation, availability flags, seconds-based current-TF dedupe |
+| Statistics types | `adaptive_rsi.pine:400-609` | `SignalStats` with decay, indexed + baseline buckets, adjusted win rate, shrunk payoff edge, sample labels, `f_stats_required_winrate` clamp, edge summary helper |
+| Signal detection | `adaptive_rsi.pine:742-762` | Raw signals and cooldown state |
+| Consolidated signals | `adaptive_rsi.pine:780-876` | Priority merge, upgrade exemption with expired-level reset |
+| Statistics engine | `adaptive_rsi.pine:987-1034` | Forward-return bookkeeping, baseline sampling, independent sampling |
+| Stats filter | `adaptive_rsi.pine:1035-1193` | Shared `f_stats_gate_paths`, final gate, direct readout, selected-event buckets |
+| Dashboard | `adaptive_rsi.pine:1301-1597` | Multiline Full cells, selected-event filter, honest rank interval, combined MTF/context rows, direct WR/Avg-edge readouts and Edge Summary |
+| Alerts | `adaptive_rsi.pine:1597-1685` | Direction-specific stats suffixes, smart alert aggregation, per-bar level reset, `alert_on_close` gating |
 | Harness inputs | `adaptive_rsi_strategy_harness.pine:85-89` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
 | Harness risk direction | `adaptive_rsi_strategy_harness.pine:101-107` | `strategy.risk.allow_entry_in` wiring |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1523-1545` | `Harness`, `Tester`, `Production Gate` (payoff suffix in Edge mode) |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1780-1845` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1547-1569` | `Backtest`, `Tester View`, `Strategy Stats` (Production verdict or explicit Raw gate bypass) |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1809-1874` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
 | Generator anchors | `tools/generate_strategy_harness.py` | Anchor names, harness-owned snippets, `--check` mode |
 | Tooling tests | `tests/` | Generator golden/anchor tests, linter rule tests |
 
@@ -290,7 +332,12 @@ exactly once.
 
 - `All` is always present in TradingView Strategy Tester.
 - Read it according to `Trade Side`.
-- `Production Gate` shows the actual stats bucket selected by `Stats Mode` for the active signal.
+- `Strategy Stats` shows the actual strategy signal's BUY/SELL bucket selected
+  by `Stats Mode`. In Production mode its right cell is the production-filter
+  verdict; in Raw Baseline it explicitly says the gate is ignored and shows
+  descriptive metrics without marks. `No strategy signal` means neither
+  direction fired; simultaneous directions display an explicit conflict and
+  produce no strategy action.
 - With `Use ATR SL/TP Exits` off and `Max Holding Bars = 0`, trades exit only
   on opposite signals (legacy harness behavior).
 
