@@ -111,11 +111,11 @@ class CosmeticEditRobustnessTest(unittest.TestCase):
 
     def test_alert_level_line_edit_survives_generation(self) -> None:
         mutated = self.mutate_line(
-            r"^    should_alert_buy = alert_has_buy and current_buy_level > prev_buy_level.*$",
-            "    should_alert_buy = alert_has_buy and current_buy_level >= prev_buy_level  // EDITED",
+            r"^    should_alert_buy = alert_has_buy and not alert_conflict.*$",
+            "    should_alert_buy = alert_has_buy and not alert_conflict and current_buy_level >= buy_alert_level_sent  // EDITED",
         )
         generated = gen.generate(mutated)
-        self.assertIn("current_buy_level >= prev_buy_level  // EDITED", generated)
+        self.assertIn("current_buy_level >= buy_alert_level_sent  // EDITED", generated)
 
     def test_stats_helper_area_edit_survives_generation(self) -> None:
         mutated = self.mutate_line(
@@ -336,12 +336,12 @@ class AdaptiveTargetContractTest(unittest.TestCase):
                     self.assertIn(f"{direction}_{event}_stats_target = f_get_filter_target", self.source)
                     is_buy = "true" if direction == "buy" else "false"
                     self.assertIn(
-                        f"filter_{direction}_{event} = f_passes_stats_filter("
+                        f"filter_{direction}_{event} = signal_data_ready and f_passes_stats_filter("
                         f"{direction}_{event}_stats, {is_buy}, {direction}_{event}_stats_target)",
                         self.source,
                     )
                     self.assertIn(
-                        f"f_stats_insufficient({direction}_{event}_stats, {direction}_{event}_stats_target)",
+                        f"f_stats_insufficient({direction}_alert_stats, {direction}_alert_target)",
                         self.source,
                     )
         self.assertIn("signal_event_stats_target", self.source)
@@ -407,13 +407,13 @@ class GenerationContentTest(unittest.TestCase):
         self.assertIn('"BUY + SELL conflict\\nNo strategy action"', self.generated)
 
     def test_strategy_stats_follow_the_actual_signal_and_effective_weight(self) -> None:
-        self.assertIn("int _direction = _has_buy and not _has_sell ? 1", self.generated)
+        self.assertIn("int _direction = harness_forced_exit ? 0 : _has_buy and not _has_sell ? 1", self.generated)
         self.assertIn('if _has_buy and _has_sell\n        _source := "Conflict"', self.generated)
         self.assertIn("_grade := buy_quality_grade", self.generated)
         self.assertIn("_grade := sell_quality_grade", self.generated)
         self.assertIn("int _target = stats_min_samples", self.generated)
         self.assertIn("_sample_display := not enable_stats ? \"Stats off\" : f_stats_sample_text(_stats, _target)", self.generated)
-        self.assertIn("_readout_color := harness_use_production ? f_stats_direct_color(_stats, _use_buy, _target) : color.gray", self.generated)
+        self.assertIn("_readout_color := harness_use_production and not harness_raw_exit ? f_stats_direct_color(_stats, _use_buy, _target) : color.gray", self.generated)
         self.assertIn("[_source, _sample_display, _readout, _readout_color]", self.generated)
         self.assertIn("[harness_gate_source, harness_gate_sample_display, harness_gate_readout, harness_gate_color]", self.generated)
         self.assertNotIn("harness_gate_count >= stats_min_samples", self.generated)
@@ -424,14 +424,14 @@ class GenerationContentTest(unittest.TestCase):
         self.assertIn("RAW · GATE IGNORED", self.generated)
         self.assertIn("f_harness_get_requested_stats", self.generated)
         self.assertIn("f_harness_get_requested_target", self.generated)
-        self.assertIn("bool _use_resolved = harness_use_production and enable_stats and enable_stats_filter", self.generated)
+        self.assertIn("bool _use_resolved = harness_use_production and not harness_raw_exit and enable_stats and enable_stats_filter", self.generated)
         self.assertIn("if _use_resolved\n            _stats := f_get_filter_stats", self.generated)
         self.assertIn("_target := f_get_filter_target", self.generated)
         self.assertIn("else\n            _stats := f_harness_get_requested_stats", self.generated)
         self.assertIn("_target := f_harness_get_requested_target", self.generated)
         self.assertIn('_evidence_source := f_get_filter_source(', self.generated)
         self.assertIn(
-            "_readout := not enable_stats or harness_use_production ? f_stats_direct_readout(_stats, _use_buy, _target) "
+            "_readout := not enable_stats or (harness_use_production and not harness_raw_exit) ? f_stats_direct_readout(_stats, _use_buy, _target) "
             ": f_harness_raw_stats_readout(_stats, _use_buy, _target)",
             self.generated,
         )
@@ -512,7 +512,7 @@ class GenerationContentTest(unittest.TestCase):
         # Active Production is the only harness mode that may resolve a parent.
         # Raw, stats-off, filter-off and Fixed retain the requested Stats Mode bucket;
         # Fixed is guaranteed by the production resolver's Adaptive-only condition.
-        self.assertIn("harness_use_production and enable_stats and enable_stats_filter", self.generated)
+        self.assertIn("harness_use_production and not harness_raw_exit and enable_stats and enable_stats_filter", self.generated)
         self.assertIn('stats_sample_policy == "Adaptive" and stats_mode == "Ranking"', self.generated)
         self.assertIn('stats_sample_policy == "Fixed (Legacy)" or _stats.get_count() >= 5', self.generated)
         self.assertIn("f_harness_get_requested_stats(_use_buy, _use_mtf, _use_div, _use_ext, _grade)", self.generated)
@@ -558,12 +558,13 @@ class GenerationContentTest(unittest.TestCase):
                 self.assertRegex(
                     self.generated,
                     re.compile(
-                        rf'strategy\.entry\("{side}", strategy\.{side.lower()}\)\n'
+                        rf'strategy\.entry\("{side}", strategy\.{side.lower()},[^\n]+\n'
                         rf"[ \t]+{sl_var} := {snapshot_sl}\n"
                         rf"[ \t]+{tp_var} := {snapshot_tp}\n"
+                        r"(?:[ \t]+//[^\n]*\n)*"
                         rf"[ \t]+if harness_use_risk_exits and \(not na\({sl_var}\) or not na\({tp_var}\)\)\n"
                         rf'[ \t]+strategy\.exit\("{side} Exit", from_entry="{side}", '
-                        rf'stop={sl_var}, limit={tp_var}, comment="ATR Exit"\)'
+                        rf'stop={sl_var}, limit={tp_var}, comment="ATR EXIT {side.upper()}", alert_message='
                     ),
                 )
 
@@ -577,7 +578,7 @@ class GenerationContentTest(unittest.TestCase):
         self.assertRegex(
             self.generated,
             re.compile(
-                r"(?m)^if harness_use_risk_exits$\n"
+                r'(?m)^if harness_use_risk_exits and harness_action == "Idle"$\n'
                 r"[ \t]+if strategy\.position_size > 0 and \(not na\(harness_long_sl_price\) or not na\(harness_long_tp_price\)\)\n"
                 r'[ \t]+strategy\.exit\("Long Exit", from_entry="Long"'
             ),
@@ -588,7 +589,7 @@ class GenerationContentTest(unittest.TestCase):
         # triggers at held bar N-1 to realize exactly N held bars. Default 0 skips
         # the block entirely via the > 0 gate.
         self.assertIn(
-            "if harness_max_holding_bars > 0 and strategy.opentrades > 0",
+            "harness_time_exit_due = harness_max_holding_bars > 0 and strategy.opentrades > 0",
             self.generated,
         )
         self.assertIn(

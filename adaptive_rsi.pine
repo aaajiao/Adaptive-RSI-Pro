@@ -1,4 +1,4 @@
-// Adaptive RSI Pro v7.6 - v7.2 baseline + adaptive stats engine (win-rate, payoff edge, evidence targets)
+// Adaptive RSI Pro v7.7 - complete-context evidence + execution-aligned alerts
 // MIT License - https://github.com/aaajiao/Adaptive-RSI-Pro
 //
 // 信号图例 / Signal Legend:
@@ -11,8 +11,10 @@
 //@version=6
 indicator("Adaptive RSI Pro", shorttitle="ARSI Pro", overlay=false, precision=2, max_lines_count=100, max_labels_count=100, max_bars_back=4500)
 
-MAX_REQUEST_BARS = 1400
-WEEKLY_REQUEST_BARS = 120
+SCRIPT_VERSION = "7.7"
+// This is a budget of LOWER-TIMEFRAME bars, not chart bars.
+// 小周期K线预算；主图覆盖随周期比例与数据缺口变化。
+MAX_REQUEST_BARS = 100000
 
 // ────────────────────────────────────────
 // INPUTS
@@ -45,15 +47,16 @@ normal_threshold_manual = input.float(1.5, "Manual Threshold / 手动阈值 (On�
 enable_signal_cooldown = input.bool(true, "Enable Signal Cooldown / 启用信号冷却", group=grp_alerts, tooltip="防止同一区域重复信号污染统计数据\n---\nPrevents repeated signals in the same zone from polluting the statistics")
 cooldown_mode = input.string("Smart", "Cooldown Mode / 冷却模式", options=["Smart", "Fixed"], group=grp_alerts, tooltip="Smart: 根据市场波动率自动调整冷却期\nFixed: 使用固定冷却期")
 cooldown_bars_fixed = input.int(5, "Fixed Cooldown (Bars) / 固定冷却期", minval=1, maxval=20, group=grp_alerts, tooltip="Fixed模式下的冷却时间（K线数）")
-enable_smart_alert = input.bool(true, "🎯 Smart Alert / 智能警报", group=grp_alerts, tooltip="V6动态警报：自动聚合所有信号到一条消息\n包含完整上下文（RSI值、Z-Score、百分位）\n实时触发，智能去重")
-alert_on_close = input.bool(false, "Alert on Bar Close / 仅收盘确认警报", group=grp_alerts, tooltip="开启: 仅在K线收盘确认后触发警报，避免盘中信号闪现后消失（重绘），代价是警报延迟到收盘\n关闭: 保持当前行为，盘中实时触发\n---\nOn: alerts fire only on confirmed bars, avoiding intrabar repaint at the cost of later delivery\nOff: current immediate intrabar behavior")
+enable_smart_alert = input.bool(true, "🎯 Smart Alert / 智能警报", group=grp_alerts, tooltip="聚合同方向信号；同一根K线每次等级升级最多提醒一次\n当前同时出现买卖候选时不发操作警报\n---\nAggregates same-direction signals; at most one alert per increasing level within a bar\nNo actionable alert when both directions are currently eligible")
+alert_on_close = input.bool(true, "Alert on Bar Close / 仅收盘确认警报", group=grp_alerts, tooltip="开启（默认）: 仅在K线收盘确认后触发，避免盘中候选消失后仍留下警报\n关闭: 盘中触发并允许同根等级升级；已经发出的警报不能撤回\n策略报告默认仅收盘运行，关闭本项不会让策略自动按 tick 运行\n---\nOn (default): send only on confirmed bars\nOff: allow intrabar alerts and same-bar level upgrades; sent alerts cannot be retracted\nThe strategy harness still executes at bar close by default; this input does not enable tick calculation")
+alert_format = input.string("Text", "Alert Format / 警报格式", options=["Text", "JSON"], group=grp_alerts, tooltip="Text（默认）: 人类可读提醒\nJSON: 包含稳定事件ID、时间、证据来源及门槛、路径判定和价格的决策快照，供后续与实际成交记录核对；它不是成交确认\n升级后须重新创建 TradingView 警报以采用新脚本和输入\n---\nText (default): human-readable alert\nJSON: decision snapshot with a stable event ID, timestamps, evidence source/thresholds, path results and prices for reconciliation with actual fills; not a fill confirmation\nRecreate TradingView alerts after upgrading to adopt the new script and inputs")
 include_risk_in_alerts = input.bool(false, "Include Risk Hints in Alerts / 警报含风险提示", group=grp_alerts, tooltip="在警报消息中包含ATR止损/止盈建议\n默认关闭，避免消息过长")
 alert_rr_ratio = input.float(2.0, "Risk-Reward Ratio / 风险回报比", minval=1.5, maxval=3.0, step=0.5, group=grp_alerts, tooltip="止盈/止损比例\n2.0 = 1:2 风险回报比\n---\nTake-profit / stop-loss ratio\n2.0 = 1:2 risk-reward")
 
 grp_protection = "═══ Trend Protection / 趋势保护 ═══"
 enable_trend_protection = input.bool(true, "Enable Trend Protection / 启用趋势保护", group=grp_protection, tooltip="使用周线趋势过滤极端风险：避免在周线极端下跌中抄底\n---\nFilters extreme risk with the weekly trend\nAvoids bottom-fishing during extreme weekly downtrends")
 protection_level = input.string("Moderate", "Protection Level / 保护级别", options=["Aggressive", "Moderate", "Loose"], group=grp_protection, tooltip="Aggressive: 周线必须上升趋势\nModerate(推荐): 排除周线极端下跌\nLoose: 仅排除周线RSI<20的极端情况")
-enable_percentile_confirm = input.bool(false, "🎯 Percentile Confirm / 百分位确认", group=grp_protection, tooltip="极端信号需同时满足 Z-Score(-2σ) 和 Percentile(P5/P95)\n可减少波动率变化时的假信号，提升胜率\n适用于波动率变化较大的市场\n---\nExtreme signals require both Z-Score AND Percentile\nReduces false signals when volatility changes")
+enable_percentile_confirm = input.bool(false, "🎯 Percentile Confirm / 百分位确认", group=grp_protection, tooltip="极端信号需同时满足 Z-Score(-2σ) 和 Percentile(P5/P95)\n增加一项入选条件；是否改善交易胜率须按相同执行规则验证\n---\nExtreme signals require both Z-Score AND Percentile\nAdds an eligibility condition; evaluate its effect on trade win rate under identical execution rules")
 
 grp_volume = "═══ Volume Confirmation / 成交量确认 ═══"
 enable_volume_scoring = input.bool(true, "Enable Volume Scoring / 启用成交量评分", group=grp_volume, tooltip="成交量作为信号质量评分项，不强制过滤\n---\nVolume contributes to signal quality scoring\nNo hard filtering")
@@ -69,17 +72,17 @@ mtf_tf3_input = input.timeframe("D", "Manual TF3 / 手动周期3", group=grp_mtf
 grp_stats = "═══ Signal Statistics / 信号统计 ═══"
 enable_stats = input.bool(true, "Enable Statistics / 启用统计", group=grp_stats)
 stats_mode = input.string("Ranking", "Stats Mode / 统计模式", options=["Signal Type", "Grade", "Ranking"], group=grp_stats, tooltip="Signal Type: 按信号类型统计\nGrade: 按当下形态评分统计（不是历史优势结论）\nRanking: 信号类型 × 形态评分排行榜\n---\nSignal Type: group by signal type\nGrade: group by current setup score, not historical edge\nRanking: signal type × setup score leaderboard")
-stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, maxval=100, group=grp_stats, tooltip="信号触发后多少根K线计算收益\n---\nBars after a signal used to measure forward return")
+stats_forward_bars = input.int(20, "Forward Bars / 前瞻K线数", minval=5, maxval=100, group=grp_stats, tooltip="信号收盘到多少根K线后的收盘计算方向收益；正收益记为成功\n这是固定窗口方向结果，不是含成交价、退出规则和费用的已平仓交易胜率\n---\nMeasures directional return from the signal close to the close this many bars later; positive return counts as success\nThis fixed-horizon outcome is not the win rate of closed trades with actual fills, exits and costs")
 stats_half_life_bars = input.int(1500, "Stats Half-Life Bars / 统计半衰期K线数", minval=0, maxval=20000, step=100, group=grp_stats, tooltip="样本权重按K线间隔指数衰减的半衰期\n1500根K线 ≈ 日线6年 / 4小时图9个月：日线上覆盖完整市场周期，同时淡出旧市场环境的样本\n0 = 关闭衰减（等权累计，旧版行为）\nAdaptive 按动态终身样本目标判断证据量，并另要求有效样本数≥5，避免用过时证据发布结论\n---\nHalf-life in bars for exponential decay of sample weights\n1500 bars ≈ 6 years on 1D / 9 months on 4H: covers a full market cycle on daily charts while fading samples from old regimes\n0 = decay off (equal-weight accumulation, legacy behavior)\nAdaptive uses a dynamic lifetime evidence target and additionally requires effective n >= 5 so stale evidence cannot issue a verdict")
 stats_independent_samples = input.bool(true, "Independent Samples / 独立采样", group=grp_stats, tooltip="每个统计桶记录一个样本后，至少间隔前瞻K线数才记录下一个\n避免相邻信号的前瞻收益区间重叠而虚增样本数\n关闭 = 旧版重叠采样行为\n---\nEach bucket waits at least Forward Bars between recorded samples\nPrevents overlapping forward-return windows from inflating sample counts\nOff = legacy overlapping behavior")
 enable_stats_filter = input.bool(true, "Enable Stats Filter / 启用统计过滤", group=grp_stats, tooltip="按历史统计门槛过滤信号\n综合样本成熟度、调整胜率及可选收益优势路径\n---\nFilters signals against configured historical-statistics thresholds\nUses sample maturity, adjusted win rate and the optional payoff-edge path")
 stats_min_samples = input.int(20, "Evidence Reference / 证据参考值", minval=5, maxval=50, group=grp_stats, tooltip="Adaptive：这是动态样本目标的参考值。默认20会按同方向、同层级四个桶的实际样本分布生成约8–16的桶目标；结果好坏不会改变目标。关闭 Independent Samples 时，为防重叠样本虚增，目标保护性回到本参考值（默认20）\nFixed (Legacy)：本值就是固定终身样本门槛（默认20）\n本值不是统计验证或未来表现保证\n---\nAdaptive: reference for the dynamic sample target. The default 20 produces bucket targets of about 8–16 from the actual same-direction, same-scope four-bucket sample mix; outcome quality never changes the target. With Independent Samples off, an overlap guard restores the target to this reference (20 by default)\nFixed (Legacy): this value is the fixed lifetime-sample threshold (default 20)\nThis is not statistical validation or a guarantee of future performance")
 stats_sample_policy = input.string("Adaptive", "Sample Policy / 样本策略", options=["Adaptive", "Fixed (Legacy)"], group=grp_stats, tooltip="Adaptive（默认）：每个桶按同方向、同层级四个 peer 桶的终身样本占比计算自己的动态目标（参考值20时约8–16），并要求有效样本数≥5。Ranking 精确桶未就绪时回退到已就绪的同方向 Signal Type 父桶；父桶使用自己的真实目标。目标只看样本结构，不看 WR/Avg\nFixed (Legacy)：始终使用 Stats Mode 指定的桶，以 Evidence Reference 作为固定终身门槛，不检查有效样本新鲜度，完全恢复旧版行为\n---\nAdaptive (default): each bucket gets a dynamic target from its lifetime-sample share among the four same-direction, same-scope peers (about 8–16 for reference 20) and also requires effective n >= 5. An unready exact Ranking bucket falls back to a ready same-direction Signal Type parent, using the parent's own target. Targets use sample structure only, never WR/Avg\nFixed (Legacy): always use the Stats Mode bucket, use Evidence Reference as the fixed lifetime threshold, and ignore effective-sample freshness, restoring previous behavior")
-stats_unproven_mode = input.string("Pass", "Unproven Buckets / 样本不足的桶", options=["Pass", "Block (Legacy)"], group=grp_stats, tooltip="证据桶未经判定时的处理方式：终身样本数不足当前桶目标，或 Adaptive 模式下有效样本数<5且没有可用父级桶\nPass: 放行（默认）——过滤器只拦截已有质量结论且未达到门槛的桶\nBlock (Legacy): 拦截——即使没有质量结论也拦截\nSignal 行与警报文本用 ⏳ 标记未经判定；✗ 表示已有结论但未达到门槛\n---\nWhat to do when evidence is unproven: lifetime n is below the bucket's current target, or effective n < 5 under Adaptive with no ready parent\nPass: let it through (default) — block only verdict-ready buckets that miss the quality thresholds\nBlock (Legacy): block even without a verdict\nSignal and alert text use ⏳ for unproven evidence; ✗ means a verdict exists but missed the thresholds")
-stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="信号组合需要的最小贝叶斯调整胜率\n55%为建议值\nEdge vs Baseline 模式下：(本值 - 50) 被解读为相对方向基准胜率的最小优势（百分点）\n---\nMinimum Bayesian-adjusted win rate per signal bucket\n55% is the recommended value\nIn Edge vs Baseline mode, (value - 50) is the required edge in percentage points over the direction baseline")
-stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对每个方向的无条件基准胜率（要求超额优势），贝叶斯先验也收缩到基准胜率\n可避免趋势市场中卖出桶因口径问题被系统性拒绝\n有效门槛钳制在25%~90%之间，防止极端基准下门槛不可满足或过低\nAbsolute (Legacy): 旧版固定绝对胜率门槛\n---\nEdge vs Baseline: the win-rate gate is relative to each direction's unconditional baseline win rate (requires an edge); the Bayesian prior shrinks toward the baseline\nAvoids sell buckets being systematically rejected on trending assets\nThe effective requirement is clamped to 25-90% so extreme baselines can't make the gate unsatisfiable or trivially low\nAbsolute (Legacy): legacy fixed absolute threshold")
-stats_payoff_mode = input.string("Either Edge", "Payoff Gate / 收益优势门槛", options=["Off", "Either Edge", "Both Edges"], group=grp_stats, tooltip="在 Edge vs Baseline 模式下为质量判定增加第二条基于收益的路径\nOff: 仅胜率优势（v7.4 行为）\nEither Edge: 胜率优势或收益优势任一通过即可（默认）\nBoth Edges: 两条路径都必须通过\n趋势市中均值回归信号比漂移基准赢得更少但赢时赢得更大，本门槛让这类桶可凭收益优势通过\n质量路径需要达到当前证据目标；不足时由 Unproven Buckets 决定放行或拦截\n仅在 Gate Mode = Edge vs Baseline 时生效\n---\nAdds a second, payoff-based quality path in Edge vs Baseline mode\nOff: win-rate edge only (v7.4 behavior)\nEither Edge: pass if the win-rate edge path OR the payoff edge path passes (default)\nBoth Edges: both paths must pass\nOn trending assets mean-reversion buckets can win less often than the drift baseline but win bigger; this lets those buckets qualify on payoff\nQuality paths require the current evidence target; below it, Unproven Buckets decides whether to allow or block\nOnly active when Gate Mode = Edge vs Baseline")
-stats_min_payoff_edge = input.float(0.4, "Min Payoff Edge % / 最小收益优势", minval=0.0, maxval=10.0, step=0.1, group=grp_stats, tooltip="收益优势路径的通过门槛（前瞻窗口收益百分比）\n收缩后收益优势 = 置信度 ×（桶平均前瞻收益 − 方向基准平均前瞻收益）≥ 本值时通过\n漂移已通过基准扣除，本值只需对抗噪声，0.3~0.5 为建议区间\n---\nThreshold for the payoff edge path, in forward-window % terms\nPasses when shrunk payoff edge = confidence × (bucket avg forward return − direction baseline avg) >= this value\nDrift is already subtracted via the baseline, so this only competes against noise; 0.3-0.5 recommended")
+stats_unproven_mode = input.string("Block (Legacy)", "Unproven Buckets / 样本不足的桶", options=["Pass", "Block (Legacy)"], group=grp_stats, tooltip="证据未经判定：终身样本数不足目标，或 Adaptive 下有效样本数<5且没有可用父桶\nBlock (Legacy): 默认拦截，等待可判定证据；保留 Legacy 选项名以兼容已有设置\nPass: 允许无结论信号，包含已陈旧的桶（v7.6 默认行为）\n⏳ 表示无质量结论，✗ 表示已有结论但未达到门槛；拦截更多不等于已证明胜率更高\n---\nUnproven means lifetime n is below target, or Adaptive effective n < 5 with no ready parent\nBlock (Legacy): block by default until evidence is ready; the option name is retained for compatibility\nPass: allow unproven signals, including stale buckets (the v7.6 default)\nAn hourglass means no quality verdict; a cross means a ready verdict missed the rule. More filtering does not establish higher win rate")
+stats_min_winrate = input.float(55.0, "Min Adjusted WinRate / 最小调整胜率", minval=50.0, maxval=70.0, step=1.0, group=grp_stats, tooltip="固定前瞻窗口的收缩调整胜率门槛；55 是保留的配置参考值，未经实盘表现验证\nEdge vs Baseline 下：(本值 - 50) 是相对方向基准所需的最小优势（百分点）\n收缩权重 min(1, effective_n/20) 是启发式权重，不是统计置信度、后验概率或真实交易胜率\n---\nThreshold for shrunk fixed-horizon win rate; 55 is a retained configuration reference, not validated live performance\nIn Edge vs Baseline mode, (value - 50) is the required edge over the direction baseline in percentage points\nThe shrinkage weight min(1, effective_n/20) is a heuristic weight, not statistical confidence, posterior probability or realized trade win rate")
+stats_gate_mode = input.string("Edge vs Baseline", "Gate Mode / 门槛模式", options=["Edge vs Baseline", "Absolute (Legacy)"], group=grp_stats, tooltip="Edge vs Baseline: 胜率门槛相对方向的无条件固定窗口基准，估计值按启发式权重向基准收缩\n有效门槛保留25%~90%钳制；极端基准触及钳制时，通过不一定代表正优势\nAbsolute (Legacy): 固定绝对门槛，向50%收缩\n两者都不直接度量已平仓交易胜率\n---\nEdge vs Baseline: compares against the direction's unconditional fixed-horizon baseline, with heuristic shrinkage toward that baseline\nThe requirement retains its 25-90% clamp; at extreme clamped baselines, a pass need not imply positive edge\nAbsolute (Legacy): fixed absolute threshold with shrinkage toward 50%\nNeither directly measures the win rate of closed trades")
+stats_payoff_mode = input.string("Off", "Payoff Gate / 收益优势门槛", options=["Off", "Either Edge", "Both Edges"], group=grp_stats, tooltip="仅在 Edge vs Baseline 模式生效\nOff（默认）: 必须通过胜率路径；收益优势只作参考\nEither Edge: 胜率或收益优势任一通过即可，保留用于对照实验（v7.6 默认）\nBoth Edges: 两条路径都必须通过\n先达到证据目标，再判断质量；不足时由 Unproven Buckets 决定\n默认值使胜率路径成为必要条件，不代表已验证实际交易胜率提高\n---\nApplies only in Edge vs Baseline mode\nOff (default): the win-rate path must pass; payoff edge is descriptive\nEither Edge: either path can pass, retained for comparison (v7.6 default)\nBoth Edges: both paths must pass\nEvidence readiness is required before a quality verdict; otherwise Unproven Buckets applies\nThe default makes the win-rate path mandatory; it does not establish an improvement in realized trade win rate")
+stats_min_payoff_edge = input.float(0.4, "Min Payoff Edge % / 最小收益优势", minval=0.0, maxval=10.0, step=0.1, group=grp_stats, tooltip="固定前瞻窗口收益优势路径的门槛（百分比）\n收缩后收益优势 = min(1, effective_n/20) ×（桶平均收益 - 方向基准平均收益）\n0.4 是保留的配置值，不是噪声检验或费用门槛；权重不是统计置信度\n---\nThreshold for the payoff-edge path in fixed-horizon return percent\nShrunk payoff edge = min(1, effective_n/20) × (bucket average return - direction baseline average)\n0.4 is a retained setting, not a noise test or a cost allowance; the weight is not statistical confidence")
 stats_filter_mode = input.string("Alert Only", "Filter Mode / 过滤模式", options=["Alert Only", "Soft", "Hard"], group=grp_stats, tooltip="Alert Only: 仅过滤警报，图表显示所有信号\nSoft: 低质量信号降级显示\nHard: 完全隐藏低质量信号")
 // @harness: inputs
 
@@ -233,24 +236,24 @@ f_zscore_to_percentile(_zscore) =>
 [weekly_rsi, weekly_sma20, weekly_sma50] = request.security(
     syminfo.tickerid, "W",
     [ta.rsi(close, 14)[1], ta.sma(close, 20)[1], ta.sma(close, 50)[1]],
-    lookahead=barmerge.lookahead_on,
-    calc_bars_count=WEEKLY_REQUEST_BARS
+    lookahead=barmerge.lookahead_on
 )
 
+weekly_data_ready = not na(weekly_rsi) and not na(weekly_sma20) and not na(weekly_sma50)
 weekly_uptrend = weekly_sma20 > weekly_sma50
 weekly_extreme_bearish = weekly_rsi < 30 and weekly_sma20 < weekly_sma50
 weekly_ultra_bearish = weekly_rsi < 20
 
-trend_allows_buy = protection_level == "Aggressive" ? weekly_uptrend : protection_level == "Moderate" ? not weekly_extreme_bearish : not weekly_ultra_bearish
+trend_allows_buy = weekly_data_ready and (protection_level == "Aggressive" ? weekly_uptrend : protection_level == "Moderate" ? not weekly_extreme_bearish : not weekly_ultra_bearish)
 
 weekly_downtrend = weekly_sma20 < weekly_sma50
 weekly_extreme_bullish = weekly_rsi > 70 and weekly_sma20 > weekly_sma50
 weekly_ultra_bullish = weekly_rsi > 80
 
-trend_allows_sell = protection_level == "Aggressive" ? weekly_downtrend : protection_level == "Moderate" ? not weekly_extreme_bullish : not weekly_ultra_bullish
+trend_allows_sell = weekly_data_ready and (protection_level == "Aggressive" ? weekly_downtrend : protection_level == "Moderate" ? not weekly_extreme_bullish : not weekly_ultra_bullish)
 
 // 智能普通信号显示逻辑
-weekly_neutral = not weekly_extreme_bearish and not weekly_extreme_bullish
+weekly_neutral = weekly_data_ready and not weekly_extreme_bearish and not weekly_extreme_bullish
 auto_show_normal = weekly_neutral
 show_normal_signals = normal_signal_mode == "Off" ? false : normal_signal_mode == "On" ? true : auto_show_normal
 
@@ -304,7 +307,7 @@ active_tf2 = mtf_mode == "Auto" ? auto_t2 : mtf_tf2_input
 active_tf3 = mtf_mode == "Auto" ? auto_t3 : mtf_tf3_input
 
 f_status(_rsi, _p10, _p90) =>
-    na(_rsi) or na(_p10) or na(_p90) ? 0 : _rsi < _p10 ? 1 : _rsi > _p90 ? -1 : 0
+    na(_rsi) or na(_p10) or na(_p90) ? int(na) : _rsi < _p10 ? 1 : _rsi > _p90 ? -1 : 0
 
 f_mtf_status_expr(_lookback) =>
     _rsi = ta.rsi(rsi_source, rsi_length)
@@ -314,14 +317,14 @@ f_mtf_status_expr(_lookback) =>
 
 f_array_last_status(array<int> _values) =>
     _size = array.size(_values)
-    _size > 0 ? array.get(_values, _size - 1) : 0
+    _size > 0 ? array.get(_values, _size - 1) : int(na)
 
 f_tf_seconds(_tf) =>
     _seconds = timeframe.in_seconds(_tf)
     na(_seconds) ? chart_tf_seconds : _seconds
 
-// 返回 [状态, 数据可用性]；低周期在盘中覆盖范围外会返回空数组，状态会静默退化为 0
-// Returns [status, available]; lower-TF data outside intrabar coverage degrades status to 0 silently
+// 缺失数据和未预热状态保留 na，不能伪装成中性或借用当前周期。
+// Preserve missing/unwarmed data as na, never neutral or a copy of the chart context.
 f_mtf_status(_tf) =>
     _tf_seconds = f_tf_seconds(_tf)
     array<int> _statuses = request.security_lower_tf(
@@ -336,11 +339,10 @@ f_mtf_status(_tf) =>
         syminfo.tickerid,
         _tf,
         f_mtf_status_expr(lookback)[1],
-        lookahead=barmerge.lookahead_on,
-        calc_bars_count=MAX_REQUEST_BARS
+        lookahead=barmerge.lookahead_on
     )
-    _status = _tf_seconds < chart_tf_seconds ? f_array_last_status(_statuses) : _tf_seconds == chart_tf_seconds ? _current : nz(_htf_status, _current)
-    _available = _tf_seconds < chart_tf_seconds ? array.size(_statuses) > 0 : _tf_seconds == chart_tf_seconds ? true : not na(_htf_status)
+    _status = _tf_seconds < chart_tf_seconds ? f_array_last_status(_statuses) : _tf_seconds == chart_tf_seconds ? _current : _htf_status
+    _available = not na(_status)
     [_status, _available]
 
 f_tf_display(_tf) =>
@@ -368,8 +370,8 @@ mtf_tf3_display = f_tf_display(active_tf3)
 status_tf1 = enable_mtf ? mtf_status_tf1 : 0
 status_tf2 = enable_mtf ? mtf_status_tf2 : 0
 status_tf3 = enable_mtf ? mtf_status_tf3 : 0
-// 数据可用性仅用于仪表盘显示，不影响共振触发与统计记录
-// Availability is display-only; resonance math and stats recording are unchanged
+// 就绪状态同时约束新入场、警报和信号发生时的样本资格。
+// Readiness gates new entries, alerts, and sample eligibility at the signal bar.
 mtf_data_ok_tf1 = not enable_mtf or mtf_avail_tf1
 mtf_data_ok_tf2 = not enable_mtf or mtf_avail_tf2
 mtf_data_ok_tf3 = not enable_mtf or mtf_avail_tf3
@@ -381,22 +383,36 @@ tf1_is_current = f_tf_seconds(active_tf1) == chart_tf_seconds
 tf2_is_current = f_tf_seconds(active_tf2) == chart_tf_seconds
 tf3_is_current = f_tf_seconds(active_tf3) == chart_tf_seconds
 
-valid_tf_count = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 1)
+// Keep the highest-slot weight when Manual TFs repeat; each distinct context votes once.
+// 手动周期重复时保留较高槽位权重，每个不同周期只计一次。
+tf1_is_unique = not tf1_is_current and f_tf_seconds(active_tf1) != f_tf_seconds(active_tf2) and f_tf_seconds(active_tf1) != f_tf_seconds(active_tf3)
+tf2_is_unique = not tf2_is_current and f_tf_seconds(active_tf2) != f_tf_seconds(active_tf3)
+tf3_is_unique = not tf3_is_current
+valid_tf_count = 1 + (tf1_is_unique ? 1 : 0) + (tf2_is_unique ? 1 : 0) + (tf3_is_unique ? 1 : 0)
+mtf_context_ready = not enable_mtf or ((not tf1_is_unique or mtf_data_ok_tf1) and (not tf2_is_unique or mtf_data_ok_tf2) and (not tf3_is_unique or mtf_data_ok_tf3))
+chart_data_ready = not na(rsi_zscore) and not na(rsi_p5) and not na(rsi_p10) and not na(rsi_p90) and not na(rsi_p95)
+// Weekly features remain in setup scoring even when trend protection is off.
+// 趋势保护关闭后，周线仍参与评分，因此也必须完成预热。
+signal_data_ready = chart_data_ready and weekly_data_ready and mtf_context_ready
+signal_data_reason = not chart_data_ready ? "RSI warmup" : not weekly_data_ready ? "Weekly warmup" : not mtf_context_ready ? "MTF coverage / warmup" : "Ready"
+var int evidence_start_time = na
+if signal_data_ready and na(evidence_start_time)
+    evidence_start_time := time
 
 // 简单计数（用于显示）
-oversold_count = (status_current == 1 ? 1 : 0) + (not tf1_is_current and status_tf1 == 1 ? 1 : 0) + (not tf2_is_current and status_tf2 == 1 ? 1 : 0) + (not tf3_is_current and status_tf3 == 1 ? 1 : 0)
-overbought_count = (status_current == -1 ? 1 : 0) + (not tf1_is_current and status_tf1 == -1 ? 1 : 0) + (not tf2_is_current and status_tf2 == -1 ? 1 : 0) + (not tf3_is_current and status_tf3 == -1 ? 1 : 0)
+oversold_count = (status_current == 1 ? 1 : 0) + (tf1_is_unique and status_tf1 == 1 ? 1 : 0) + (tf2_is_unique and status_tf2 == 1 ? 1 : 0) + (tf3_is_unique and status_tf3 == 1 ? 1 : 0)
+overbought_count = (status_current == -1 ? 1 : 0) + (tf1_is_unique and status_tf1 == -1 ? 1 : 0) + (tf2_is_unique and status_tf2 == -1 ? 1 : 0) + (tf3_is_unique and status_tf3 == -1 ? 1 : 0)
 
 // v6.8: 加权共振 - TF3权重2, 其他权重1, 满分5
-oversold_weighted = (status_current == 1 ? 1 : 0) + (not tf1_is_current and status_tf1 == 1 ? 1 : 0) + (not tf2_is_current and status_tf2 == 1 ? 1 : 0) + (not tf3_is_current and status_tf3 == 1 ? 2 : 0)
-overbought_weighted = (status_current == -1 ? 1 : 0) + (not tf1_is_current and status_tf1 == -1 ? 1 : 0) + (not tf2_is_current and status_tf2 == -1 ? 1 : 0) + (not tf3_is_current and status_tf3 == -1 ? 2 : 0)
+oversold_weighted = (status_current == 1 ? 1 : 0) + (tf1_is_unique and status_tf1 == 1 ? 1 : 0) + (tf2_is_unique and status_tf2 == 1 ? 1 : 0) + (tf3_is_unique and status_tf3 == 1 ? 2 : 0)
+overbought_weighted = (status_current == -1 ? 1 : 0) + (tf1_is_unique and status_tf1 == -1 ? 1 : 0) + (tf2_is_unique and status_tf2 == -1 ? 1 : 0) + (tf3_is_unique and status_tf3 == -1 ? 2 : 0)
 
 // 最大加权分数
-max_weighted = 1 + (tf1_is_current ? 0 : 1) + (tf2_is_current ? 0 : 1) + (tf3_is_current ? 0 : 2)
+max_weighted = 1 + (tf1_is_unique ? 1 : 0) + (tf2_is_unique ? 1 : 0) + (tf3_is_unique ? 2 : 0)
 
 // 共振触发：加权分数 >= 4（满分5），或当周期数少时全部一致
-oversold_resonance = oversold_weighted >= 4 or (valid_tf_count <= 3 and oversold_count == valid_tf_count)
-overbought_resonance = overbought_weighted >= 4 or (valid_tf_count <= 3 and overbought_count == valid_tf_count)
+oversold_resonance = enable_mtf and mtf_context_ready and valid_tf_count >= 2 and (oversold_weighted >= 4 or (valid_tf_count <= 3 and oversold_count == valid_tf_count))
+overbought_resonance = enable_mtf and mtf_context_ready and valid_tf_count >= 2 and (overbought_weighted >= 4 or (valid_tf_count <= 3 and overbought_count == valid_tf_count))
 
 // ────────────────────────────────────────
 // SIGNAL STATISTICS
@@ -853,12 +869,12 @@ bool was_extreme_oversold = (zscore_at_div < -2) and pct_allows_buy_div
 bool was_extreme_overbought = (zscore_at_div > 2) and pct_allows_sell_div
 
 bool raw_sig_buy_mtf = enable_mtf and oversold_resonance and extreme_oversold
-bool raw_sig_buy_div = enable_divergence and bullish_divergence and was_extreme_oversold and not raw_sig_buy_mtf
+bool raw_sig_buy_div = enable_divergence and bullish_divergence and was_extreme_oversold and (not enable_trend_protection or trend_allows_buy) and not raw_sig_buy_mtf
 bool raw_sig_buy_extreme = extreme_oversold and not raw_sig_buy_mtf and not raw_sig_buy_div
 bool raw_sig_buy_normal = normal_oversold and not raw_sig_buy_mtf and not raw_sig_buy_div and not raw_sig_buy_extreme
 
 bool raw_sig_sell_mtf = enable_mtf and overbought_resonance and extreme_overbought
-bool raw_sig_sell_div = enable_divergence and bearish_divergence and was_extreme_overbought and not raw_sig_sell_mtf
+bool raw_sig_sell_div = enable_divergence and bearish_divergence and was_extreme_overbought and (not enable_trend_protection or trend_allows_sell) and not raw_sig_sell_mtf
 bool raw_sig_sell_extreme = extreme_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div
 bool raw_sig_sell_normal = normal_overbought and not raw_sig_sell_mtf and not raw_sig_sell_div and not raw_sig_sell_extreme
 
@@ -892,36 +908,36 @@ bool sig_sell_div = enable_signal_cooldown ? (raw_sig_sell_div and (sell_upgrade
 bool sig_sell_extreme = enable_signal_cooldown ? (raw_sig_sell_extreme and (sell_upgrade_exempt or na(last_ext_sell_bar) or bar_index - last_ext_sell_bar >= cooldown_ext)) : raw_sig_sell_extreme
 bool sig_sell_normal = enable_signal_cooldown ? (raw_sig_sell_normal and (sell_upgrade_exempt or na(last_norm_sell_bar) or bar_index - last_norm_sell_bar >= cooldown_norm)) : raw_sig_sell_normal
 
-if sig_buy_mtf
+if signal_data_ready and sig_buy_mtf
     last_mtf_buy_bar := bar_index
     last_buy_signal_bar := bar_index
     last_buy_level := 4
-if sig_buy_div
+if signal_data_ready and sig_buy_div
     last_div_buy_bar := bar_index
     last_buy_signal_bar := bar_index
     last_buy_level := 3
-if sig_buy_extreme
+if signal_data_ready and sig_buy_extreme
     last_ext_buy_bar := bar_index
     last_buy_signal_bar := bar_index
     last_buy_level := 2
-if sig_buy_normal
+if signal_data_ready and sig_buy_normal
     last_norm_buy_bar := bar_index
     last_buy_signal_bar := bar_index
     last_buy_level := 1
 
-if sig_sell_mtf
+if signal_data_ready and sig_sell_mtf
     last_mtf_sell_bar := bar_index
     last_sell_signal_bar := bar_index
     last_sell_level := 4
-if sig_sell_div
+if signal_data_ready and sig_sell_div
     last_div_sell_bar := bar_index
     last_sell_signal_bar := bar_index
     last_sell_level := 3
-if sig_sell_extreme
+if signal_data_ready and sig_sell_extreme
     last_ext_sell_bar := bar_index
     last_sell_signal_bar := bar_index
     last_sell_level := 2
-if sig_sell_normal
+if signal_data_ready and sig_sell_normal
     last_norm_sell_bar := bar_index
     last_sell_signal_bar := bar_index
     last_sell_level := 1
@@ -1055,7 +1071,10 @@ active_signal_grade = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_n
 has_buy_signal = sig_buy_mtf or sig_buy_div or sig_buy_extreme or sig_buy_normal
 has_sell_signal = sig_sell_mtf or sig_sell_div or sig_sell_extreme or sig_sell_normal
 
-if enable_stats and bar_index > stats_forward_bars
+// Both candidates and their unconditional baseline use the same entry-time context.
+// A later context gap must not censor an already eligible signal's price outcome.
+// 信号与无条件基准共享发生时的数据资格；后续上下文缺失不删去已合格样本的收益。
+if enable_stats and bar_index > stats_forward_bars and signal_data_ready[stats_forward_bars] and not na(close) and close[stats_forward_bars] > 0
     forward_return_long = (close - close[stats_forward_bars]) / close[stats_forward_bars] * 100
     // Sell统计口径：Long Exit = 价格下跌为正（卖出正确），Short Entry = 做空收益
     // Long Exit: 信号后价格下跌 = 卖出决策正确，用同样的公式但从多头退出角度解读
@@ -1252,15 +1271,15 @@ sell_ext_stats_source = f_get_filter_source(false, false, false, true, sell_qual
 sell_norm_stats_source = f_get_filter_source(false, false, false, false, sell_quality_grade)
 
 // 过滤结果
-filter_buy_mtf = f_passes_stats_filter(buy_mtf_stats, true, buy_mtf_stats_target)
-filter_buy_div = f_passes_stats_filter(buy_div_stats, true, buy_div_stats_target)
-filter_buy_ext = f_passes_stats_filter(buy_ext_stats, true, buy_ext_stats_target)
-filter_buy_norm = f_passes_stats_filter(buy_norm_stats, true, buy_norm_stats_target)
+filter_buy_mtf = signal_data_ready and f_passes_stats_filter(buy_mtf_stats, true, buy_mtf_stats_target)
+filter_buy_div = signal_data_ready and f_passes_stats_filter(buy_div_stats, true, buy_div_stats_target)
+filter_buy_ext = signal_data_ready and f_passes_stats_filter(buy_ext_stats, true, buy_ext_stats_target)
+filter_buy_norm = signal_data_ready and f_passes_stats_filter(buy_norm_stats, true, buy_norm_stats_target)
 
-filter_sell_mtf = f_passes_stats_filter(sell_mtf_stats, false, sell_mtf_stats_target)
-filter_sell_div = f_passes_stats_filter(sell_div_stats, false, sell_div_stats_target)
-filter_sell_ext = f_passes_stats_filter(sell_ext_stats, false, sell_ext_stats_target)
-filter_sell_norm = f_passes_stats_filter(sell_norm_stats, false, sell_norm_stats_target)
+filter_sell_mtf = signal_data_ready and f_passes_stats_filter(sell_mtf_stats, false, sell_mtf_stats_target)
+filter_sell_div = signal_data_ready and f_passes_stats_filter(sell_div_stats, false, sell_div_stats_target)
+filter_sell_ext = signal_data_ready and f_passes_stats_filter(sell_ext_stats, false, sell_ext_stats_target)
+filter_sell_norm = signal_data_ready and f_passes_stats_filter(sell_norm_stats, false, sell_norm_stats_target)
 
 // 根据过滤模式决定显示的信号
 // Hard: 只显示通过的信号
@@ -1297,6 +1316,8 @@ alert_sell_mtf = sig_sell_mtf and filter_sell_mtf
 alert_sell_div = sig_sell_div and filter_sell_div
 alert_sell_ext = sig_sell_extreme and filter_sell_ext
 alert_sell_norm = sig_sell_normal and filter_sell_norm
+
+production_signal_conflict = (alert_buy_mtf or alert_buy_div or alert_buy_ext or (show_normal_signals and alert_buy_norm)) and (alert_sell_mtf or alert_sell_div or alert_sell_ext or (show_normal_signals and alert_sell_norm))
 
 // 当前信号的统计桶是否样本不足（⏳ = 无质量结论）；与 f_passes_stats_filter 的样本门槛同口径
 // Whether the current signal's bucket lacks samples (⏳ = no quality verdict); same basis as the sample gate in f_passes_stats_filter
@@ -1384,7 +1405,9 @@ signal_grade_text = signal_event_active ? (signal_event_direction == 1 ? buy_qua
 signal_event_stats_hidden = stats_filter_mode == "Hard" and (signal_event_kind == 1 ? (signal_event_direction == 1 ? sig_buy_mtf and not filter_buy_mtf : sig_sell_mtf and not filter_sell_mtf) : signal_event_kind == 2 ? (signal_event_direction == 1 ? sig_buy_div and not filter_buy_div : sig_sell_div and not filter_sell_div) : signal_event_kind == 3 ? (signal_event_direction == 1 ? sig_buy_extreme and not filter_buy_ext : sig_sell_extreme and not filter_sell_ext) : signal_event_kind == 4 ? (signal_event_direction == 1 ? sig_buy_normal and not filter_buy_norm : sig_sell_normal and not filter_sell_norm) : false)
 signal_event_trend_hidden = signal_event_kind == 3 and (signal_event_direction == 1 ? extreme_buy_hidden : extreme_sell_hidden)
 signal_event_normal_hidden = signal_event_kind == 4 and (signal_event_direction == 1 ? normal_buy_hidden : normal_sell_hidden)
-current_is_hidden = signal_event_active and (signal_event_stats_hidden or signal_event_trend_hidden or signal_event_normal_hidden)
+signal_event_data_hidden = signal_event_kind >= 1 and signal_event_kind <= 4 and not signal_data_ready
+signal_event_conflict = signal_event_kind >= 1 and signal_event_kind <= 4 and production_signal_conflict
+current_is_hidden = signal_event_active and (signal_event_stats_hidden or signal_event_trend_hidden or signal_event_normal_hidden or signal_event_data_hidden or signal_event_conflict)
 
 signal_event_filter_pass = signal_event_kind == 1 ? (signal_event_direction == 1 ? filter_buy_mtf : filter_sell_mtf) : signal_event_kind == 2 ? (signal_event_direction == 1 ? filter_buy_div : filter_sell_div) : signal_event_kind == 3 ? (signal_event_direction == 1 ? filter_buy_ext : filter_sell_ext) : signal_event_kind == 4 ? (signal_event_direction == 1 ? filter_buy_norm : filter_sell_norm) : true
 signal_event_stats = signal_event_direction == 1 ? (signal_event_kind == 1 ? buy_mtf_stats : signal_event_kind == 2 ? buy_div_stats : signal_event_kind == 3 ? buy_ext_stats : buy_norm_stats) : (signal_event_kind == 1 ? sell_mtf_stats : signal_event_kind == 2 ? sell_div_stats : signal_event_kind == 3 ? sell_ext_stats : sell_norm_stats)
@@ -1393,7 +1416,7 @@ signal_event_insufficient = signal_event_kind >= 1 and signal_event_kind <= 4 an
 
 // 信号结果：✓/✗ 只表示门槛结果，⏳ 只表示样本不足，⚠️ 保留给运行/数据警告；隐藏原因直接写明。
 // Signal result: ✓/✗ are gate verdicts, ⏳ means insufficient samples, and ⚠️ remains a general runtime/data warning; hidden reasons are explicit.
-signal_hidden_text = signal_event_trend_hidden ? "🚫 TREND" : signal_event_stats_hidden ? "🚫 STATS" : signal_event_normal_hidden ? (normal_signal_mode == "Off" ? "🚫 OFF" : "🚫 SMART") : "🚫"
+signal_hidden_text = signal_event_data_hidden ? "🚫 DATA" : signal_event_conflict ? "🚫 CONFLICT" : signal_event_trend_hidden ? "🚫 TREND" : signal_event_stats_hidden ? "🚫 STATS" : signal_event_normal_hidden ? (normal_signal_mode == "Off" ? "🚫 OFF" : "🚫 SMART") : "🚫"
 signal_mark_text = current_is_hidden ? signal_hidden_text : signal_event_kind >= 1 and signal_event_kind <= 4 and enable_stats and enable_stats_filter ? (signal_event_insufficient ? "⏳" : signal_event_filter_pass ? "✓" : "✗") : ""
 
 // 完整信号显示文本
@@ -1405,9 +1428,9 @@ signal_has_gate_verdict = signal_event_kind >= 1 and signal_event_kind <= 4 and 
 signal_full_color = current_is_hidden ? color.new(color.gray, 40) : signal_has_gate_verdict ? (signal_event_insufficient ? #FFC107 : signal_event_filter_pass ? #4CAF50 : #FF9800) : signal_event_direction == 1 ? color_bull : signal_event_direction == -1 ? color_bear : color.gray
 
 // 状态文本（统一使用 normal_threshold）
-status_text_full = rsi_zscore < -2 ? "🟢 EXTREME OVERSOLD" : rsi_zscore < -normal_threshold ? "🟡 OVERSOLD" : rsi_zscore > 2 ? "🔴 EXTREME OVERBOUGHT" : rsi_zscore > normal_threshold ? "🟠 OVERBOUGHT" : "⚪ NEUTRAL"
+status_text_full = not chart_data_ready ? "NA · RSI warmup" : rsi_zscore < -2 ? "🟢 EXTREME OVERSOLD" : rsi_zscore < -normal_threshold ? "🟡 OVERSOLD" : rsi_zscore > 2 ? "🔴 EXTREME OVERBOUGHT" : rsi_zscore > normal_threshold ? "🟠 OVERBOUGHT" : "⚪ NEUTRAL"
 
-status_text_mobile = rsi_zscore < -2 ? "🟢极卖" : rsi_zscore < -normal_threshold ? "🟡超卖" : rsi_zscore > 2 ? "🔴极买" : rsi_zscore > normal_threshold ? "🟠超买" : "⚪中性"
+status_text_mobile = not signal_data_ready ? "⚠️ DATA · " + signal_data_reason : rsi_zscore < -2 ? "🟢极卖" : rsi_zscore < -normal_threshold ? "🟡超卖" : rsi_zscore > 2 ? "🔴极买" : rsi_zscore > normal_threshold ? "🟠超买" : "⚪中性"
 
 status_display_color = rsi_zscore < -normal_threshold ? color_bull : rsi_zscore > normal_threshold ? color_bear : color.gray
 
@@ -1461,21 +1484,21 @@ if show_dashboard
                      str.format("No resonance · {0}/{1} incl chart", math.max(oversold_count, overbought_count), valid_tf_count)
     // 各周期状态自身用 No data 标明缺失，避免在共振说明中重复同一警告。
     // Each timeframe marks missing data directly, so the resonance summary does not repeat the same warning.
-    resonance_text = resonance_base
+    resonance_text = not mtf_context_ready ? "Unavailable · coverage / warmup" : valid_tf_count < 2 ? "Need a distinct timeframe" : resonance_base
     resonance_color = oversold_resonance ? color_bull : overbought_resonance ? color_bear : color.gray
 
     mobile_rows = 3
     // 基础 7 行；MTF 状态与共振合并为 1 行；方向优势摘要最多 1 行；Stats Filter 仅在当前事件时渲染，但保留 1 行容量。
     // Seven base rows; MTF state/resonance share one row; edge summary is at most one row; reserve one filter row although it renders only for a current event.
-    full_rows = 7 + (enable_mtf ? 1 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0) + (enable_stats and stats_gate_mode == "Edge vs Baseline" ? 1 : 0) + (enable_stats and enable_stats_filter ? 1 : 0)
+    full_rows = 8 + (enable_mtf ? 1 : 0) + (enable_divergence ? 1 : 0) + (enable_stats ? 9 : 0) + (enable_stats and stats_gate_mode == "Edge vs Baseline" ? 1 : 0) + (enable_stats and enable_stats_filter ? 1 : 0)
     total_rows = dashboard_mode == "Mobile" ? mobile_rows : full_rows
 
-    var table dashboard = table.new(position.top_right, 2, 20,
+    var table dashboard = table.new(position.top_right, 2, 21,
                                      bgcolor=color.new(#1a1a2e, dashboard_transparency),
                                      border_width=1, border_color=color.new(#4a4a6a, 50))
 
     if barstate.islast
-        table.clear(dashboard, 0, 0, 1, 19)
+        table.clear(dashboard, 0, 0, 1, 20)
         row = 0
 
         if dashboard_mode == "Mobile"
@@ -1514,6 +1537,11 @@ if show_dashboard
             table.cell(dashboard, 1, row, status_text_full, text_color=status_display_color, text_size=txt_size_body)
             row += 1
 
+            data_start = na(evidence_start_time) ? "No eligible history" : "Eligible since " + str.format_time(evidence_start_time, "yyyy-MM-dd", syminfo.timezone)
+            table.cell(dashboard, 0, row, "Data Context", text_color=color.gray, text_size=txt_size_body)
+            table.cell(dashboard, 1, row, signal_data_reason + "\n" + data_start, text_color=signal_data_ready ? color.white : color.yellow, text_size=txt_size_body)
+            row += 1
+
             // Stats Filter 只在当前事件存在时渲染；无事件时不占一行，也不猜测未来信号类型。
             // 样本状态、质量路径和最终动作分别写明；桶选择与总判定复用生产过滤结果，避免显示与实际 gate 漂移。
             // Render Stats Filter only for a current event; omit it otherwise and never guess a future signal type.
@@ -1536,15 +1564,21 @@ if show_dashboard
                         gate_left_display := gate_title + "\n" + gate_label + "\n" + f_stats_sample_text(gate_stats, gate_target)
                         gate_display := f_stats_direct_readout(gate_stats, gate_is_buy, gate_target)
                         gate_color := f_stats_direct_color(gate_stats, gate_is_buy, gate_target)
+                        if not signal_data_ready
+                            gate_display := "BLOCK · DATA\n" + signal_data_reason
+                            gate_color := color.yellow
+                        else if production_signal_conflict
+                            gate_display := "BLOCK · CONFLICT\nBUY + SELL · No alert"
+                            gate_color := color.yellow
                     table.cell(dashboard, 0, row, gate_left_display, text_color=color.gray, text_size=txt_size_body)
                     table.cell(dashboard, 1, row, gate_display, text_color=gate_color, text_size=txt_size_body)
                     row += 1
 
             // @harness: dashboard-rows
             weekly_rsi_display = na(weekly_rsi) ? "W-RSI --" : str.format("W-RSI {0,number,#}", weekly_rsi)
-            trend_context = not enable_trend_protection ? "Trend: Off" : trend_allows_buy and trend_allows_sell ? str.format("Trend {0}: Both allowed", protection_level) : trend_allows_buy ? str.format("Trend {0}: BUY only", protection_level) : trend_allows_sell ? str.format("Trend {0}: SELL only", protection_level) : str.format("Trend {0}: Both blocked", protection_level)
+            trend_context = not weekly_data_ready ? "Weekly context unavailable" : not enable_trend_protection ? "Trend: Off" : trend_allows_buy and trend_allows_sell ? str.format("Trend {0}: Both allowed", protection_level) : trend_allows_buy ? str.format("Trend {0}: BUY only", protection_level) : trend_allows_sell ? str.format("Trend {0}: SELL only", protection_level) : str.format("Trend {0}: Both blocked", protection_level)
             volume_context = not enable_volume_scoring ? "Volume: score off" : volume_surge ? str.format("Volume: Surge ({0,number,#.1}×)", volume_ratio) : volume_low ? str.format("Volume: Low ({0,number,#.1}×)", volume_ratio) : str.format("Volume: Normal ({0,number,#.1}×)", volume_ratio)
-            context_color = not enable_trend_protection or trend_allows_buy and trend_allows_sell ? color.white : trend_allows_buy or trend_allows_sell ? color.yellow : color.red
+            context_color = not weekly_data_ready ? color.yellow : not enable_trend_protection or trend_allows_buy and trend_allows_sell ? color.white : trend_allows_buy or trend_allows_sell ? color.yellow : color.red
             table.cell(dashboard, 0, row, "Market Context", text_color=color.gray, text_size=txt_size_body)
             table.cell(dashboard, 1, row, trend_context + "\n" + weekly_rsi_display + "\n" + volume_context, text_color=context_color, text_size=txt_size_body)
             row += 1
@@ -1702,22 +1736,139 @@ if show_dashboard
 // SMART ALERT
 // ────────────────────────────────────────
 
+// varip retains sent levels across realtime ticks. Compare bar_index instead of
+// barstate.isnew: a close-only strategy may never execute on the opening tick.
+// varip 保留同根已发等级；按 bar_index 重置，兼容只在收盘运行的策略报告。
+varip int alert_state_bar = na
 varip int buy_alert_level_sent = 0
 varip int sell_alert_level_sent = 0
 
 f_signal_level(_mtf, _div, _ext, _norm) =>
     _mtf ? 4 : _div ? 3 : _ext ? 2 : _norm ? 1 : 0
 
-if barstate.isnew
+// JSON strings escape quotes, backslashes and every U+0000–U+001F control
+// character. Pine does not treat \r or \b as control-character escapes, so use
+// regex code points instead of unsupported string-literal escape sequences.
+// JSON 转义双引号、反斜线及全部 ASCII 控制字符，避免特殊标的名破坏快照。
+f_alert_json_string(string _value) =>
+    _escaped = str.replace_all(_value, "\\", "\\\\")
+    _escaped := str.replace_all(_escaped, "\"", "\\\"")
+    _hex_digits = "0123456789abcdef"
+    for _code = 0 to 31
+        _high = int(_code / 16)
+        _low = _code % 16
+        _hex = str.substring(_hex_digits, _high, _high + 1) + str.substring(_hex_digits, _low, _low + 1)
+        _control = str.match(_escaped, "\\x" + _hex)
+        if str.length(_control) > 0
+            _escaped := str.replace_all(_escaped, _control, "\\u00" + _hex)
+    "\"" + _escaped + "\""
+
+f_alert_json_number(float _value) =>
+    na(_value) ? "null" : str.tostring(_value, "0.################")
+
+f_alert_json_int(int _value) =>
+    na(_value) ? "null" : str.tostring(_value)
+
+f_alert_json_bool(bool _value) =>
+    _value ? "true" : "false"
+
+f_alert_event_id(bool _is_buy, int _level) =>
+    syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time) + "|" + (_is_buy ? "BUY" : "SELL") + "|" + str.tostring(_level)
+
+f_alert_evidence_source(string _mode, string _kind, string _direction, string _grade) =>
+    _mode == "Signal Type" ? "Signal Type:" + _kind + " " + _direction :
+     _mode == "Grade" ? "Grade:" + _direction + " [Score " + _grade + "]" :
+     "Ranking:" + _kind + " " + _direction + " [Score " + _grade + "]"
+
+// Snapshot the evidence selected at this decision, never reconstruct it later.
+// Disabled filters use requested evidence because no production gate consulted a
+// parent. This is an alert decision record, not an order or fill confirmation.
+// 快照固定当时的实际证据来源；过滤关闭时保留请求桶，不借用父级结论。
+// 这是信号决策记录，不代表已下单、成交或实现了所示止损止盈。
+f_alert_snapshot_json(bool _is_buy, int _level, string _grade, SignalStats _resolved_stats, int _resolved_target, string _source) =>
+    _is_mtf = _level == 4
+    _is_div = _level == 3
+    _is_ext = _level == 2
+    _kind = f_signal_kind_name(f_signal_kind_index(_is_mtf, _is_div, _is_ext))
+    _direction = _is_buy ? "BUY" : "SELL"
+    _gate_active = enable_stats and enable_stats_filter
+    _requested_stats = stats_mode == "Signal Type" ? f_get_signal_type_stats(_is_buy, _is_mtf, _is_div, _is_ext) : stats_mode == "Grade" ? f_get_grade_stats(_is_buy, _grade) : f_get_signal_stats(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+    _requested_target = stats_mode == "Signal Type" ? f_get_signal_type_target(_is_buy, _is_mtf, _is_div, _is_ext) : stats_mode == "Grade" ? f_get_grade_target(_is_buy, _grade) : f_get_signal_target(_is_buy, _is_mtf, _is_div, _is_ext, _grade)
+    _stats_used = _gate_active ? _resolved_stats : _requested_stats
+    _target = _gate_active ? _resolved_target : _requested_target
+    _uses_parent = _gate_active and _source == "Type fallback"
+    _requested_source = f_alert_evidence_source(stats_mode, _kind, _direction, _grade)
+    _resolved_source = _uses_parent ? f_alert_evidence_source("Signal Type", _kind, _direction, _grade) : _requested_source
+    [_ready, _edge_mode, _payoff_active, _wr_pass, _payoff_pass, _quality_ok, _adjusted_wr, _payoff_edge] = f_stats_gate_paths(_stats_used, _is_buy, _target)
+    _lifetime_n = _stats_used.get_lifetime_count()
+    _effective_n = _stats_used.get_count()
+    _has_estimate = enable_stats and _lifetime_n >= 5
+    _readiness = not enable_stats ? "DISABLED" : _ready ? "READY" : _lifetime_n < _target ? "WAITING" : "STALE"
+    _quality_verdict = not enable_stats ? "STATS_OFF" : not enable_stats_filter ? "FILTER_OFF" : not _ready ? "NO_VERDICT" : _quality_ok ? "PASS" : "BLOCK"
+    _allowed = signal_data_ready and f_passes_stats_filter(_stats_used, _is_buy, _target)
+    _baseline = array.get(baseline_stats, f_dir_bucket_index(_is_buy))
+    _baseline_available = enable_stats and _baseline.get_lifetime_count() > 0
+    _baseline_wr = _baseline_available ? f_stats_baseline_rate(_is_buy) : na
+    _baseline_avg = _baseline_available ? f_stats_baseline_avg(_is_buy) : na
+    _prior_wr = enable_stats ? f_stats_display_prior(_is_buy) : na
+    _raw_wr = enable_stats and _lifetime_n > 0 ? _stats_used.get_winrate() : na
+    _bucket_avg = enable_stats and _lifetime_n > 0 ? _stats_used.get_avg() : na
+    _reported_wr = _has_estimate ? _adjusted_wr : na
+    _reported_payoff = _has_estimate ? _payoff_edge : na
+    _wr_edge = _has_estimate and _baseline_available ? _adjusted_wr - _baseline_wr : na
+    _required_wr = enable_stats ? f_stats_required_winrate(_is_buy) : na
+    _shrinkage_weight = enable_stats ? math.min(1.0, _effective_n / 20.0) : na
+    _wr_pass_json = _has_estimate ? f_alert_json_bool(_wr_pass) : "null"
+    _payoff_pass_json = _has_estimate ? f_alert_json_bool(_payoff_pass) : "null"
+    _sl_price = _is_buy ? buy_sl_price : sell_sl_price
+    _tp_price = _is_buy ? buy_tp_price : sell_tp_price
+
+    _json = "{\"schema\":\"arsi.alert.v1\",\"message_kind\":\"signal_decision\""
+    _json := _json + ",\"event_id\":" + f_alert_json_string(f_alert_event_id(_is_buy, _level))
+    _json := _json + ",\"script_version\":" + f_alert_json_string(SCRIPT_VERSION)
+    _json := _json + ",\"tickerid\":" + f_alert_json_string(syminfo.tickerid)
+    _json := _json + ",\"timeframe\":" + f_alert_json_string(timeframe.period)
+    _json := _json + ",\"bar_time\":" + f_alert_json_int(time) + ",\"bar_time_close\":" + f_alert_json_int(time_close)
+    _json := _json + ",\"observed_time\":" + f_alert_json_int(timenow) + ",\"price\":" + f_alert_json_number(close)
+    _json := _json + ",\"confirmed\":" + f_alert_json_bool(barstate.isconfirmed) + ",\"signal_data_ready\":" + f_alert_json_bool(signal_data_ready)
+    _json := _json + ",\"direction\":" + f_alert_json_string(_direction) + ",\"level\":" + f_alert_json_int(_level)
+    _json := _json + ",\"type\":" + f_alert_json_string(_kind) + ",\"grade\":" + f_alert_json_string(_grade)
+    _json := _json + ",\"evidence\":{\"metric\":\"fixed_horizon_directional_return\",\"forward_bars\":" + f_alert_json_int(stats_forward_bars)
+    _json := _json + ",\"requested_source\":" + f_alert_json_string(_requested_source) + ",\"resolved_source\":" + f_alert_json_string(_resolved_source)
+    _json := _json + ",\"uses_parent\":" + f_alert_json_bool(_uses_parent)
+    _json := _json + ",\"lifetime_n\":" + f_alert_json_int(_lifetime_n) + ",\"effective_n\":" + f_alert_json_number(_effective_n) + ",\"target\":" + f_alert_json_int(_target)
+    _json := _json + ",\"readiness\":" + f_alert_json_string(_readiness) + ",\"quality_verdict\":" + f_alert_json_string(_quality_verdict)
+    _json := _json + ",\"gate_active\":" + f_alert_json_bool(_gate_active) + ",\"allowed\":" + f_alert_json_bool(_allowed)
+    _json := _json + ",\"sample_policy\":" + f_alert_json_string(stats_sample_policy) + ",\"unproven_policy\":" + f_alert_json_string(stats_unproven_mode)
+    _json := _json + ",\"gate_mode\":" + f_alert_json_string(stats_gate_mode) + ",\"payoff_mode\":" + f_alert_json_string(stats_payoff_mode)
+    _json := _json + ",\"shrinkage_weight\":" + f_alert_json_number(_shrinkage_weight)
+    _json := _json + ",\"raw_wr_pct\":" + f_alert_json_number(_raw_wr) + ",\"prior_wr_pct\":" + f_alert_json_number(_prior_wr)
+    _json := _json + ",\"adjusted_wr_pct\":" + f_alert_json_number(_reported_wr) + ",\"baseline_wr_pct\":" + f_alert_json_number(_baseline_wr)
+    _json := _json + ",\"required_wr_pct\":" + f_alert_json_number(_required_wr) + ",\"wr_edge_pp\":" + f_alert_json_number(_wr_edge)
+    _json := _json + ",\"wr_pass\":" + _wr_pass_json
+    _json := _json + ",\"bucket_avg_pct\":" + f_alert_json_number(_bucket_avg) + ",\"baseline_avg_pct\":" + f_alert_json_number(_baseline_avg)
+    _json := _json + ",\"payoff_edge_pct\":" + f_alert_json_number(_reported_payoff) + ",\"required_payoff_pct\":" + f_alert_json_number(stats_min_payoff_edge)
+    _json := _json + ",\"payoff_active\":" + f_alert_json_bool(_payoff_active) + ",\"payoff_pass\":" + _payoff_pass_json + "}"
+    _json := _json + ",\"risk\":{\"basis\":\"decision_price\",\"hints_only\":true,\"sl_price\":" + f_alert_json_number(_sl_price) + ",\"tp_price\":" + f_alert_json_number(_tp_price) + "}}"
+    _json
+
+if na(alert_state_bar) or alert_state_bar != bar_index
+    alert_state_bar := bar_index
     buy_alert_level_sent := 0
     sell_alert_level_sent := 0
 
-if enable_smart_alert
-    // 使用统计过滤后的信号（所有模式都过滤Alert）
+// TradingView only delivers alerts in realtime; avoid rebuilding audit JSON for history.
+// 历史K线不投递警报，因此只在实时执行中生成警报快照。
+if enable_smart_alert and barstate.isrealtime
+    // 使用统计过滤后的信号（所有模式都过滤Alert）。
+    // Simultaneous eligible directions produce no actionable alert, matching the
+    // strategy harness. Intrabar alerts sent before a later conflict cannot be
+    // recalled; confirmed-bar delivery is therefore the default.
     filtered_buy_normal = show_normal_signals and alert_buy_norm
     filtered_sell_normal = show_normal_signals and alert_sell_norm
     alert_has_buy = alert_buy_mtf or alert_buy_div or alert_buy_ext or filtered_buy_normal
     alert_has_sell = alert_sell_mtf or alert_sell_div or alert_sell_ext or filtered_sell_normal
+    alert_conflict = alert_has_buy and alert_has_sell
 
     // Alert-specific icon 选择（基于 alert_* 布尔值，与 Dashboard 独立）
     string alert_buy_icon = switch
@@ -1733,16 +1884,21 @@ if enable_smart_alert
         filtered_sell_normal => "⬇️超买"
         => ""
 
-    // 买卖提醒各自跟随实际触发的最高等级事件，避免同 K 线反向候选读到错误统计桶。
-    // Buy and sell alerts each follow their own highest-priority triggered event, so opposite candidates cannot borrow the wrong bucket status.
-    buy_alert_insufficient = alert_buy_mtf ? f_stats_insufficient(buy_mtf_stats, buy_mtf_stats_target) : alert_buy_div ? f_stats_insufficient(buy_div_stats, buy_div_stats_target) : alert_buy_ext ? f_stats_insufficient(buy_ext_stats, buy_ext_stats_target) : filtered_buy_normal ? f_stats_insufficient(buy_norm_stats, buy_norm_stats_target) : false
-    sell_alert_insufficient = alert_sell_mtf ? f_stats_insufficient(sell_mtf_stats, sell_mtf_stats_target) : alert_sell_div ? f_stats_insufficient(sell_div_stats, sell_div_stats_target) : alert_sell_ext ? f_stats_insufficient(sell_ext_stats, sell_ext_stats_target) : filtered_sell_normal ? f_stats_insufficient(sell_norm_stats, sell_norm_stats_target) : false
+    // 每个方向读取其当时实际选择的桶，JSON 与文字共用同一个 gate 结果。
+    // Each direction snapshots its selected evidence; JSON and text share the gate.
+    buy_alert_stats = alert_buy_mtf ? buy_mtf_stats : alert_buy_div ? buy_div_stats : alert_buy_ext ? buy_ext_stats : buy_norm_stats
+    buy_alert_target = alert_buy_mtf ? buy_mtf_stats_target : alert_buy_div ? buy_div_stats_target : alert_buy_ext ? buy_ext_stats_target : buy_norm_stats_target
+    buy_alert_source = alert_buy_mtf ? buy_mtf_stats_source : alert_buy_div ? buy_div_stats_source : alert_buy_ext ? buy_ext_stats_source : buy_norm_stats_source
+    sell_alert_stats = alert_sell_mtf ? sell_mtf_stats : alert_sell_div ? sell_div_stats : alert_sell_ext ? sell_ext_stats : sell_norm_stats
+    sell_alert_target = alert_sell_mtf ? sell_mtf_stats_target : alert_sell_div ? sell_div_stats_target : alert_sell_ext ? sell_ext_stats_target : sell_norm_stats_target
+    sell_alert_source = alert_sell_mtf ? sell_mtf_stats_source : alert_sell_div ? sell_div_stats_source : alert_sell_ext ? sell_ext_stats_source : sell_norm_stats_source
+    buy_alert_insufficient = f_stats_insufficient(buy_alert_stats, buy_alert_target)
+    sell_alert_insufficient = f_stats_insufficient(sell_alert_stats, sell_alert_target)
     string buy_alert_filter_status = enable_stats_filter and enable_stats ? (buy_alert_insufficient ? " ⏳" : " ✓") : ""
     string sell_alert_filter_status = enable_stats_filter and enable_stats ? (sell_alert_insufficient ? " ⏳" : " ✓") : ""
 
     current_buy_level = f_signal_level(alert_buy_mtf, alert_buy_div, alert_buy_ext, filtered_buy_normal)
-    prev_buy_level = f_signal_level(alert_buy_mtf[1], alert_buy_div[1], alert_buy_ext[1], show_normal_signals[1] and alert_buy_norm[1])
-    should_alert_buy = alert_has_buy and current_buy_level > prev_buy_level and current_buy_level > buy_alert_level_sent and (not alert_on_close or barstate.isconfirmed)
+    should_alert_buy = alert_has_buy and not alert_conflict and current_buy_level > buy_alert_level_sent and (not alert_on_close or barstate.isconfirmed)
 
     if should_alert_buy
         msg = str.format("{0}: 🟢 BUY → {1} ", syminfo.ticker, alert_buy_icon)
@@ -1757,16 +1913,16 @@ if enable_smart_alert
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
         msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [Score {3}]{4}", rsi, rsi_zscore, zscore_pct, buy_quality_grade, buy_alert_filter_status)
 
-        // 可选：添加风险提示
         if include_risk_in_alerts
             msg := msg + str.format(" | SL:-{0,number,#.1}% TP:+{1,number,#.1}%", buy_sl_pct, buy_tp_pct)
 
-        alert(msg, alert.freq_once_per_bar)
+        if alert_format == "JSON"
+            msg := f_alert_snapshot_json(true, current_buy_level, buy_quality_grade, buy_alert_stats, buy_alert_target, buy_alert_source)
+        alert(msg, alert.freq_all)
         buy_alert_level_sent := current_buy_level
 
     current_sell_level = f_signal_level(alert_sell_mtf, alert_sell_div, alert_sell_ext, filtered_sell_normal)
-    prev_sell_level = f_signal_level(alert_sell_mtf[1], alert_sell_div[1], alert_sell_ext[1], show_normal_signals[1] and alert_sell_norm[1])
-    should_alert_sell = alert_has_sell and current_sell_level > prev_sell_level and current_sell_level > sell_alert_level_sent and (not alert_on_close or barstate.isconfirmed)
+    should_alert_sell = alert_has_sell and not alert_conflict and current_sell_level > sell_alert_level_sent and (not alert_on_close or barstate.isconfirmed)
 
     if should_alert_sell
         msg = str.format("{0}: 🔴 SELL → {1} ", syminfo.ticker, alert_sell_icon)
@@ -1781,9 +1937,10 @@ if enable_smart_alert
         zscore_pct = f_zscore_to_percentile(rsi_zscore)
         msg := msg + str.format("| RSI:{0,number,#.1} Z:{1,number,#.2}σ (≈P{2,number,#}) [Score {3}]{4}", rsi, rsi_zscore, zscore_pct, sell_quality_grade, sell_alert_filter_status)
 
-        // 可选：添加风险提示
         if include_risk_in_alerts
             msg := msg + str.format(" | SL:+{0,number,#.1}% TP:-{1,number,#.1}%", sell_sl_pct, sell_tp_pct)
 
-        alert(msg, alert.freq_once_per_bar)
+        if alert_format == "JSON"
+            msg := f_alert_snapshot_json(false, current_sell_level, sell_quality_grade, sell_alert_stats, sell_alert_target, sell_alert_source)
+        alert(msg, alert.freq_all)
         sell_alert_level_sent := current_sell_level

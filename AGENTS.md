@@ -2,7 +2,7 @@
 
 > Guidelines for AI agents working on this TradingView Pine Script v6 project.
 
-**Generated**: 2026-08-14 | **Version**: v7.6 | **Branch**: main
+**Updated**: 2026-09-05 | **Version**: v7.7 | **Branch**: main
 
 ## Quick Reference
 
@@ -32,7 +32,10 @@ RSI_stock/
 ├── tools/generate_strategy_harness.py
 ├── tools/pine_linter/
 ├── tests/
+│   ├── test_alert_contract.py
+│   ├── test_data_context.py
 │   ├── test_generate_strategy_harness.py
+│   ├── test_harness_execution.py
 │   └── test_pine_linter.py
 └── images/
 ```
@@ -40,6 +43,80 @@ RSI_stock/
 ## Current Architecture
 
 ### Production indicator
+
+#### v7.7 execution and evidence integrity (current contract)
+
+The user-authorized objective is the win rate of completed trades after costs,
+with loss size, expectancy and drawdown checked alongside it. A forward-return
+bucket, setup score, or local tooling test is not evidence of improved live
+trade win rate. Do not claim a performance improvement without evaluation and
+actual execution records.
+
+- **Complete data before new decisions.** `signal_data_ready` requires ready
+  current RSI/quantiles and Z-Score, confirmed weekly RSI/SMA20/SMA50, and every
+  unique enabled MTF context. Weekly readiness is mandatory even with trend
+  protection off because setup scoring still uses weekly features.
+- **Request coverage.** The LTF budget is `MAX_REQUEST_BARS = 100000` requested
+  lower-timeframe bars, never 100000 chart bars. Actual chart coverage depends
+  on the timeframe ratio, feed, plan and warmup. The old artificial 120-week
+  request cap is removed. Missing RSI/quantiles return `na` status; availability
+  includes calculation readiness. Missing HTF status does not borrow current
+  chart status. Manual TF1/TF2/TF3 duplicates are deduplicated by duration as
+  well as against the chart timeframe.
+- **Eligible history.** Signals and same-direction baselines are recorded only
+  when their signal/start bar had `signal_data_ready`. A valid endpoint return
+  is still required. Do not require data readiness throughout the future
+  horizon: that would censor measurable outcomes using later context gaps.
+  Do not silently classify incomplete MTF history as ordinary EXT evidence.
+- **Entries versus exits.** New production decisions/alerts and all harness
+  entries require complete data. Maintain separate exit-only candidates before
+  entry trend/data/stats/cooldown and weekly Smart visibility restrictions; an
+  entry rejection must not suppress an otherwise valid raw opposite close.
+  Keep explicit normal Off, percentile and divergence conditions. A reversal opens
+  a position and therefore still requires a permitted entry. DATA is an
+  explicit dashboard state, distinct from WAITING/STALE evidence.
+- **Trend protection includes DIV.** Confirmed divergence entries now obey the
+  same configured directional weekly protection as normal/extreme entries.
+  This and the data fixes are user-authorized correctness changes; do not add
+  further signal factors or claim that these changes improve WR by themselves.
+- **Defaults.** `alert_on_close = true`, `stats_payoff_mode = "Off"`, and
+  `stats_unproven_mode = "Block (Legacy)"`. Preserve the saved option string
+  `Block (Legacy)` for compatibility. `Ranking`, Adaptive targets and their
+  parent fallback remain. Win-rate gate arithmetic and the optional payoff
+  paths remain available; selecting `Either Edge` can still admit a bucket
+  whose WR path fails.
+- **Shrinkage terminology.** `min(1, effective_n / 20)` is a heuristic weight,
+  not calibrated confidence, a Bayesian posterior, a significance test or a
+  probability of success. The weight denominator stays 20, independently of
+  Adaptive lifetime targets. Legacy toggles restore formulas, not the old
+  incomplete data history, pre-fix signal stream, or alert delivery.
+- **Alert delivery.** Per-direction `varip` sent levels reset by `bar_index`,
+  including close-only strategy execution. `alert.freq_all` permits distinct
+  intrabar upgrades while level checks deduplicate repeated evaluations.
+  Message construction runs only when `barstate.isrealtime`; historical
+  execution still supplies the strategy signal outputs. No
+  previous-bar level comparison suppresses a fresh eligible bar event. If
+  both directions are actionable in one evaluation, neither is sent; an
+  already-delivered earlier-tick alert cannot be withdrawn.
+- **Decision snapshots.** `Alert Format = Text | JSON` defaults to Text. JSON
+  schema `arsi.alert.v1` records only delivered signal decisions, including
+  version/symbol/timeframe/bar/observed times, direction/level/type/grade,
+  decision reference price, resolved evidence and target, gate settings,
+  unrounded metrics and risk hints. Missing estimates use `null`. Event IDs
+  include symbol, timeframe, bar opening time, direction and level. These
+  snapshots are not broker fills or a complete blocked-candidate log.
+- **Upgrade validation.** Recreate TradingView alerts after upgrading and
+  explicitly check saved inputs. Validate common history coverage, warmup,
+  repeated manual TFs, DIV protection, close-only new-bar reset, intrabar
+  upgrades/conflicts and actual entry/exit behavior. Do not replace the
+  user-approved raw model with a new entry hypothesis without a separate
+  request and measured evaluation.
+
+#### Historical implementation notes
+
+The following v7.2–v7.6 notes explain the retained engine and its original
+behavior. v7.7 requirements and defaults above supersede historical defaults,
+display-only availability handling, and claims of full legacy stream parity.
 
 - `v7.2` baseline signal model (adaptive thresholds, MTF resonance, divergence,
   tiered cooldown) plus the v7.3 correctness fixes:
@@ -76,7 +153,7 @@ RSI_stock/
 - Other v7.4 behavior changes:
   - **`alert_on_close`**: optional input — alerts fire only on confirmed bars
     (anti-repaint) at the cost of delivery delay; off = legacy intrabar alerts.
-  - **MTF availability surfacing**: `f_mtf_status()` returns
+  - **MTF availability surfacing** (original v7.4, superseded by v7.7 readiness): `f_mtf_status()` returns
     `[status, available]`; unavailable TF data renders `–` plus a dashboard
     warning. Display-only — resonance math and stats recording are unchanged.
   - **Spread hysteresis**: the lookback spread-boost factor uses a hysteresis
@@ -96,7 +173,7 @@ RSI_stock/
     direction) and `f_stats_payoff_edge(_stats, _is_buy)`.
   - **New inputs** (grp_stats, between Gate Mode and Filter Mode):
     `stats_payoff_mode` — `"Payoff Gate"`, options
-    `Off | Either Edge | Both Edges`, default `Either Edge` (a deliberate
+    `Off | Either Edge | Both Edges`, originally default `Either Edge` (a deliberate
     behavior change vs v7.4) — and `stats_min_payoff_edge` —
     `"Min Payoff Edge %"`, default `0.4`, range 0–10, step 0.1.
   - **Gate wiring** (`f_passes_stats_filter`): the payoff path is active only
@@ -152,6 +229,7 @@ RSI_stock/
   - New input `stats_unproven_mode` — `"Unproven Buckets"`, options
     `Pass | Block (Legacy)`, default `Pass` (a deliberate behavior change) —
     sits between `Sample Policy` and `Min Adjusted WinRate` in grp_stats.
+    v7.7 retains the option names but changes the default to `Block (Legacy)`.
   - `f_passes_stats_filter` final expression is
     `_has_enough_samples ? _quality_ok : stats_unproven_mode == "Pass"`:
     verdict-ready evidence uses the quality paths; evidence without a verdict
@@ -258,6 +336,57 @@ RSI_stock/
 
 ### Strategy report harness
 
+#### v7.7 execution contract
+
+- `Exit Signal Policy = Raw | Filtered (Legacy)` defaults to Raw. Separate
+  `harness_exit_*` candidates close existing positions before entry weekly
+  trend protection, data/stats guards, cross-bar signal cooldown, and Smart
+  weekly visibility restrictions. They retain raw Z-Score crossing thresholds,
+  configured percentile confirmation, confirmed divergence, type priority and
+  explicit `Normal Signal Mode = Off`. The opposite exit direction must be
+  unambiguous. Filtered uses the selected Backtest Mode output. Baseline entry
+  candidates still use protected `sig_*` and skip only the stats gate; Production
+  entry rules are unchanged. A reversal must pass new-entry requirements.
+- `Use Evaluation Dates` defaults off. `Evaluation Start` defaults to
+  2020-01-01 UTC and `Evaluation End` to 2100-01-01 UTC. An active interval
+  requires start < end, signal-bar open >= start and close < end for entries.
+  Earlier eligible history trains statistics without entries; statistics
+  continue updating causally during evaluation. This is not a frozen model
+  or automatic out-of-sample validation.
+- At the first close reaching the evaluation end, request liquidation for the
+  next available open. Gaps can extend the trade past the configured date;
+  do not invent a boundary fill. Time/ATR/raw exits remain operational.
+- Explicit close-only engine settings are `calc_on_every_tick=false`,
+  `calc_on_order_fills=false`, `process_orders_on_close=false`. Default
+  commission remains 0.05% and slippage 2 ticks; risk exits remain opt-in.
+- The additional `Trade Results` row is `SIMULATED · NET`: closed trade WR and
+  count, PF, average net trade in account currency, open P&L and holding bars.
+  WR is `strategy.wintrades / strategy.closedtrades`; open trades are excluded
+  and breakevens stay in the denominator. Commission is already accounted
+  for by TradingView: do not subtract it again. States distinguish training,
+  data warmup, evaluation, ending/exit pending, ended, all history, invalid dates.
+- Raw exits use `RAW EXIT · GATE IGNORED` and the requested bucket/target in
+  `Strategy Stats`. Time/date exits name the real exit action. Entry snapshots
+  retain the requested-versus-resolved evidence contracts described below.
+- Order comments distinguish ENTRY, REVERSE, RAW EXIT, FILTERED EXIT, ATR EXIT,
+  Time Exit, Evaluation End. Order `alert_message` begins `ARSI_STRATEGY|v=7.7` and
+  includes event/symbol/TF/order bar/time/direction/reference close/mode/exit
+  policy. This is an order reference, not a fill; actual fill price/time must
+  come from order-fill placeholders, exported emulator trades or broker data.
+- The inherited production `alert()` stream (Text/JSON) ignores harness
+  Backtest Mode, Trade Side, evaluation dates and exit planning. It is a
+  production signal decision, not a strategy order/action. Actual strategy
+  action evidence comes from order-fill alerts using
+  `{{strategy.order.alert_message}}` plus fill placeholders, or trade exports.
+  Keep the two logs separate when reconciling results.
+- The harness has four context/results rows: Backtest, Tester View,
+  Strategy Stats, Trade Results. Full indicator capacity is 21 rows; generated
+  harness capacity is 26 rows (four inserted rows plus one spare). Update the
+  generator and regenerate the Pine
+  file; never hand-edit generated logic or rows.
+
+#### Retained generator and evidence behavior
+
 - Generated `strategy()` wrapper using the same signal engine.
 - Source of truth is `adaptive_rsi.pine`; regenerate with
   `python3 tools/generate_strategy_harness.py` after production logic changes.
@@ -272,13 +401,16 @@ RSI_stock/
 - Harness-only inputs:
   - `Trade Side`
   - `Backtest Mode = Baseline | Production`
+  - `Exit Signal Policy = Raw | Filtered (Legacy)`
+  - `Use Evaluation Dates`, `Evaluation Start`, `Evaluation End`
   - Risk exits: `Use ATR SL/TP Exits` (SL/TP snapshotted at the signal bar's
     close; `strategy.exit` is issued with the entry and bound via
     `from_entry`, so the bracket protects from the entry fill bar) and
     `Max Holding Bars` (time exit realizing exactly N held bars — close order
     placed at the close of held bar N−1, fills at the next open; `0` = off)
-- `Baseline` trades raw `v7.2` signals; `Production` trades signals that pass
-  the production alert gate/filter.
+- `Baseline` entries use raw candidates with v7.7 data readiness; `Production`
+  entries also require the production stats gate. Both reject direction
+  conflicts. The independent exit policy determines opposite-signal closes.
 - The harness-owned `f_harness_gate_snapshot()` returns a 4-tuple (source,
   sample text, direct readout, color). The `Strategy Stats` row
   explains the actual unambiguous buy/sell strategy signal for the selected
@@ -298,7 +430,8 @@ RSI_stock/
   are disabled, both modes use `Stats off` plus
   `STATS OFF · ALL ALLOWED / No quality verdict`. Sample labels and colors come
   from the same production helpers as the readout.
-  Harness context rows are `Backtest`, `Tester View`, and `Strategy Stats`.
+  Harness context rows are `Backtest`, `Tester View`, `Strategy Stats`, and
+  `Trade Results` (added in v7.7).
   These snippets live in `tools/generate_strategy_harness.py` — edit them
   there, never in the generated file.
 - It is a gated-signal backtest, not an exact intrabar `alert()` delivery
@@ -309,28 +442,32 @@ RSI_stock/
 
 ## Where to Look
 
+Line starts are navigation hints; search the named function or section after edits.
+
 | Task | Location | Notes |
 |------|----------|-------|
-| Input groups | `adaptive_rsi.pine:17-84` | Production inputs incl. Evidence Reference, sample policy, stats/gate/payoff/alert toggles |
-| Dynamic lookback | `adaptive_rsi.pine:125-197` | Adaptive RSI sample-depth logic (separate from evidence targets) |
-| Spread hysteresis | `adaptive_rsi.pine:164-197` | Boost state machine + `prev_spread` feedback update |
-| Weekly protection | `adaptive_rsi.pine:229-256` | Confirmed weekly trend filter |
-| MTF analysis | `adaptive_rsi.pine:269-400` | TF selection, lower-TF aggregation, availability flags, seconds-based current-TF dedupe |
-| Statistics types + targets | `adaptive_rsi.pine:401-673` | `SignalStats`, decay, buckets, fixed effective/20 shrinkage, peer totals, dynamic targets, readiness/sample labels and edge summary |
-| Signal detection | `adaptive_rsi.pine:806-843` | Raw signals and cooldown state |
-| Consolidated signals | `adaptive_rsi.pine:844-940` | Priority merge, upgrade exemption with expired-level reset |
-| Statistics engine | `adaptive_rsi.pine:1051-1098` | Forward-return bookkeeping, baseline sampling, independent sampling |
-| Stats filter | `adaptive_rsi.pine:1099-1305` | Target-aware Adaptive resolver/source, shared readiness/gate paths, final gate and three-line ready Edge readout |
-| Dashboard | `adaptive_rsi.pine:1414-1700` | Multiline Full cells, target/fallback-aware filter, exact Ranking progress, compact readouts and Edge Summary |
-| Alerts | `adaptive_rsi.pine:1701-1789` | Direction-specific target-aware suffixes, smart alert aggregation, per-bar reset, `alert_on_close` gating |
-| Harness inputs | `adaptive_rsi_strategy_harness.pine:86-90` | `Trade Side`, `Backtest Mode`, risk-exit inputs |
-| Harness risk direction | `adaptive_rsi_strategy_harness.pine:104-108` | `strategy.risk.allow_entry_in` wiring |
-| Harness requested evidence helpers | `adaptive_rsi_strategy_harness.pine:1167-1196` | Requested bucket + requested target and source label |
-| Harness evidence snapshot | `adaptive_rsi_strategy_harness.pine:1487-1567` | Requested-vs-resolved bucket/target, raw readout, source/sample/readout/color tuple |
-| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1671-1691` | `Backtest`, `Tester View`, `Strategy Stats` |
-| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:1940-2005` | Entry/close rules, entry-bound ATR SL/TP exits, exact-N time exit |
+| Input groups | `adaptive_rsi.pine:23` | Evidence, defaults, alert format, and signal settings |
+| Dynamic lookback | `adaptive_rsi.pine:128` | RSI sample-depth logic, separate from evidence targets |
+| Spread hysteresis | `adaptive_rsi.pine:171` | Previous-spread feedback state |
+| Weekly protection | `adaptive_rsi.pine:236` | Confirmed weekly features, readiness and protection |
+| MTF analysis | `adaptive_rsi.pine:273` | 100000 LTF bars, indicator availability, unique TFs |
+| Common data eligibility | `adaptive_rsi.pine:396` | Entry/sample readiness and first eligible time |
+| Statistics types + targets | `adaptive_rsi.pine:421` | Decay, count-only targets, fixed weight denominator |
+| Signal detection | `adaptive_rsi.pine:823` | Raw candidates and protected DIV eligibility |
+| Consolidated signals | `adaptive_rsi.pine:861` | Priority/cooldown and data-ready cooldown updates |
+| Statistics engine | `adaptive_rsi.pine:1068` | Signal-time eligible samples and matched baselines |
+| Stats filter | `adaptive_rsi.pine:1119` | Requested/resolved evidence, data-gated outputs and conflict |
+| Dashboard | `adaptive_rsi.pine:1438` | Data Context, action readout and exact ranking evidence |
+| Alerts | `adaptive_rsi.pine:1736` | JSON snapshots, bar-identity reset, upgrade dedupe/conflicts |
+| Harness inputs | `adaptive_rsi_strategy_harness.pine:89` | Side/mode/exit policy/risk and dates |
+| Harness dates and side | `adaptive_rsi_strategy_harness.pine:114` | Direction wiring and evaluation interval |
+| Harness requested evidence | `adaptive_rsi_strategy_harness.pine:1201` | Requested bucket and target helpers |
+| Harness action planner | `adaptive_rsi_strategy_harness.pine:1518` | Independent entries, exits, reversals, date/time actions |
+| Harness evidence snapshot | `adaptive_rsi_strategy_harness.pine:1589` | Entry/exit-specific source/sample/readout/color |
+| Harness dashboard rows | `adaptive_rsi_strategy_harness.pine:1787` | Backtest, Tester View, Strategy Stats, Trade Results |
+| Harness strategy logic | `adaptive_rsi_strategy_harness.pine:2194` | Exclusive market action and entry-bound ATR brackets |
 | Generator anchors | `tools/generate_strategy_harness.py` | Anchor names, harness-owned snippets, `--check` mode |
-| Tooling tests | `tests/` | Generator golden/anchor tests, linter rule tests |
+| Tooling tests | `tests/` | Generator/anchor, signal integrity, alert and linter checks |
 
 ## Build & Validation
 
@@ -364,8 +501,7 @@ the lint config, `tools/`, or `tests/`.
 [weekly_rsi, weekly_sma20, weekly_sma50] = request.security(
     syminfo.tickerid, "W",
     [ta.rsi(close, 14)[1], ta.sma(close, 20)[1], ta.sma(close, 50)[1]],
-    lookahead=barmerge.lookahead_on,
-    calc_bars_count=WEEKLY_REQUEST_BARS
+    lookahead=barmerge.lookahead_on
 )
 ```
 
@@ -404,9 +540,13 @@ exactly once.
   production-filter verdict; Raw Baseline says `RAW · GATE IGNORED` and shows
   descriptive evidence without marks. `No strategy signal` means neither
   direction fired; simultaneous directions display an explicit conflict and
-  produce no strategy action.
-- With `Use ATR SL/TP Exits` off and `Max Holding Bars = 0`, trades exit only
-  on opposite signals (legacy harness behavior).
+  produce no new entry; independent time/date liquidation remains available.
+- Raw exits read the separate `harness_exit_*` candidate's requested bucket/target
+  and ignore entry trend/data/stats/cooldown and Smart weekly visibility guards,
+  retaining explicit signal conditions and Normal Off.
+  Time/date exits report their actual action instead of an entry gate verdict.
+- With `Use ATR SL/TP Exits` off, `Max Holding Bars = 0`, and evaluation dates
+  off, trades exit only on opposite signals, using the chosen exit policy.
 
 ## Making Changes
 
@@ -418,13 +558,15 @@ exactly once.
    sampling, edge-vs-baseline gate, payoff-edge path, unproven-bucket
    pass-through). The later-v7.5 MTF dedupe fix (seconds-based `tf*_is_current`,
    user-requested) is a sanctioned correctness fix to the baseline, like the
-   v7.3 ones — it has no revert switch. Further signal-model or stats-engine
-   changes still need an explicit user request, and the legacy revert switches
+   v7.3 ones — it has no revert switch. The user also authorized the v7.7 data,
+   DIV protection, default-policy, alert and execution repairs described above.
+   Further signal-model or stats-engine changes still need an explicit user request, and the legacy revert switches
    (`stats_half_life_bars = 0`, `Independent Samples` off,
    `Sample Policy = Fixed (Legacy)`, `Absolute (Legacy)` gate,
    `Payoff Gate = Off` plus
    `Unproven Buckets = Block (Legacy)` for the v7.4 gate) must keep restoring
-   the old behavior.
+   the old formulas. They do not restore pre-fix data coverage, signal streams,
+   or alert delivery.
 4. Never delete or reword `// @harness: <name>` anchor comments in
    `adaptive_rsi.pine` without updating `tools/generate_strategy_harness.py`
    and `tests/test_generate_strategy_harness.py` to match; each anchor must
