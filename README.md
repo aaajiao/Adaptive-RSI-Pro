@@ -62,7 +62,7 @@ The project ships two files:
 1. Right-click the indicator and choose **Add Alert**.
 2. Set the condition to **Any alert() function call**.
 3. Optional: enable `Include Risk Hints in Alerts` to get ATR-based stop-loss/take-profit suggestions in each message.
-4. Keep `Alert on Bar Close` enabled (the v7.7 default) to decide at bar confirmation. Disable it only when deliberately evaluating intrabar execution.
+4. Keep `Alert on Bar Close` enabled (the v7.7 default) to decide at bar confirmation. The cost is later delivery: on a daily chart of a session-based market such as stocks, alerts arrive only after the session close, and the earliest matching order is at the next session's open — the same timing the strategy harness uses. Disable it only when deliberately evaluating intrabar execution.
 5. After upgrading, delete and recreate existing alerts so TradingView uses the new script and inputs.
 
 ### 3. Display presets
@@ -429,6 +429,8 @@ Unavailable numbers and estimates are JSON `null`. Only delivered alerts produce
 ### Timing
 
 `Alert on Bar Close` is **on by default** in v7.7. Decisions wait for the chart bar to be confirmed, so provisional current-bar signals do not alert. This fixes the execution time for validation; it does not remove data-feed revisions or guarantee a fill at the closing price.
+
+The cost is later delivery. A bar is confirmed only when it closes, so for session-based markets such as stocks every daily-chart alert arrives after the regular session ends (for US stocks normally after the 16:00 New York close, earlier on half-days; later on delayed data feeds), never during the session. The earliest matching live order is at the next session's open. The strategy harness uses the same timing — a decision on the confirmed close and a fill at the next bar's open — but its entries and exits are not the alert stream (see [Reconcile alerts with actual fills](#reconcile-alerts-with-actual-fills)). For 24/7 symbols such as crypto, the daily bar closes at the feed's day boundary (often 00:00 UTC) and the next bar opens at that moment, so a live order lands after the open price the harness fills at. If you need to act before the daily close, this setting cannot provide it; turning it off delivers provisional intrabar signals whose execution the harness has not evaluated.
 
 With it off, alerts may occur before the final bar state and cannot be reconstructed from historical OHLC alone. Per-direction delivery levels reset by bar identity. Repeated evaluations at the same level are suppressed; a higher-priority same-side event can alert again within that bar. Opposite directions in the same evaluation are suppressed as a conflict. An alert already delivered on an earlier tick cannot be withdrawn.
 
